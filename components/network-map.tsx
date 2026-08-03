@@ -21,34 +21,25 @@ import Select from "ol/interaction/Select"
 import { click } from "ol/events/condition"
 import { defaults as defaultControls } from "ol/control"
 import type { Geometry } from "ol/geom"
-import {
-  Hand,
-  Radio,
-  Spline,
-  Hexagon,
-  Trash2,
-  Layers,
-  Eye,
-  EyeOff,
-  Ruler,
-} from "lucide-react"
+import { Hand, Radio, Spline, Hexagon, Trash2 } from "lucide-react"
 
 type NetworkMapProps = {
   center?: [number, number]
   zoom?: number
   className?: string
+  visible?: { nodes: boolean; fibers: boolean; zones: boolean }
+  onStatsChange?: (counts: { nodes: number; fibers: number; zones: number }, totalKm: number) => void
+  clearTrigger?: number
 }
 
 type Tool = "pan" | "node" | "fiber" | "zone" | "delete"
 
-// Paleta coherente con el tema (celeste/azul)
 const COLORS = {
   node: "#0ea5e9",
   fiber: "#2563eb",
   zone: "#38bdf8",
 }
 
-// ---- Estilos de las geometrías ----
 function nodeStyle(feature: Feature<Geometry>) {
   const label = (feature.get("nombre") as string) ?? "Nodo"
   return new Style({
@@ -93,21 +84,21 @@ function zoneStyle() {
   })
 }
 
-/**
- * <NetworkMap /> — Mapa interactivo de OpenLayers con capas vectoriales
- * para geometrías de la red de fibra: nodos (puntos), tendido (líneas) y
- * zonas de cobertura (polígonos), con herramientas de dibujo y edición.
- */
-export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }: NetworkMapProps) {
+export function NetworkMap({
+  center = [-76.532, 3.4516],
+  zoom = 12,
+  className,
+  visible: externalVisible,
+  onStatsChange,
+  clearTrigger,
+}: NetworkMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
 
-  // Fuentes vectoriales por tipo de geometría
   const nodeSource = useRef(new VectorSource()).current
   const fiberSource = useRef(new VectorSource()).current
   const zoneSource = useRef(new VectorSource()).current
 
-  // Referencias a capas e interacciones
   const nodeLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const fiberLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const zoneLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -117,12 +108,10 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
   const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null)
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   const [tool, setTool] = useState<Tool>("pan")
-  const [counts, setCounts] = useState({ nodes: 0, fibers: 0, zones: 0 })
-  const [totalKm, setTotalKm] = useState(0)
-  const [visible, setVisible] = useState({ nodes: true, fibers: true, zones: true })
-  const [showPanel, setShowPanel] = useState(true)
 
-  // Recalcula contadores y kilómetros totales de fibra
+  const onStatsChangeRef = useRef(onStatsChange)
+  onStatsChangeRef.current = onStatsChange
+
   const recalc = useCallback(() => {
     const nodes = nodeSource.getFeatures().length
     const fibers = fiberSource.getFeatures().length
@@ -131,11 +120,9 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
       const g = f.getGeometry() as LineString | undefined
       return acc + (g ? getLength(g) / 1000 : 0)
     }, 0)
-    setCounts({ nodes, fibers, zones })
-    setTotalKm(km)
+    onStatsChangeRef.current?.({ nodes, fibers, zones }, km)
   }, [nodeSource, fiberSource, zoneSource])
 
-  // ---- Inicialización del mapa (una sola vez) ----
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
@@ -157,10 +144,7 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
       controls: defaultControls({ attributionOptions: { collapsible: true } }),
     })
 
-    // Edición de geometrías existentes (arrastrar vértices)
-    const modify = new Modify({
-      source: nodeSource,
-    })
+    const modify = new Modify({ source: nodeSource })
     map.addInteraction(modify)
 
     map.on("pointermove", (evt) => {
@@ -172,9 +156,6 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
       if (typeof z === "number") setZoomLevel(Math.round(z * 10) / 10)
     })
 
-    // Semillas de ejemplo para que se vean las capas al entrar.
-    // Se limpian antes de sembrar para evitar duplicados por el doble
-    // montaje de efectos de React en modo desarrollo (Strict Mode).
     nodeSource.clear()
     fiberSource.clear()
     zoneSource.clear()
@@ -195,12 +176,10 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---- Gestión de la herramienta activa (dibujo / borrado) ----
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    // Limpia interacciones previas
     if (drawRef.current) {
       map.removeInteraction(drawRef.current)
       drawRef.current = null
@@ -241,18 +220,22 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
     }
   }, [tool, nodeSource, fiberSource, zoneSource])
 
-  // ---- Visibilidad de capas ----
   useEffect(() => {
-    nodeLayer.current?.setVisible(visible.nodes)
-    fiberLayer.current?.setVisible(visible.fibers)
-    zoneLayer.current?.setVisible(visible.zones)
-  }, [visible])
+    if (externalVisible) {
+      nodeLayer.current?.setVisible(externalVisible.nodes)
+      fiberLayer.current?.setVisible(externalVisible.fibers)
+      zoneLayer.current?.setVisible(externalVisible.zones)
+    }
+  }, [externalVisible])
 
-  function clearAll() {
-    nodeSource.clear()
-    fiberSource.clear()
-    zoneSource.clear()
-  }
+  useEffect(() => {
+    if (typeof clearTrigger === "number") {
+      nodeSource.clear()
+      fiberSource.clear()
+      zoneSource.clear()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearTrigger])
 
   const tools: { id: Tool; label: string; icon: typeof Hand; color?: string }[] = [
     { id: "pan", label: "Mover mapa", icon: Hand },
@@ -271,7 +254,7 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
         aria-label="Mapa interactivo de la red de fibra"
       />
 
-      {/* Barra de herramientas de dibujo (izquierda) */}
+      {/* Herramientas de dibujo (izquierda) */}
       <div className="absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-xl bg-card/95 p-1.5 shadow-lg ring-1 ring-border backdrop-blur">
         {tools.map((t) => {
           const Icon = t.icon
@@ -296,75 +279,7 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
         })}
       </div>
 
-      {/* Panel de capas y estadísticas (derecha) */}
-      {showPanel ? (
-        <div className="absolute right-3 top-16 z-10 w-60 rounded-xl bg-card/95 p-3 shadow-lg ring-1 ring-border backdrop-blur">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-              <Layers className="size-4 text-primary" />
-              Capas
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowPanel(false)}
-              className="rounded-md p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              aria-label="Ocultar panel de capas"
-            >
-              <EyeOff className="size-4" />
-            </button>
-          </div>
-
-          <ul className="flex flex-col gap-1">
-            <LayerRow
-              color={COLORS.node}
-              label="Nodos"
-              count={counts.nodes}
-              visible={visible.nodes}
-              onToggle={() => setVisible((v) => ({ ...v, nodes: !v.nodes }))}
-            />
-            <LayerRow
-              color={COLORS.fiber}
-              label="Tendido de fibra"
-              count={counts.fibers}
-              visible={visible.fibers}
-              onToggle={() => setVisible((v) => ({ ...v, fibers: !v.fibers }))}
-            />
-            <LayerRow
-              color={COLORS.zone}
-              label="Zonas"
-              count={counts.zones}
-              visible={visible.zones}
-              onToggle={() => setVisible((v) => ({ ...v, zones: !v.zones }))}
-            />
-          </ul>
-
-          <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 py-2 text-xs text-secondary-foreground">
-            <Ruler className="size-3.5 text-primary" />
-            Fibra total: <span className="ml-auto font-semibold tabular-nums text-primary">{totalKm.toFixed(2)} km</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={clearAll}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 py-1.5 text-xs font-medium text-destructive transition hover:bg-destructive/20"
-          >
-            <Trash2 className="size-3.5" />
-            Limpiar todo
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowPanel(true)}
-          className="absolute right-3 top-16 z-10 flex items-center gap-1.5 rounded-lg bg-card/95 px-3 py-2 text-sm font-medium text-foreground shadow-lg ring-1 ring-border backdrop-blur transition hover:bg-accent"
-          aria-label="Mostrar panel de capas"
-        >
-          <Eye className="size-4 text-primary" />
-          Capas
-        </button>
-      )}
-
-      {/* Barra de estado del mapa */}
+      {/* Barra de estado */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
         <span>
           Lon: <span className="tabular-nums text-primary">{coords ? coords.lon.toFixed(5) : "—"}</span>
@@ -382,40 +297,6 @@ export function NetworkMap({ center = [-76.532, 3.4516], zoom = 12, className }:
   )
 }
 
-function LayerRow({
-  color,
-  label,
-  count,
-  visible,
-  onToggle,
-}: {
-  color: string
-  label: string
-  count: number
-  visible: boolean
-  onToggle: () => void
-}) {
-  return (
-    <li className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-accent">
-      <span className="size-3 shrink-0 rounded-full ring-2 ring-white" style={{ backgroundColor: color }} />
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{label}</span>
-      <span className="rounded-md bg-secondary px-1.5 text-xs font-semibold tabular-nums text-secondary-foreground">
-        {count}
-      </span>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="rounded-md p-0.5 text-muted-foreground transition hover:text-foreground"
-        aria-label={`${visible ? "Ocultar" : "Mostrar"} capa ${label}`}
-        aria-pressed={visible}
-      >
-        {visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-      </button>
-    </li>
-  )
-}
-
-// Geometrías de ejemplo para poblar las capas al iniciar
 function seedExamples(nodeSource: VectorSource, fiberSource: VectorSource, zoneSource: VectorSource) {
   const nodes: [number, number, string][] = [
     [-76.532, 3.4516, "Central Cali"],

@@ -8,8 +8,9 @@ import {
   Move, Save, Network, PlusCircle, Trash2, Move3d, Plug, Unplug,
   CircuitBoard, Cable, Wifi, Server, Route, BarChart3, ClipboardList,
   MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
-  Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ChevronDown,
+  Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu,
 } from "lucide-react"
+import { clearSession } from "@/lib/auth"
 
 type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
@@ -261,9 +262,16 @@ const TABS: RibbonTab[] = [
 
 export function DashboardRibbon() {
   const [activeTab, setActiveTab] = useState("inicio")
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-
   const currentTab = TABS.find((t) => t.id === activeTab) ?? TABS[0]
+
+  function handleItemClick(item: RibbonItem) {
+    if (item.label === "Salir") {
+      clearSession()
+      window.location.replace("/")
+      return
+    }
+    item.onClick?.()
+  }
 
   return (
     <div className="shrink-0 border-b border-border bg-card">
@@ -276,28 +284,28 @@ export function DashboardRibbon() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                relative rounded-t-lg px-4 py-2 text-sm font-medium transition-all
+                relative rounded-t-lg px-4 py-2 text-sm font-semibold transition-all
                 ${isActive
-                  ? "bg-card text-primary shadow-sm ring-1 ring-border ring-b-0"
+                  ? "bg-card text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 }
               `}
             >
               {tab.label}
               {isActive && (
-                <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary" />
+                <span className="absolute bottom-0 left-1 right-1 h-[3px] rounded-full bg-primary" />
               )}
             </button>
           )
         })}
       </div>
 
-      {/* Toolbar de la pestaña activa */}
-      <div className="flex h-[88px] items-stretch overflow-x-auto bg-card px-2">
+      {/* Toolbar */}
+      <div className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2">
         {currentTab.groups.map((group, gi) => (
           <div key={gi} className="flex items-stretch">
             <div className="flex flex-col justify-center px-2 py-1.5">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 {group.items.map((item, ii) => {
                   const Icon = item.icon
                   const isPrimary = item.variant === "primary"
@@ -306,11 +314,11 @@ export function DashboardRibbon() {
                   return (
                     <button
                       key={ii}
-                      onClick={item.onClick}
+                      onClick={() => handleItemClick(item)}
                       disabled={item.disabled}
                       title={item.label}
                       className={`
-                        group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1 transition
+                        group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 transition
                         ${isPrimary
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : isDestructive
@@ -318,23 +326,21 @@ export function DashboardRibbon() {
                             : "text-foreground hover:bg-accent"
                         }
                         ${item.disabled ? "opacity-40 cursor-not-allowed" : ""}
-                        min-w-[56px]
+                        min-w-[60px]
                       `}
                     >
-                      <Icon className="size-5 shrink-0" />
-                      <span className="max-w-[56px] truncate text-[10px] font-medium leading-tight">
+                      <Icon className="size-[18px] shrink-0" />
+                      <span className="max-w-[60px] truncate text-[10px] font-medium leading-tight">
                         {item.label}
                       </span>
                     </button>
                   )
                 })}
               </div>
-              <span className="mt-0.5 text-center text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="mt-1 text-center text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </span>
             </div>
-
-            {/* Separador entre grupos */}
             {gi < currentTab.groups.length - 1 && (
               <div className="my-2 w-px bg-border" />
             )}
