@@ -5,23 +5,29 @@ import { Loader2 } from "lucide-react"
 import { getToken, isTokenValid } from "@/lib/auth"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<"checking" | "ok">("checking")
+  const [authorized, setAuthorized] = useState(false)
 
   useEffect(() => {
-    const token = getToken()
-    if (isTokenValid(token)) {
-      setStatus("ok")
-    } else {
-      // Redirección forzada del navegador (más confiable que router.replace)
-      window.location.href = "/"
+    try {
+      const token = getToken()
+      if (isTokenValid(token)) {
+        setAuthorized(true)
+      } else {
+        // Redirección forzada inmediata
+        window.location.replace("/")
+      }
+    } catch {
+      // Si algo falla, redirigir de todos modos
+      window.location.replace("/")
     }
   }, [])
 
-  if (status === "checking") {
+  // Si no está autorizado, mostrar spinner (nunca se queda infinito porque redirige arriba)
+  if (!authorized) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
+          <Loader2 className="size-6 animate-spin text-primary" />
           <p className="text-sm">Verificando sesión...</p>
         </div>
       </div>
