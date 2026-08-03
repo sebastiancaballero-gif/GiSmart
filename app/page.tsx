@@ -1,9 +1,21 @@
-import { GiSmartLogin } from "@/components/gismart-login"
+import { AuthGuard } from "@/components/auth-guard"
+import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { DashboardHeader } from "@/components/dashboard-header"
+import { NetworkMap } from "@/components/network-map"
 
-export default function Page() {
+export default function DashboardPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-200 via-sky-100 to-blue-200 p-4">
-      <GiSmartLogin />
-    </main>
+    <AuthGuard>
+      <div className="flex h-screen w-full overflow-hidden bg-background">
+        <DashboardSidebar />
+
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <DashboardHeader />
+          <main className="flex-1 overflow-hidden">
+            <NetworkMap />
+          </main>
+        </div>
+      </div>
+    </AuthGuard>
   )
 }
