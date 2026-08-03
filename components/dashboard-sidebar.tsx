@@ -37,7 +37,6 @@ export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
 
-  // El item activo se detecta por la ruta actual
   const activeId = MODULES.find((m) => m.href && pathname.startsWith(m.href))?.id ?? "mapa"
 
   function handleLogout() {
@@ -51,7 +50,7 @@ export function DashboardSidebar() {
         collapsed ? "w-[72px]" : "w-64"
       }`}
     >
-      {/* ── Marca / Logo ── */}
+      {/* Logo */}
       <div className="flex h-16 items-center gap-3 border-b border-border px-4">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
           <MapIcon className="size-[18px]" />
@@ -66,7 +65,7 @@ export function DashboardSidebar() {
         )}
       </div>
 
-      {/* ── Módulos ── */}
+      {/* Módulos */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5" aria-label="Módulos del sistema">
         {MODULES.map((m) => {
           const Icon = m.icon
@@ -90,8 +89,12 @@ export function DashboardSidebar() {
                 ${m.disabled ? "cursor-not-allowed opacity-50 hover:bg-transparent" : ""}
               `}
             >
-              <Icon className={`size-[18px] shrink-0 ${isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-foreground"}`} />
-              
+              <Icon
+                className={`size-[18px] shrink-0 ${
+                  isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-foreground"
+                }`}
+              />
+
               {!collapsed && (
                 <>
                   <span className="truncate">{m.label}</span>
@@ -103,9 +106,9 @@ export function DashboardSidebar() {
                 </>
               )}
 
-              {/* Tooltip cuando está colapsado */}
+              {/* Tooltip al colapsar */}
               {collapsed && (
-                <span className="pointer-events-none absolute left-full ml-2.5 rounded-md bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100 whitespace-nowrap z-50">
+                <span className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-md bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
                   {m.label}
                   {m.disabled && " (Pronto)"}
                 </span>
@@ -115,7 +118,7 @@ export function DashboardSidebar() {
         })}
       </nav>
 
-      {/* ── Pie: Configuración + Contraer + Salir ── */}
+      {/* Pie */}
       <div className="border-t border-border p-2.5 space-y-0.5">
         <button
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground transition hover:bg-accent"
@@ -131,7 +134,11 @@ export function DashboardSidebar() {
           title={collapsed ? "Expandir menú" : undefined}
           aria-label={collapsed ? "Expandir menú" : "Contraer menú"}
         >
-          <ChevronLeft className={`size-[18px] shrink-0 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
+          <ChevronLeft
+            className={`size-[18px] shrink-0 transition-transform duration-300 ${
+              collapsed ? "rotate-180" : ""
+            }`}
+          />
           {!collapsed && <span>Contraer</span>}
         </button>
 
