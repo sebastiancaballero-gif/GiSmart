@@ -32,13 +32,8 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-        {/* Header superior */}
         <DashboardHeader />
-
-        {/* Ribbon tipo Microsoft Office */}
         <DashboardRibbon />
-
-        {/* Área de trabajo: Sidebar + Mapa */}
         <div className="flex flex-1 overflow-hidden">
           <DashboardSidebar
             layers={layers}
@@ -48,7 +43,7 @@ export default function DashboardPage() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           />
-          <main className="flex-1 overflow-hidden relative">
+          <main className="relative flex-1 overflow-hidden">
             <NetworkMap />
           </main>
         </div>

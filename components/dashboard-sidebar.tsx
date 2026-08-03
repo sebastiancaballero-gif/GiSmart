@@ -2,16 +2,13 @@
 
 import {
   Map as MapIcon,
-  Radio,
-  Spline,
-  Hexagon,
   Eye,
   EyeOff,
   Ruler,
   Trash2,
   ChevronLeft,
   ChevronRight,
-  Layers,  // ← AGREGA ESTO
+  Layers,
 } from "lucide-react"
 
 type LayerDef = {
@@ -41,10 +38,10 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   if (collapsed) {
     return (
-      <aside className="flex shrink-0 flex-col items-center border-r border-border bg-card py-3 w-12">
+      <aside className="flex w-12 shrink-0 flex-col items-center border-r border-border bg-card py-3">
         <button
           onClick={onToggleCollapse}
-          className="mb-3 rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+          className="mb-3 rounded-lg p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Expandir panel de capas"
         >
           <ChevronRight className="size-5" />
@@ -83,7 +80,7 @@ export function DashboardSidebar({
         </div>
         <button
           onClick={onToggleCollapse}
-          className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+          className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Contraer panel"
         >
           <ChevronLeft className="size-4" />
