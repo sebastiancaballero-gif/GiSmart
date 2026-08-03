@@ -1,45 +1,53 @@
-import { Search, MapPin } from "lucide-react"
+"use client"
+
+import { useState, useCallback } from "react"
+import { DashboardRibbon } from "@/components/dashboard-ribbon"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { DashboardHeader } from "@/components/dashboard-header"
 import { NetworkMap } from "@/components/network-map"
 import { AuthGuard } from "@/components/auth-guard"
-import { LogoutButton } from "@/components/logout-button"
+
+const INITIAL_LAYERS = [
+  { id: "nodes", label: "Nodos", color: "#0ea5e9", count: 3, visible: true },
+  { id: "fibers", label: "Tendido de fibra", color: "#2563eb", count: 1, visible: true },
+  { id: "zones", label: "Zonas", color: "#38bdf8", count: 1, visible: true },
+]
 
 export default function DashboardPage() {
+  const [layers, setLayers] = useState(INITIAL_LAYERS)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [totalKm, setTotalKm] = useState(3.56)
+
+  const handleToggleLayer = useCallback((id: string) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))
+    )
+  }, [])
+
+  const handleClearAll = useCallback(() => {
+    setLayers((prev) => prev.map((l) => ({ ...l, count: 0, visible: true })))
+    setTotalKm(0)
+  }, [])
+
   return (
     <AuthGuard>
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <DashboardSidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Barra superior */}
-        <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-5 py-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-bold text-foreground">Mapa de Red · Despliegue de Fibra</h1>
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <MapPin className="size-3" />
-              Valle del Cauca, Colombia
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="search"
-                placeholder="Buscar zona o dirección..."
-                className="w-64 rounded-lg border border-input bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <LogoutButton />
-          </div>
-        </header>
-
-        {/* Área principal: mapa a pantalla completa */}
-        <main className="relative min-h-0 flex-1">
-          <NetworkMap />
-        </main>
+      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+        <DashboardHeader />
+        <DashboardRibbon />
+        <div className="flex flex-1 overflow-hidden">
+          <DashboardSidebar
+            layers={layers}
+            onToggleLayer={handleToggleLayer}
+            onClearAll={handleClearAll}
+            totalKm={totalKm}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          />
+          <main className="relative flex-1 overflow-hidden">
+            <NetworkMap />
+          </main>
+        </div>
       </div>
-    </div>
     </AuthGuard>
   )
 }
