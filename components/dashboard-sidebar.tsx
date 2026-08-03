@@ -50,7 +50,7 @@ export function DashboardSidebar() {
         collapsed ? "w-[72px]" : "w-64"
       }`}
     >
-      {/* Logo */}
+      {/* ── Logo / Marca ── */}
       <div className="flex h-16 items-center gap-3 border-b border-border px-4">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
           <MapIcon className="size-[18px]" />
@@ -65,7 +65,7 @@ export function DashboardSidebar() {
         )}
       </div>
 
-      {/* Módulos */}
+      {/* ── Módulos ── */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5" aria-label="Módulos del sistema">
         {MODULES.map((m) => {
           const Icon = m.icon
@@ -118,7 +118,7 @@ export function DashboardSidebar() {
         })}
       </nav>
 
-      {/* Pie */}
+      {/* ── Pie: Configuración + Contraer + Salir ── */}
       <div className="border-t border-border p-2.5 space-y-0.5">
         <button
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground transition hover:bg-accent"
