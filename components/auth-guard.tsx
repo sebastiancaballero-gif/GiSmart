@@ -1,23 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { getToken, isTokenValid } from "@/lib/auth"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
-  const [status, setStatus] = useState<"checking" | "ok" | "redirecting">("checking")
+  const [status, setStatus] = useState<"checking" | "ok">("checking")
 
   useEffect(() => {
     const token = getToken()
     if (isTokenValid(token)) {
       setStatus("ok")
     } else {
-      setStatus("redirecting")
-      router.replace("/")
+      // Redirección forzada del navegador (más confiable que router.replace)
+      window.location.href = "/"
     }
-  }, [router])
+  }, [])
 
   if (status === "checking") {
     return (
@@ -26,14 +24,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
           <p className="text-sm">Verificando sesión...</p>
         </div>
-      </div>
-    )
-  }
-
-  if (status === "redirecting") {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Redirigiendo al login...</p>
       </div>
     )
   }
