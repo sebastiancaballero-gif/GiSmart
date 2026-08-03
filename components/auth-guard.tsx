@@ -1,27 +1,31 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { getToken, isTokenValid } from "@/lib/auth"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
-  const [status, setStatus] = useState<"checking" | "ok">("checking")
+  const [authorized, setAuthorized] = useState(false)
 
   useEffect(() => {
-    if (isTokenValid(getToken())) {
-      setStatus("ok")
+    const token = getToken()
+    if (isTokenValid(token)) {
+      setAuthorized(true)
     } else {
-      router.replace("/")
+      // Fallback 1: redirección inmediata
+      window.location.replace("/")
+      // Fallback 2: si por alguna razón no funciona, forzar a los 2 segundos
+      setTimeout(() => {
+        window.location.href = "/"
+      }, 2000)
     }
-  }, [router])
+  }, [])
 
-  if (status === "checking") {
+  if (!authorized) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
+          <Loader2 className="size-6 animate-spin text-primary" />
           <p className="text-sm">Verificando sesión...</p>
         </div>
       </div>
