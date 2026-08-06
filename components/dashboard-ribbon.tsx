@@ -4,8 +4,8 @@ import { useState } from "react"
 import {
   User, LogOut, Settings, Magnet, Search, Eye, GitBranch,
   FolderPlus, FolderOpen, FolderX, Maximize, RefreshCw, ToggleRight,
-  FileSpreadsheet, FileSearch, PenLine, SquarePen, Plus, Minus,
-  Move, Save, Network, PlusCircle, Trash2, Move3d, Plug, Unplug,
+  FileSpreadsheet, FileSearch, PenLine, Plus, Minus,
+  Move, Save, PlusCircle, Trash2, Move3d, Plug, Unplug,
   CircuitBoard, Cable, Wifi, Server, Route, BarChart3, ClipboardList,
   MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
   Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu,
@@ -40,7 +40,7 @@ const TABS: RibbonTab[] = [
         label: "Mapa",
         items: [
           { icon: Map, label: "Mapa de red" },
-          { icon: Maximize, label: "Extensión completa" },
+          { icon: Maximize, label: "Extensión" },
           { icon: RefreshCw, label: "Actualizar" },
         ],
       },
@@ -163,7 +163,7 @@ const TABS: RibbonTab[] = [
         label: "Consultas",
         items: [
           { icon: Cable, label: "Hilos" },
-          { icon: Wifi, label: "Búsquedas GPON" },
+          { icon: Wifi, label: "GPON" },
           { icon: Server, label: "Redes/Nodo" },
           { icon: Route, label: "Enrutamiento" },
         ],
@@ -186,17 +186,17 @@ const TABS: RibbonTab[] = [
           { icon: HardDrive, label: "OLT-ODF" },
           { icon: CableCar, label: "ODF-ODF" },
           { icon: Cable, label: "ODF-Cables" },
-          { icon: MapPin, label: "Ocupación OLT" },
-          { icon: Grid3x3, label: "Ocupación ODF" },
+          { icon: MapPin, label: "Ocup. OLT" },
+          { icon: Grid3x3, label: "Ocup. ODF" },
         ],
       },
       {
         label: "Planta externa",
         items: [
-          { icon: Cable, label: "Ocupación cables" },
+          { icon: Cable, label: "Ocup. cables" },
           { icon: Box, label: "Inventario ext." },
-          { icon: Grid3x3, label: "Cross conexión" },
-          { icon: MapPin, label: "Ocupación NAPs" },
+          { icon: Grid3x3, label: "Cross conn." },
+          { icon: MapPin, label: "Ocup. NAPs" },
         ],
       },
       {

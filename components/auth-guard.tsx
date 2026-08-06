@@ -12,12 +12,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isTokenValid(token)) {
       setAuthorized(true)
     } else {
-      // Fallback 1: redirección inmediata
       window.location.replace("/")
-      // Fallback 2: si por alguna razón no funciona, forzar a los 2 segundos
-      setTimeout(() => {
-        window.location.href = "/"
-      }, 2000)
     }
   }, [])
 
