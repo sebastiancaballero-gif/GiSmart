@@ -29,6 +29,11 @@ export function clearSession() {
   sessionStorage.removeItem(USER_KEY)
 }
 
+export function logout() {
+  clearSession()
+  window.location.replace("/")
+}
+
 export function getUser() {
   if (typeof window === "undefined") return null
   const raw = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY)

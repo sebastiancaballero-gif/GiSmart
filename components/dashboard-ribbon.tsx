@@ -1,273 +1,38 @@
 "use client"
 
-import { useState } from "react"
-import {
-  User, LogOut, Settings, Magnet, Search, Eye, GitBranch,
-  FolderPlus, FolderOpen, FolderX, Maximize, RefreshCw, ToggleRight,
-  FileSpreadsheet, FileSearch, PenLine, Plus, Minus,
-  Move, Save, PlusCircle, Trash2, Move3d, Plug, Unplug,
-  CircuitBoard, Cable, Wifi, Server, Route, BarChart3, ClipboardList,
-  MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
-  Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu,
-} from "lucide-react"
-import { clearSession } from "@/lib/auth"
-
-type RibbonItem = {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  onClick?: () => void
-  disabled?: boolean
-  variant?: "default" | "primary" | "destructive"
-}
-
-type RibbonGroup = {
-  label: string
-  items: RibbonItem[]
-}
-
-type RibbonTab = {
-  id: string
-  label: string
-  groups: RibbonGroup[]
-}
-
-const TABS: RibbonTab[] = [
-  {
-    id: "inicio",
-    label: "Inicio",
-    groups: [
-      {
-        label: "Mapa",
-        items: [
-          { icon: Map, label: "Mapa de red" },
-          { icon: Maximize, label: "Extensión" },
-          { icon: RefreshCw, label: "Actualizar" },
-        ],
-      },
-      {
-        label: "Capas",
-        items: [
-          { icon: Layers, label: "Activar capa" },
-          { icon: Eye, label: "Identificar" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "usuario",
-    label: "Usuario",
-    groups: [
-      {
-        label: "Sesión",
-        items: [
-          { icon: User, label: "Cambiar usuario" },
-          { icon: LogOut, label: "Salir", variant: "destructive" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "config",
-    label: "Configuración",
-    groups: [
-      {
-        label: "Edición",
-        items: [{ icon: Magnet, label: "Snap" }],
-      },
-    ],
-  },
-  {
-    id: "consultas",
-    label: "Consultas",
-    groups: [
-      {
-        label: "Elementos",
-        items: [
-          { icon: Search, label: "Búsqueda" },
-          { icon: Eye, label: "Atributos" },
-        ],
-      },
-      {
-        label: "Red",
-        items: [{ icon: GitBranch, label: "Conectividad fina" }],
-      },
-    ],
-  },
-  {
-    id: "proyectos",
-    label: "Proyectos",
-    groups: [
-      {
-        label: "Gestión",
-        items: [
-          { icon: FolderPlus, label: "Crear" },
-          { icon: FolderOpen, label: "Abrir" },
-          { icon: FolderX, label: "Cerrar" },
-        ],
-      },
-      {
-        label: "Extensión",
-        items: [
-          { icon: Maximize, label: "Acercar ext." },
-          { icon: RefreshCw, label: "Actualizar ext." },
-          { icon: ToggleRight, label: "Cambiar estado" },
-        ],
-      },
-      {
-        label: "BOM",
-        items: [
-          { icon: FileSpreadsheet, label: "Generar BOM" },
-          { icon: FileSearch, label: "Consultar BOM" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "edicion",
-    label: "Edición",
-    groups: [
-      {
-        label: "Atributos",
-        items: [{ icon: PenLine, label: "Editar atributos" }],
-      },
-      {
-        label: "Geometría",
-        items: [
-          { icon: Plus, label: "Add vértice" },
-          { icon: Minus, label: "Borrar vértice" },
-          { icon: Move, label: "Mover vértice" },
-          { icon: Save, label: "Guardar", variant: "primary" },
-        ],
-      },
-      {
-        label: "Elementos",
-        items: [
-          { icon: PlusCircle, label: "Crear" },
-          { icon: Trash2, label: "Borrar", variant: "destructive" },
-          { icon: Move3d, label: "Mover" },
-          { icon: Plug, label: "Conectar" },
-          { icon: Unplug, label: "Desconectar" },
-        ],
-      },
-      {
-        label: "Conectividad",
-        items: [{ icon: CircuitBoard, label: "Esquemas empalme" }],
-      },
-    ],
-  },
-  {
-    id: "fibra",
-    label: "Red de fibra",
-    groups: [
-      {
-        label: "Consultas",
-        items: [
-          { icon: Cable, label: "Hilos" },
-          { icon: Wifi, label: "GPON" },
-          { icon: Server, label: "Redes/Nodo" },
-          { icon: Route, label: "Enrutamiento" },
-        ],
-      },
-      {
-        label: "Análisis",
-        items: [{ icon: BarChart3, label: "Puertos OLT" }],
-      },
-      {
-        label: "Reportes",
-        items: [
-          { icon: ClipboardList, label: "Auditoría" },
-          { icon: Activity, label: "Trace" },
-          { icon: Box, label: "Inventario" },
-        ],
-      },
-      {
-        label: "Planta interna",
-        items: [
-          { icon: HardDrive, label: "OLT-ODF" },
-          { icon: CableCar, label: "ODF-ODF" },
-          { icon: Cable, label: "ODF-Cables" },
-          { icon: MapPin, label: "Ocup. OLT" },
-          { icon: Grid3x3, label: "Ocup. ODF" },
-        ],
-      },
-      {
-        label: "Planta externa",
-        items: [
-          { icon: Cable, label: "Ocup. cables" },
-          { icon: Box, label: "Inventario ext." },
-          { icon: Grid3x3, label: "Cross conn." },
-          { icon: MapPin, label: "Ocup. NAPs" },
-        ],
-      },
-      {
-        label: "Cartografía",
-        items: [
-          { icon: Maximize, label: "Acercamientos" },
-          { icon: Map, label: "Extents" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "varios",
-    label: "Varios",
-    groups: [
-      {
-        label: "Herramientas",
-        items: [
-          { icon: Ruler, label: "Mediciones" },
-          { icon: Crosshair, label: "A coordenada" },
-          { icon: Eraser, label: "Limpiar trace" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "interfaz",
-    label: "Interfaz",
-    groups: [
-      {
-        label: "Importar",
-        items: [
-          { icon: FileUp, label: "Excel" },
-          { icon: FileUp, label: "KML/Shape" },
-        ],
-      },
-      {
-        label: "Exportar",
-        items: [{ icon: FileDown, label: "KML/Shape" }],
-      },
-    ],
-  },
-  {
-    id: "esquematico",
-    label: "Esquemático",
-    groups: [
-      {
-        label: "Consultas",
-        items: [{ icon: Cpu, label: "Puertos/equipo" }],
-      },
-      {
-        label: "Conectividad",
-        items: [
-          { icon: Plug, label: "OLT-ODF" },
-          { icon: Cable, label: "ODF-ODF" },
-          { icon: CableCar, label: "ODF-Cables" },
-          { icon: Box, label: "Empalme" },
-        ],
-      },
-    ],
-  },
-]
+import { useEffect, useState } from "react"
+import { Minimize } from "lucide-react"
+import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
+import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 
 export function DashboardRibbon() {
   const [activeTab, setActiveTab] = useState("inicio")
-  const currentTab = TABS.find((t) => t.id === activeTab) ?? TABS[0]
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
+  const currentTab = RIBBON_TABS.find((t) => t.id === activeTab) ?? RIBBON_TABS[0]
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener("fullscreenchange", handler)
+    return () => document.removeEventListener("fullscreenchange", handler)
+  }, [])
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      const mapPanel = document.getElementById("map-panel") ?? document.documentElement
+      mapPanel.requestFullscreen().catch(() => {})
+    }
+  }
 
   function handleItemClick(item: RibbonItem) {
     if (item.label === "Salir") {
-      clearSession()
-      window.location.replace("/")
+      setLogoutOpen(true)
+      return
+    }
+    if (item.label === "Extensión") {
+      toggleFullscreen()
       return
     }
     item.onClick?.()
@@ -276,15 +41,18 @@ export function DashboardRibbon() {
   return (
     <div className="shrink-0 border-b border-border bg-card">
       {/* Pestañas */}
-      <div className="flex items-end border-b border-border bg-gradient-to-b from-card to-muted/30 px-1 pt-1">
-        {TABS.map((tab) => {
+      <div role="tablist" aria-label="Secciones" className="flex items-end border-b border-border bg-gradient-to-b from-card to-muted/30 px-1 pt-1">
+        {RIBBON_TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={isActive}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                relative rounded-t-lg px-4 py-2 text-sm font-semibold transition-all
+                relative rounded-t-lg px-4 py-2 text-sm font-semibold outline-none transition-all
+                focus-visible:ring-2 focus-visible:ring-ring/50
                 ${isActive
                   ? "bg-card text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
@@ -301,14 +69,15 @@ export function DashboardRibbon() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2">
+      <div role="tabpanel" className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2">
         {currentTab.groups.map((group, gi) => (
           <div key={gi} className="flex items-stretch">
             <div className="flex flex-col justify-center px-2 py-1.5">
               <div className="flex items-center gap-0.5">
                 {group.items.map((item, ii) => {
-                  const Icon = item.icon
-                  const isPrimary = item.variant === "primary"
+                  const isExtension = item.label === "Extensión"
+                  const Icon = isExtension && isFullscreen ? Minimize : item.icon
+                  const isPrimary = item.variant === "primary" || (isExtension && isFullscreen)
                   const isDestructive = item.variant === "destructive"
 
                   return (
@@ -316,9 +85,12 @@ export function DashboardRibbon() {
                       key={ii}
                       onClick={() => handleItemClick(item)}
                       disabled={item.disabled}
-                      title={item.label}
+                      title={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
+                      aria-label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
+                      aria-pressed={isExtension ? isFullscreen : undefined}
                       className={`
-                        group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 transition
+                        group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
+                        focus-visible:ring-2 focus-visible:ring-ring/50
                         ${isPrimary
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : isDestructive
@@ -347,6 +119,8 @@ export function DashboardRibbon() {
           </div>
         ))}
       </div>
+
+      <LogoutConfirmDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </div>
   )
 }

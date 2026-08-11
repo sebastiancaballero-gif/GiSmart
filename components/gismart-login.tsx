@@ -1,12 +1,13 @@
 "use client"
 
-import { useForm } from "react-hook-form"
-import { useState } from "react"
+import { Controller, useForm } from "react-hook-form"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   User,
   Lock,
-  Settings,
+  Sun,
+  Moon,
   X,
   ArrowRight,
   Globe,
@@ -17,7 +18,11 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { saveSession } from "@/lib/auth"
+import { getCurrentTheme, toggleTheme } from "@/lib/theme"
 import { ConnectingModal } from "@/components/connecting-modal"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 type FormValues = {
   usuario: string
@@ -32,9 +37,19 @@ export function GiSmartLogin() {
   const [connecting, setConnecting] = useState(false)
   const [connected, setConnected] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    setIsDark(getCurrentTheme() === "dark")
+  }, [])
+
+  function handleToggleTheme() {
+    setIsDark(toggleTheme() === "dark")
+  }
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     watch,
@@ -90,7 +105,7 @@ export function GiSmartLogin() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="overflow-hidden rounded-2xl bg-card shadow-2xl shadow-primary/20 ring-1 ring-border">
+      <div className="overflow-hidden rounded-2xl bg-card shadow-xl ring-1 ring-border">
         {/* Barra de título estilo ventana */}
         <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
           <div className="flex items-center gap-2.5">
@@ -127,19 +142,19 @@ export function GiSmartLogin() {
 
           {/* Usuario */}
           <div className="mb-4">
-            <label htmlFor="usuario" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <Label htmlFor="usuario" className="mb-1.5">
               <User className="size-3.5 text-muted-foreground" aria-hidden="true" />
               Usuario
-            </label>
+            </Label>
             <div className="relative">
-              <input
+              <Input
                 id="usuario"
                 type="text"
                 autoComplete="username"
                 placeholder="Ingresa tu usuario"
                 aria-invalid={!!errors.usuario}
                 aria-describedby="usuario-error"
-                className="w-full rounded-lg border border-input bg-card px-3.5 py-2.5 pr-10 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus:ring-destructive/30"
+                className="pr-10"
                 {...register("usuario", {
                   required: "Ingresa un usuario.",
                   minLength: { value: 3, message: "El usuario debe tener al menos 3 caracteres." },
@@ -167,12 +182,12 @@ export function GiSmartLogin() {
 
           {/* Contraseña */}
           <div className="mb-4">
-            <label htmlFor="contrasena" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <Label htmlFor="contrasena" className="mb-1.5">
               <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
               Contraseña
-            </label>
+            </Label>
             <div className="relative">
-              <input
+              <Input
                 id="contrasena"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
@@ -181,7 +196,7 @@ export function GiSmartLogin() {
                 aria-describedby="contrasena-error"
                 onKeyUp={handleCaps}
                 onKeyDown={handleCaps}
-                className="w-full rounded-lg border border-input bg-card px-3.5 py-2.5 pr-16 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus:ring-destructive/30"
+                className="pr-16"
                 {...register("contrasena", {
                   required: "Ingresa una contraseña.",
                   minLength: { value: 6, message: "La contraseña debe tener al menos 6 caracteres." },
@@ -216,16 +231,21 @@ export function GiSmartLogin() {
 
           {/* Recordar + servidor */}
           <div className="mb-4 flex items-center justify-between">
-            <label htmlFor="recordar" className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-              <input
-                id="recordar"
-                type="checkbox"
-                className="size-4 rounded border-input text-primary accent-primary"
-                {...register("recordar")}
+            <Label htmlFor="recordar" className="cursor-pointer font-normal">
+              <Controller
+                name="recordar"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="recordar"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                )}
               />
               Recordar usuario
-            </label>
-            <span className="text-sm font-medium text-primary">Servidor: ORCL</span>
+            </Label>
+            <span className="text-sm font-medium text-muted-foreground">Servidor: ORCL</span>
           </div>
 
           {/* Mensaje de error general del servidor */}
@@ -243,10 +263,12 @@ export function GiSmartLogin() {
           <div className="mt-6 flex items-center gap-3">
             <button
               type="button"
+              onClick={handleToggleTheme}
               className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/20 transition hover:bg-accent/70"
-              aria-label="Configuración"
+              aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
             >
-              <Settings className="size-4" />
+              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
 
             <button
@@ -266,7 +288,7 @@ export function GiSmartLogin() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-primary to-primary/80 px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSubmitting ? "Conectando..." : "Conectar"}
               <ArrowRight className="size-4" />
@@ -275,9 +297,8 @@ export function GiSmartLogin() {
         </form>
 
         {/* Pie */}
-        <div className="flex items-center justify-between border-t border-border bg-secondary/40 px-6 py-3 text-xs text-muted-foreground">
+        <div className="border-t border-border bg-secondary/40 px-6 py-3 text-xs text-muted-foreground">
           <span>Sistema de Información Geográfica</span>
-          <span>v2.4 · SIGETP</span>
         </div>
       </div>
 

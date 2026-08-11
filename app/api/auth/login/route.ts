@@ -1,10 +1,20 @@
+import { createHmac } from "node:crypto"
 import { type NextRequest, NextResponse } from "next/server"
 
-// Credenciales de demostración (en producción esto lo valida el backend C#)
-const VALID_USERS: Record<string, { password: string; role: string; nombre: string }> = {
-  vallecauca: { password: "gismart2024", role: "ingeniero_red", nombre: "Ing. Valle del Cauca" },
-  admin: { password: "admin123", role: "administrador", nombre: "Administrador GiSmart" },
-  disenador: { password: "fibra2024", role: "disenador_red", nombre: "Diseñador de Red" },
+// Credenciales de demostración, cargadas desde variables de entorno
+// (en producción esto lo valida el backend C#). Ver AUTH_DEMO_USERS en .env.local.
+type DemoUser = { password: string; role: string; nombre: string }
+
+function loadDemoUsers(): Record<string, DemoUser> {
+  const raw = process.env.AUTH_DEMO_USERS ?? ""
+  const users: Record<string, DemoUser> = {}
+  for (const entry of raw.split(",")) {
+    const [usuario, password, role, nombre] = entry.split(":").map((s) => s?.trim())
+    if (usuario && password && role && nombre) {
+      users[usuario.toLowerCase()] = { password, role, nombre }
+    }
+  }
+  return users
 }
 
 // Control de intentos por usuario (en memoria, solo demo)
@@ -12,8 +22,12 @@ const attempts = new Map<string, { count: number; lockedUntil: number }>()
 const MAX_ATTEMPTS = 5
 const LOCK_MS = 30_000
 
-// Genera un token tipo JWT (base64url) solo para la demo del frontend
+// Genera un token tipo JWT firmado con HMAC-SHA256, solo para la demo del frontend.
+// El backend real deberá emitir y validar sus propios tokens.
 function fakeJwt(usuario: string, role: string) {
+  const secret = process.env.AUTH_JWT_SECRET
+  if (!secret) throw new Error("AUTH_JWT_SECRET no está configurado.")
+
   const header = { alg: "HS256", typ: "JWT" }
   const payload = {
     sub: usuario,
@@ -22,10 +36,19 @@ function fakeJwt(usuario: string, role: string) {
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 horas
   }
   const enc = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url")
-  return `${enc(header)}.${enc(payload)}.demo-signature`
+  const signingInput = `${enc(header)}.${enc(payload)}`
+  const signature = createHmac("sha256", secret).update(signingInput).digest("base64url")
+  return `${signingInput}.${signature}`
 }
 
 export async function POST(req: NextRequest) {
+  if (!process.env.AUTH_DEMO_USERS || !process.env.AUTH_JWT_SECRET) {
+    return NextResponse.json(
+      { message: "El servidor de autenticación no está configurado. Revisa .env.local.", field: null },
+      { status: 500 },
+    )
+  }
+
   const body = await req.json().catch(() => null)
 
   if (!body || typeof body !== "object") {
@@ -70,7 +93,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const account = VALID_USERS[key]
+  const account = loadDemoUsers()[key]
   if (!account || account.password !== contrasena) {
     const count = (record?.count ?? 0) + 1
     const remaining = MAX_ATTEMPTS - count

@@ -18,7 +18,7 @@ export function ConnectingModal({ open, usuario, done }: Props) {
       aria-label="Estableciendo conexión"
       className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm"
     >
-      <div className="w-full max-w-xs rounded-2xl bg-card p-6 text-center shadow-2xl ring-1 ring-border">
+      <div className="w-full max-w-xs rounded-2xl bg-card p-6 text-center shadow-xl ring-1 ring-border">
         <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-accent">
           {done ? (
             <CheckCircle2 className="size-8 text-primary" aria-hidden="true" />

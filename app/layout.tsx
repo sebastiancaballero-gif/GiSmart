@@ -42,7 +42,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${inter.variable} bg-background`}>
+    <html lang="es" className={`${inter.variable} bg-background`} suppressHydrationWarning>
+      <head>
+        {/* Aplica el tema guardado antes del primer pintado, para evitar un parpadeo. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('gismart_theme');if(t==='dark'){document.documentElement.classList.add('dark')}else if(t==='light'){document.documentElement.classList.add('light')}}catch(e){}",
+          }}
+        />
+      </head>
       <body className="font-sans antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}

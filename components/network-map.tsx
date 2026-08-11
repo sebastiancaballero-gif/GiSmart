@@ -14,14 +14,15 @@ import LineString from "ol/geom/LineString"
 import Polygon from "ol/geom/Polygon"
 import { fromLonLat, toLonLat } from "ol/proj"
 import { getLength } from "ol/sphere"
-import { Style, Fill, Stroke, Circle as CircleStyle, Text as TextStyle } from "ol/style"
+import { Style, Fill, Stroke, RegularShape, Text as TextStyle } from "ol/style"
 import Draw from "ol/interaction/Draw"
 import Modify from "ol/interaction/Modify"
 import Select from "ol/interaction/Select"
-import { click } from "ol/events/condition"
+import { click, pointerMove } from "ol/events/condition"
 import { defaults as defaultControls } from "ol/control"
 import type { Geometry } from "ol/geom"
-import { Hand, Radio, Spline, Hexagon, Trash2 } from "lucide-react"
+import { Hand, Box, Spline, Hexagon, Trash2, X, Pencil } from "lucide-react"
+import { LAYER_COLORS } from "@/lib/network-colors"
 
 type NetworkMapProps = {
   center?: [number, number]
@@ -34,28 +35,54 @@ type NetworkMapProps = {
 
 type Tool = "pan" | "node" | "fiber" | "zone" | "delete"
 
-const COLORS = {
-  node: "#0ea5e9",
-  fiber: "#2563eb",
-  zone: "#38bdf8",
+type FeatureType = "node" | "fiber" | "zone"
+
+type SelectedFeature = {
+  feature: Feature<Geometry>
+  type: FeatureType
 }
 
+const TYPE_LABELS: Record<FeatureType, string> = {
+  node: "Mufa",
+  fiber: "Fibra",
+  zone: "Zona",
+}
+
+const COLORS = LAYER_COLORS
+
+// Las mufas (cajas de empalme de fibra) se representan como un marcador
+// cuadrado con un glifo "+" (empalme), distinto del punto circular genérico,
+// para diferenciarlas de otro tipo de elementos de red a simple vista.
 function nodeStyle(feature: Feature<Geometry>) {
-  const label = (feature.get("nombre") as string) ?? "Nodo"
-  return new Style({
-    image: new CircleStyle({
-      radius: 7,
-      fill: new Fill({ color: COLORS.node }),
-      stroke: new Stroke({ color: "#ffffff", width: 2 }),
+  const label = (feature.get("nombre") as string) ?? "Mufa"
+  return [
+    new Style({
+      image: new RegularShape({
+        points: 4,
+        radius: 9,
+        angle: Math.PI / 4,
+        fill: new Fill({ color: COLORS.node }),
+        stroke: new Stroke({ color: "#ffffff", width: 2 }),
+      }),
     }),
-    text: new TextStyle({
-      text: label,
-      offsetY: -16,
-      font: "600 11px Inter, sans-serif",
-      fill: new Fill({ color: "#0f172a" }),
-      stroke: new Stroke({ color: "#ffffff", width: 3 }),
+    new Style({
+      text: new TextStyle({
+        text: "+",
+        font: "bold 12px Inter, sans-serif",
+        fill: new Fill({ color: "#ffffff" }),
+        offsetY: -1,
+      }),
     }),
-  })
+    new Style({
+      text: new TextStyle({
+        text: label,
+        offsetY: -18,
+        font: "600 11px Inter, sans-serif",
+        fill: new Fill({ color: "#0f172a" }),
+        stroke: new Stroke({ color: "#ffffff", width: 3 }),
+      }),
+    }),
+  ]
 }
 
 function fiberStyle(feature: Feature<Geometry>) {
@@ -77,10 +104,19 @@ function fiberStyle(feature: Feature<Geometry>) {
   ]
 }
 
-function zoneStyle() {
+function zoneStyle(feature: Feature<Geometry>) {
+  const label = feature.get("nombre") as string | undefined
   return new Style({
     fill: new Fill({ color: "rgba(56, 189, 248, 0.18)" }),
     stroke: new Stroke({ color: COLORS.zone, width: 2, lineDash: [6, 4] }),
+    text: label
+      ? new TextStyle({
+          text: label,
+          font: "600 12px Inter, sans-serif",
+          fill: new Fill({ color: "#0f172a" }),
+          stroke: new Stroke({ color: "#ffffff", width: 3 }),
+        })
+      : undefined,
   })
 }
 
@@ -104,10 +140,15 @@ export function NetworkMap({
   const zoneLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
+  const deleteHoverRef = useRef<Select | null>(null)
+  const panSelectRef = useRef<Select | null>(null)
+  const panModifyRef = useRef<Modify | null>(null)
 
   const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null)
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   const [tool, setTool] = useState<Tool>("pan")
+  const [selected, setSelected] = useState<SelectedFeature | null>(null)
+  const [nameDraft, setNameDraft] = useState("")
 
   const onStatsChangeRef = useRef(onStatsChange)
   onStatsChangeRef.current = onStatsChange
@@ -128,7 +169,7 @@ export function NetworkMap({
 
     const view = new View({ center: fromLonLat(center), zoom })
 
-    zoneLayer.current = new VectorLayer({ source: zoneSource, style: zoneStyle })
+    zoneLayer.current = new VectorLayer({ source: zoneSource, style: zoneStyle as never })
     fiberLayer.current = new VectorLayer({ source: fiberSource, style: fiberStyle as never })
     nodeLayer.current = new VectorLayer({ source: nodeSource, style: nodeStyle as never })
 
@@ -143,9 +184,6 @@ export function NetworkMap({
       view,
       controls: defaultControls({ attributionOptions: { collapsible: true } }),
     })
-
-    const modify = new Modify({ source: nodeSource })
-    map.addInteraction(modify)
 
     map.on("pointermove", (evt) => {
       const [lon, lat] = toLonLat(evt.coordinate)
@@ -188,10 +226,50 @@ export function NetworkMap({
       map.removeInteraction(selectRef.current)
       selectRef.current = null
     }
+    if (deleteHoverRef.current) {
+      map.removeInteraction(deleteHoverRef.current)
+      deleteHoverRef.current = null
+    }
+    if (panSelectRef.current) {
+      map.removeInteraction(panSelectRef.current)
+      panSelectRef.current = null
+    }
+    if (panModifyRef.current) {
+      map.removeInteraction(panModifyRef.current)
+      panModifyRef.current = null
+    }
+    setSelected(null)
+
+    if (tool === "pan") {
+      // En modo "Mover mapa": click para seleccionar un elemento (abre el panel
+      // de info) y arrastrar sus vértices para corregir el trazado. Se desactiva
+      // mientras se dibuja para no competir con el Draw.
+      const panSelect = new Select({ condition: click })
+      panSelect.on("select", (e) => {
+        const feature = e.selected[0]
+        if (!feature) {
+          setSelected(null)
+          return
+        }
+        const type: FeatureType = nodeSource.hasFeature(feature)
+          ? "node"
+          : fiberSource.hasFeature(feature)
+            ? "fiber"
+            : "zone"
+        setSelected({ feature, type })
+        setNameDraft((feature.get("nombre") as string) ?? "")
+      })
+      map.addInteraction(panSelect)
+      panSelectRef.current = panSelect
+
+      const panModify = new Modify({ features: panSelect.getFeatures() })
+      map.addInteraction(panModify)
+      panModifyRef.current = panModify
+    }
 
     if (tool === "node" || tool === "fiber" || tool === "zone") {
       const cfg = {
-        node: { source: nodeSource, type: "Point" as const, prefix: "Nodo" },
+        node: { source: nodeSource, type: "Point" as const, prefix: "Mufa" },
         fiber: { source: fiberSource, type: "LineString" as const, prefix: "Fibra" },
         zone: { source: zoneSource, type: "Polygon" as const, prefix: "Zona" },
       }[tool]
@@ -206,6 +284,23 @@ export function NetworkMap({
     }
 
     if (tool === "delete") {
+      // Resalta en rojo la geometría bajo el cursor antes de borrarla,
+      // para que el usuario vea qué va a eliminar antes de hacer click.
+      const hoverStyle = new Style({
+        image: new RegularShape({
+          points: 4,
+          radius: 10,
+          angle: Math.PI / 4,
+          fill: new Fill({ color: "#ef4444" }),
+          stroke: new Stroke({ color: "#ffffff", width: 2 }),
+        }),
+        fill: new Fill({ color: "rgba(239, 68, 68, 0.25)" }),
+        stroke: new Stroke({ color: "#ef4444", width: 3 }),
+      })
+      const hover = new Select({ condition: pointerMove, style: hoverStyle })
+      map.addInteraction(hover)
+      deleteHoverRef.current = hover
+
       const select = new Select({ condition: click })
       select.on("select", (e) => {
         e.selected.forEach((f) => {
@@ -214,11 +309,23 @@ export function NetworkMap({
           })
         })
         select.getFeatures().clear()
+        hover.getFeatures().clear()
       })
       map.addInteraction(select)
       selectRef.current = select
     }
   }, [tool, nodeSource, fiberSource, zoneSource])
+
+  useEffect(() => {
+    const cursors: Record<Tool, string> = {
+      pan: "grab",
+      node: "crosshair",
+      fiber: "crosshair",
+      zone: "crosshair",
+      delete: "pointer",
+    }
+    if (containerRef.current) containerRef.current.style.cursor = cursors[tool]
+  }, [tool])
 
   useEffect(() => {
     if (externalVisible) {
@@ -229,21 +336,50 @@ export function NetworkMap({
   }, [externalVisible])
 
   useEffect(() => {
-    if (typeof clearTrigger === "number") {
+    // clearTrigger nace en 0 (aún no se ha pedido limpiar) y solo sube a partir
+    // de 1 cuando el usuario pulsa "Limpiar todo". clearTrigger > 0 evita que
+    // este efecto borre los datos semilla en el primer render.
+    if (typeof clearTrigger === "number" && clearTrigger > 0) {
       nodeSource.clear()
       fiberSource.clear()
       zoneSource.clear()
+      panSelectRef.current?.getFeatures().clear()
+      setSelected(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
   const tools: { id: Tool; label: string; icon: typeof Hand; color?: string }[] = [
-    { id: "pan", label: "Mover mapa", icon: Hand },
-    { id: "node", label: "Dibujar nodo", icon: Radio, color: COLORS.node },
+    { id: "pan", label: "Mover mapa y editar vértices", icon: Hand },
+    { id: "node", label: "Dibujar mufa", icon: Box, color: COLORS.node },
     { id: "fiber", label: "Trazar fibra", icon: Spline, color: COLORS.fiber },
     { id: "zone", label: "Zona de cobertura", icon: Hexagon, color: COLORS.zone },
     { id: "delete", label: "Eliminar geometría", icon: Trash2 },
   ]
+
+  const TYPE_ICONS: Record<FeatureType, typeof Box> = { node: Box, fiber: Spline, zone: Hexagon }
+
+  function handleNameChange(value: string) {
+    setNameDraft(value)
+    selected?.feature.set("nombre", value)
+  }
+
+  function closeSelection() {
+    panSelectRef.current?.getFeatures().clear()
+    setSelected(null)
+  }
+
+  function handleDeleteSelected() {
+    if (!selected) return
+    const source = selected.type === "node" ? nodeSource : selected.type === "fiber" ? fiberSource : zoneSource
+    source.removeFeature(selected.feature)
+    closeSelection()
+  }
+
+  const selectedLength =
+    selected?.type === "fiber"
+      ? getLength(selected.feature.getGeometry() as LineString) / 1000
+      : null
 
   return (
     <div className={`relative size-full ${className ?? ""}`}>
@@ -267,9 +403,9 @@ export function NetworkMap({
               title={t.label}
               aria-label={t.label}
               aria-pressed={active}
-              className={`flex size-10 items-center justify-center rounded-lg transition ${
+              className={`flex size-10 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
                 active
-                  ? "bg-primary text-primary-foreground shadow"
+                  ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-foreground hover:bg-accent"
               }`}
             >
@@ -293,15 +429,65 @@ export function NetworkMap({
           Zoom: <span className="tabular-nums text-primary">{zoomLevel}</span>
         </span>
       </div>
+
+      {/* Panel de información del elemento seleccionado */}
+      {selected && (
+        <div className="absolute right-3 top-20 z-20 w-64 rounded-xl bg-card/95 p-3 shadow-lg ring-1 ring-border backdrop-blur">
+          <div className="mb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {(() => {
+                const Icon = TYPE_ICONS[selected.type]
+                return <Icon className="size-3.5" style={{ color: COLORS[selected.type] }} />
+              })()}
+              {TYPE_LABELS[selected.type]}
+            </div>
+            <button
+              type="button"
+              onClick={closeSelection}
+              className="rounded-md p-1 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label="Cerrar panel"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+
+          <label htmlFor="feature-nombre" className="mb-1 flex items-center gap-1 text-xs font-medium text-foreground">
+            <Pencil className="size-3" />
+            Nombre
+          </label>
+          <input
+            id="feature-nombre"
+            type="text"
+            value={nameDraft}
+            onChange={(e) => handleNameChange(e.target.value)}
+            className="w-full rounded-lg border border-input bg-card px-2.5 py-1.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
+          />
+
+          {selectedLength !== null && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Longitud: <span className="font-semibold tabular-nums text-primary">{selectedLength.toFixed(2)} km</span>
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleDeleteSelected}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 py-1.5 text-xs font-semibold text-destructive outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Trash2 className="size-3.5" />
+            Eliminar
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
 function seedExamples(nodeSource: VectorSource, fiberSource: VectorSource, zoneSource: VectorSource) {
   const nodes: [number, number, string][] = [
-    [-76.532, 3.4516, "Central Cali"],
-    [-76.545, 3.44, "Nodo Sur"],
-    [-76.52, 3.46, "Nodo Norte"],
+    [-76.532, 3.4516, "Mufa Central"],
+    [-76.545, 3.44, "Mufa Sur"],
+    [-76.52, 3.46, "Mufa Norte"],
   ]
   nodes.forEach(([lon, lat, nombre]) => {
     const f = new Feature({ geometry: new Point(fromLonLat([lon, lat])) })

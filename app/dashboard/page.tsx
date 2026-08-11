@@ -6,6 +6,7 @@ import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { NetworkMap } from "@/components/network-map"
 import { AuthGuard } from "@/components/auth-guard"
+import { LAYER_COLORS } from "@/lib/network-colors"
 
 export default function DashboardPage() {
   const [visible, setVisible] = useState({ nodes: true, fibers: true, zones: true })
@@ -39,9 +40,9 @@ export default function DashboardPage() {
   }, [])
 
   const layers = [
-    { id: "nodes", label: "Nodos", color: "#0ea5e9", count: counts.nodes, visible: visible.nodes },
-    { id: "fibers", label: "Tendido de fibra", color: "#2563eb", count: counts.fibers, visible: visible.fibers },
-    { id: "zones", label: "Zonas", color: "#38bdf8", count: counts.zones, visible: visible.zones },
+    { id: "nodes", label: "Mufas", color: LAYER_COLORS.node, count: counts.nodes, visible: visible.nodes },
+    { id: "fibers", label: "Tendido de fibra", color: LAYER_COLORS.fiber, count: counts.fibers, visible: visible.fibers },
+    { id: "zones", label: "Zonas", color: LAYER_COLORS.zone, count: counts.zones, visible: visible.zones },
   ]
 
   return (
@@ -58,7 +59,7 @@ export default function DashboardPage() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           />
-          <main className="relative flex-1 overflow-hidden">
+          <main id="map-panel" className="relative flex-1 overflow-hidden">
             <NetworkMap
               visible={visible}
               onStatsChange={handleStatsChange}
