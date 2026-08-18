@@ -21,8 +21,10 @@ import Select from "ol/interaction/Select"
 import { click, pointerMove } from "ol/events/condition"
 import { defaults as defaultControls } from "ol/control"
 import type { Geometry } from "ol/geom"
-import { Hand, Box, Spline, Hexagon, Trash2, X, Pencil } from "lucide-react"
+import { Hand, Box, Spline, Hexagon, Trash2, X, Pencil, Waypoints, Network } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
+import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
+import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 
 type NetworkMapProps = {
   center?: [number, number]
@@ -33,7 +35,7 @@ type NetworkMapProps = {
   clearTrigger?: number
 }
 
-type Tool = "pan" | "node" | "fiber" | "zone" | "delete"
+type Tool = "pan" | "edit" | "node" | "fiber" | "zone" | "delete"
 
 type FeatureType = "node" | "fiber" | "zone"
 
@@ -141,14 +143,15 @@ export function NetworkMap({
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
   const deleteHoverRef = useRef<Select | null>(null)
-  const panSelectRef = useRef<Select | null>(null)
-  const panModifyRef = useRef<Modify | null>(null)
+  const editSelectRef = useRef<Select | null>(null)
+  const editModifyRef = useRef<Modify | null>(null)
 
   const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null)
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   const [tool, setTool] = useState<Tool>("pan")
   const [selected, setSelected] = useState<SelectedFeature | null>(null)
   const [nameDraft, setNameDraft] = useState("")
+  const [schemaOpen, setSchemaOpen] = useState(false)
 
   const onStatsChangeRef = useRef(onStatsChange)
   onStatsChangeRef.current = onStatsChange
@@ -230,22 +233,23 @@ export function NetworkMap({
       map.removeInteraction(deleteHoverRef.current)
       deleteHoverRef.current = null
     }
-    if (panSelectRef.current) {
-      map.removeInteraction(panSelectRef.current)
-      panSelectRef.current = null
+    if (editSelectRef.current) {
+      map.removeInteraction(editSelectRef.current)
+      editSelectRef.current = null
     }
-    if (panModifyRef.current) {
-      map.removeInteraction(panModifyRef.current)
-      panModifyRef.current = null
+    if (editModifyRef.current) {
+      map.removeInteraction(editModifyRef.current)
+      editModifyRef.current = null
     }
     setSelected(null)
+    setSchemaOpen(false)
 
-    if (tool === "pan") {
-      // En modo "Mover mapa": click para seleccionar un elemento (abre el panel
-      // de info) y arrastrar sus vértices para corregir el trazado. Se desactiva
-      // mientras se dibuja para no competir con el Draw.
-      const panSelect = new Select({ condition: click })
-      panSelect.on("select", (e) => {
+    if (tool === "edit") {
+      // En modo "Editar": click para seleccionar un elemento (abre el panel
+      // de info) y arrastrar sus vértices para corregir el trazado. "Mover mapa"
+      // queda libre solo para desplazarse, sin interceptar clicks.
+      const editSelect = new Select({ condition: click })
+      editSelect.on("select", (e) => {
         const feature = e.selected[0]
         if (!feature) {
           setSelected(null)
@@ -259,12 +263,12 @@ export function NetworkMap({
         setSelected({ feature, type })
         setNameDraft((feature.get("nombre") as string) ?? "")
       })
-      map.addInteraction(panSelect)
-      panSelectRef.current = panSelect
+      map.addInteraction(editSelect)
+      editSelectRef.current = editSelect
 
-      const panModify = new Modify({ features: panSelect.getFeatures() })
-      map.addInteraction(panModify)
-      panModifyRef.current = panModify
+      const editModify = new Modify({ features: editSelect.getFeatures() })
+      map.addInteraction(editModify)
+      editModifyRef.current = editModify
     }
 
     if (tool === "node" || tool === "fiber" || tool === "zone") {
@@ -278,6 +282,11 @@ export function NetworkMap({
       draw.on("drawend", (e) => {
         const count = cfg.source.getFeatures().length + 1
         e.feature.set("nombre", `${cfg.prefix} ${count}`)
+        // Cada mufa lleva su propio esquema de empalme (cables/hilos/bandejas).
+        // Por ahora se siembra con el ejemplo hasta que haya un backend real.
+        if (tool === "node") {
+          e.feature.set("esquema", { ...MUFA_SCHEMA_EXAMPLE })
+        }
       })
       map.addInteraction(draw)
       drawRef.current = draw
@@ -319,6 +328,7 @@ export function NetworkMap({
   useEffect(() => {
     const cursors: Record<Tool, string> = {
       pan: "grab",
+      edit: "pointer",
       node: "crosshair",
       fiber: "crosshair",
       zone: "crosshair",
@@ -343,14 +353,16 @@ export function NetworkMap({
       nodeSource.clear()
       fiberSource.clear()
       zoneSource.clear()
-      panSelectRef.current?.getFeatures().clear()
+      editSelectRef.current?.getFeatures().clear()
       setSelected(null)
+      setSchemaOpen(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
   const tools: { id: Tool; label: string; icon: typeof Hand; color?: string }[] = [
-    { id: "pan", label: "Mover mapa y editar vértices", icon: Hand },
+    { id: "pan", label: "Mover mapa", icon: Hand },
+    { id: "edit", label: "Editar elementos", icon: Pencil },
     { id: "node", label: "Dibujar mufa", icon: Box, color: COLORS.node },
     { id: "fiber", label: "Trazar fibra", icon: Spline, color: COLORS.fiber },
     { id: "zone", label: "Zona de cobertura", icon: Hexagon, color: COLORS.zone },
@@ -365,8 +377,9 @@ export function NetworkMap({
   }
 
   function closeSelection() {
-    panSelectRef.current?.getFeatures().clear()
+    editSelectRef.current?.getFeatures().clear()
     setSelected(null)
+    setSchemaOpen(false)
   }
 
   function handleDeleteSelected() {
@@ -469,15 +482,45 @@ export function NetworkMap({
             </p>
           )}
 
+          {selected.type === "node" && (
+            <button
+              type="button"
+              onClick={() => setSchemaOpen(true)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-1.5 text-xs font-semibold text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <Waypoints className="size-3.5" />
+              Gestionar esquema
+            </button>
+          )}
+
+          {selected.type === "node" && (
+            <button
+              type="button"
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <Network className="size-3.5" />
+              Ver conexiones
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleDeleteSelected}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 py-1.5 text-xs font-semibold text-destructive outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 py-1.5 text-xs font-semibold text-destructive outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <Trash2 className="size-3.5" />
             Eliminar
           </button>
         </div>
+      )}
+
+      {selected?.type === "node" && (
+        <MufaSchemaDialog
+          open={schemaOpen}
+          onOpenChange={setSchemaOpen}
+          mufaName={nameDraft || "Mufa"}
+          schema={selected.feature.get("esquema") ?? MUFA_SCHEMA_EXAMPLE}
+        />
       )}
     </div>
   )
@@ -492,6 +535,7 @@ function seedExamples(nodeSource: VectorSource, fiberSource: VectorSource, zoneS
   nodes.forEach(([lon, lat, nombre]) => {
     const f = new Feature({ geometry: new Point(fromLonLat([lon, lat])) })
     f.set("nombre", nombre)
+    f.set("esquema", { ...MUFA_SCHEMA_EXAMPLE })
     nodeSource.addFeature(f)
   })
 
