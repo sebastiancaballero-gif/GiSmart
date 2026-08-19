@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import "ol/ol.css"
 import Map from "ol/Map"
 import View from "ol/View"
@@ -25,6 +26,8 @@ import { Hand, Box, Spline, Hexagon, Trash2, X, Pencil, Waypoints, Network } fro
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
+import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
+import { setSelectedMufaSchema } from "@/lib/schematic/selected-mufa"
 
 type NetworkMapProps = {
   center?: [number, number]
@@ -130,6 +133,7 @@ export function NetworkMap({
   onStatsChange,
   clearTrigger,
 }: NetworkMapProps) {
+  const router = useRouter()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
 
@@ -389,6 +393,13 @@ export function NetworkMap({
     closeSelection()
   }
 
+  function handleViewConnections() {
+    if (!selected || selected.type !== "node") return
+    const schema = (selected.feature.get("esquema") as MufaCampoJSON | undefined) ?? MUFA_SCHEMA_EXAMPLE
+    setSelectedMufaSchema(schema)
+    router.push("/dashboard/mufa")
+  }
+
   const selectedLength =
     selected?.type === "fiber"
       ? getLength(selected.feature.getGeometry() as LineString) / 1000
@@ -496,6 +507,7 @@ export function NetworkMap({
           {selected.type === "node" && (
             <button
               type="button"
+              onClick={handleViewConnections}
               className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Network className="size-3.5" />

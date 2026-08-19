@@ -1,27 +1,45 @@
 "use client"
 
 import { useState } from "react"
-import { Search, LogOut, MapPin } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, Search, LogOut, MapPin } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 
 export function DashboardHeader({
   title = "Mapa de Red · Despliegue de Fibra",
   subtitle = "Valle del Cauca, Colombia",
+  backHref,
 }: {
   title?: string
   subtitle?: string
+  /** Si se pasa, muestra un botón para volver a esa ruta (p. ej. "/dashboard"). */
+  backHref?: string
 }) {
+  const router = useRouter()
   const [logoutOpen, setLogoutOpen] = useState(false)
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-      <div>
-        <h1 className="text-base font-bold text-foreground">{title}</h1>
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <MapPin className="size-3" />
-          {subtitle}
-        </p>
+      <div className="flex items-center gap-3">
+        {backHref && (
+          <button
+            type="button"
+            onClick={() => router.push(backHref)}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm font-medium text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label="Volver al mapa"
+          >
+            <ArrowLeft className="size-4" />
+            <span className="hidden sm:inline">Volver al mapa</span>
+          </button>
+        )}
+        <div>
+          <h1 className="text-base font-bold text-foreground">{title}</h1>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="size-3" />
+            {subtitle}
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
