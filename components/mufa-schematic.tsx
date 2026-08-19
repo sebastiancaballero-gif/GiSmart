@@ -81,6 +81,13 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
     const container = containerRef.current
     if (!container) return
 
+    // El lienzo de JointJS se dibuja en <canvas>/SVG, así que no puede resolver
+    // clases de Tailwind: se leen los tokens de tema actuales (oklch(...) ya
+    // resuelto) para que el fondo y la grilla respeten el modo claro/oscuro.
+    const tema = getComputedStyle(document.documentElement)
+    const fondoLienzo = tema.getPropertyValue("--card").trim() || "#f8fafc"
+    const colorGrilla = tema.getPropertyValue("--border").trim() || "#dbe3ec"
+
     const graph = new dia.Graph({}, { cellNamespace: cellNamespaceCampo })
     const paper = new dia.Paper({
       model: graph,
@@ -88,8 +95,8 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
       width: "100%",
       height: "100%",
       gridSize: 10,
-      drawGrid: { name: "dot", args: { color: "#dbe3ec", thickness: 1 } },
-      background: { color: "#f8fafc" },
+      drawGrid: { name: "dot", args: { color: colorGrilla, thickness: 1 } },
+      background: { color: fondoLienzo },
       async: true,
       sorting: dia.Paper.sorting.APPROX,
       // Solo lectura: no se crean empalmes desde la interfaz.
