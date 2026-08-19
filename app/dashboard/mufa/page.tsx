@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react"
 
 import { AuthGuard } from "@/components/auth-guard"
 import { DashboardHeader } from "@/components/dashboard-header"
-import { MUFA_MOCKUP } from "@/lib/schematic/mufa-mockup"
+import { MUFA_CAMPO_MOCKUP } from "@/lib/schematic/mufa-field-mockup"
 
 // JointJS depende del DOM al cargarse, por lo que el esquema se importa sólo
 // en el cliente.
@@ -30,11 +30,10 @@ export default function MufaPage() {
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
         <DashboardHeader
           title="Manejo Esquemático · Conectividad Interna"
-          subtitle="MUFA-001 · Caja de empalme de fibra óptica"
+          subtitle={`MUFA-${MUFA_CAMPO_MOCKUP.mufa_id} · ${MUFA_CAMPO_MOCKUP.tipo} · ${MUFA_CAMPO_MOCKUP.estado}`}
         />
         <main className="flex-1 overflow-hidden">
-          {/* Sin `datos` el componente dibuja el mockup de prueba. */}
-          <MufaSchematic datos={MUFA_MOCKUP} />
+          <MufaSchematic datos={MUFA_CAMPO_MOCKUP} />
         </main>
       </div>
     </AuthGuard>

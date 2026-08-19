@@ -1,66 +1,58 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { dia, linkTools } from "@joint/core"
+import { dia } from "@joint/core"
 import {
   AlertTriangle,
-  FileJson,
-  Link2Off,
   Maximize2,
-  RotateCcw,
-  Wand2,
+  Route,
+  Spline,
   ZoomIn,
   ZoomOut,
 } from "lucide-react"
 
-import { parsearMufa, type MufaJSON } from "@/lib/schematic/mufa-data"
-import { MUFA_MOCKUP } from "@/lib/schematic/mufa-mockup"
 import {
-  cargarEscenario,
-  cellNamespace,
-  crearEnlacePorDefecto,
-  crearValidadorDeConexion,
-  crearValidadorDeMagnet,
-  empalmarEnOrden,
-  exportarEmpalmes,
-  listarEmpalmes,
-  normalizarEmpalme,
-  resaltarEmpalme,
-  type RegistroEmpalme,
-} from "@/lib/schematic/mufa-graph"
+  parsearMufaCampo,
+  type MufaCampoJSON,
+} from "@/lib/schematic/mufa-field-data"
+import { MUFA_CAMPO_MOCKUP } from "@/lib/schematic/mufa-field-mockup"
+import {
+  aplicarEnrutamiento,
+  cargarEscenarioCampo,
+  cellNamespaceCampo,
+  listarEmpalmesCampo,
+  resaltarEmpalmeCampo,
+  type ModoEnrutamiento,
+  type RegistroEmpalmeCampo,
+} from "@/lib/schematic/mufa-field-graph"
 
 type MufaSchematicProps = {
-  /** Escenario a dibujar. Por defecto se usa el mockup de prueba. */
-  datos?: MufaJSON
+  /** JSON de campo de la MUFA. Por defecto se usa el mockup de `JsonMufa.txt`. */
+  datos?: MufaCampoJSON
   className?: string
 }
 
 const LIMITES_ZOOM = { min: 0.35, max: 2.2, paso: 0.15 }
 
 /**
- * Vista de conectividad interna de una mufa. La cantidad de cables, buffers e
- * hilos proviene íntegramente del JSON: la interfaz sólo permite trazar y
- * borrar empalmes, no alterar la estructura.
+ * Vista de conectividad interna de una MUFA alimentada por el JSON de campo:
+ * cables a los lados, bandejas instaladas al centro y empalmes de solo lectura.
  */
-export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicProps) {
+export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSchematicProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<dia.Graph | null>(null)
   const paperRef = useRef<dia.Paper | null>(null)
 
-  const [empalmes, setEmpalmes] = useState<RegistroEmpalme[]>([])
+  const [modoEnrutamiento, setModoEnrutamiento] = useState<ModoEnrutamiento>("ortogonal")
   const [zoom, setZoom] = useState(1)
 
-  // Separación de responsabilidades: aquí sólo se parsea el JSON; el dibujo
-  // ocurre en los efectos de abajo.
-  const mufa = useMemo(() => parsearMufa(datos), [datos])
+  const mufa = useMemo(() => parsearMufaCampo(datos), [datos])
+  const empalmes = useMemo(() => listarEmpalmesCampo(mufa), [mufa])
 
-  const totales = useMemo(
-    () => ({
-      entrada: mufa.entradas.reduce((suma, cable) => suma + cable.totalHilos, 0),
-      salida: mufa.salidas.reduce((suma, cable) => suma + cable.totalHilos, 0),
-    }),
-    [mufa],
-  )
+  const modoRef = useRef(modoEnrutamiento)
+  useEffect(() => {
+    modoRef.current = modoEnrutamiento
+  }, [modoEnrutamiento])
 
   const ajustarVista = useCallback(() => {
     const paper = paperRef.current
@@ -69,7 +61,7 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
       padding: 28,
       useModelGeometry: true,
       minScale: LIMITES_ZOOM.min,
-      maxScale: 1.4,
+      maxScale: 1.35,
       verticalAlign: "middle",
       horizontalAlign: "middle",
     })
@@ -84,18 +76,15 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
     setZoom(acotado)
   }, [])
 
-  // Creación del Graph y el Paper. Se ejecuta una única vez.
+  // Creación del Graph y el Paper (una sola vez).
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const graph = new dia.Graph({}, { cellNamespace })
-    // El Paper crea su propio elemento y se inserta dentro del contenedor de
-    // React: `paper.remove()` borra el nodo que le pertenece, así que pasarle
-    // el div de React lo destruiría al desmontar el efecto.
+    const graph = new dia.Graph({}, { cellNamespace: cellNamespaceCampo })
     const paper = new dia.Paper({
       model: graph,
-      cellViewNamespace: cellNamespace,
+      cellViewNamespace: cellNamespaceCampo,
       width: "100%",
       height: "100%",
       gridSize: 10,
@@ -103,68 +92,29 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
       background: { color: "#f8fafc" },
       async: true,
       sorting: dia.Paper.sorting.APPROX,
-      // Conectividad: sólo de hilo a hilo, sin extremos sueltos.
-      defaultLink: crearEnlacePorDefecto(),
-      // Aunque el ancla del enlace es el hilo (que está dentro del cable), el
-      // trazo visible se recorta en el borde del cuerpo. Así la punta de flecha
-      // queda a la vista y la línea no tapa los números de los hilos.
+      // Solo lectura: no se crean empalmes desde la interfaz.
+      defaultLink: () => new dia.Link(),
       defaultConnectionPoint: { name: "boundary", args: { selector: "body" } },
-      validateMagnet: crearValidadorDeMagnet(graph),
-      validateConnection: crearValidadorDeConexion(graph),
+      validateMagnet: () => false,
+      validateConnection: () => false,
       linkPinning: false,
-      multiLinks: false,
-      // El radio debe quedar por debajo de la mitad de la separación entre
-      // hilos para que el empalme no salte al hilo vecino.
-      snapLinks: { radius: 8 },
-      markAvailable: true,
-      // Los cables siguen la disposición calculada por `calcularPosiciones`, así
-      // que no se arrastran: además, al bloquear un hilo ocupado JointJS
-      // reinterpretaría el arrastre como movimiento del cable.
+      multiLinks: true,
       interactive: { elementMove: false, linkMove: false, labelMove: false },
-      // JointJS v4 no trae hoja de estilos, así que el resaltado de los hilos
-      // disponibles se define aquí.
       highlighting: {
-        magnetAvailability: {
-          name: "stroke",
-          options: {
-            padding: 3,
-            attrs: { stroke: "#16a34a", strokeWidth: 2 },
-          },
-        },
+        magnetAvailability: false,
         elementAvailability: false,
       },
     })
 
     container.appendChild(paper.el)
-    // Recalcula las dimensiones ahora que el lienzo ya está en el documento.
     paper.setDimensions("100%", "100%")
 
     graphRef.current = graph
     paperRef.current = paper
 
-    const refrescarEmpalmes = () => setEmpalmes(listarEmpalmes(graph))
-    graph.on("add remove change:source change:target", refrescarEmpalmes)
+    paper.on("link:mouseenter", (linkView) => resaltarEmpalmeCampo(linkView, true))
+    paper.on("link:mouseleave", (linkView) => resaltarEmpalmeCampo(linkView, false))
 
-    // Al pasar el puntero: se resalta la línea para seguir su recorrido y
-    // aparece el botón para deshacer el empalme.
-    paper.on("link:mouseenter", (linkView) => {
-      resaltarEmpalme(linkView, true)
-      linkView.addTools(
-        new dia.ToolsView({
-          tools: [new linkTools.Remove({ distance: "50%" })],
-        }),
-      )
-    })
-    paper.on("link:mouseleave", (linkView) => {
-      resaltarEmpalme(linkView, false)
-      linkView.removeTools()
-    })
-
-    // La flecha debe apuntar siempre al hilo de salida, sin importar en qué
-    // sentido haya arrastrado el usuario.
-    paper.on("link:connect", (linkView) => normalizarEmpalme(graph, linkView.model))
-
-    // Paneo arrastrando el fondo del lienzo.
     let paneo: { clientX: number; clientY: number; tx: number; ty: number } | null = null
 
     paper.on("blank:pointerdown", (evt) => {
@@ -188,7 +138,6 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
     window.addEventListener("pointermove", moverPaneo)
     window.addEventListener("pointerup", terminarPaneo)
 
-    // Zoom con la rueda manteniendo Ctrl.
     const alGirarRueda = (evt: WheelEvent) => {
       if (!evt.ctrlKey) return
       evt.preventDefault()
@@ -213,13 +162,11 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
     }
   }, [])
 
-  // Dibuja el escenario que describe el JSON. Se repite sólo si llegan datos
-  // distintos, así que los empalmes que traza el usuario no se pierden.
+  // Dibuja el escenario cuando llegan datos nuevos.
   const dibujarEscenario = useCallback(() => {
     const graph = graphRef.current
     if (!graph) return
-    cargarEscenario(graph, mufa)
-    setEmpalmes(listarEmpalmes(graph))
+    cargarEscenarioCampo(graph, mufa, modoRef.current)
     ajustarVista()
   }, [mufa, ajustarVista])
 
@@ -227,71 +174,61 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
     dibujarEscenario()
   }, [dibujarEscenario])
 
-  const alEmpalmarEnOrden = useCallback(() => {
-    const graph = graphRef.current
-    if (graph) empalmarEnOrden(graph, mufa)
-  }, [mufa])
-
-  const alQuitarEmpalmes = useCallback(() => {
-    const graph = graphRef.current
-    if (graph) graph.removeCells(graph.getLinks())
-  }, [])
-
-  // Botón temporal de diagnóstico: imprime en consola el JSON de los empalmes.
-  const alExportar = useCallback(() => {
+  // Al cambiar el modo, se actualizan al instante todos los enlaces del grafo.
+  useEffect(() => {
     const graph = graphRef.current
     if (!graph) return
-    const exportacion = exportarEmpalmes(graph, mufa)
-    console.log("[GiSmart] Empalmes de la mufa:", exportacion)
-    console.log(JSON.stringify(exportacion, null, 2))
-  }, [mufa])
+    aplicarEnrutamiento(graph, modoEnrutamiento)
+  }, [modoEnrutamiento])
 
-  const acciones = [
-    { id: "auto", label: "Empalmar hilos en orden", icono: Wand2, onClick: alEmpalmarEnOrden },
-    { id: "limpiar", label: "Quitar todos los empalmes", icono: Link2Off, onClick: alQuitarEmpalmes },
-    {
-      id: "recargar",
-      label: "Restaurar el escenario del JSON",
-      icono: RotateCcw,
-      onClick: dibujarEscenario,
-    },
-    {
-      id: "exportar",
-      label: "Exportar empalmes a la consola",
-      icono: FileJson,
-      onClick: alExportar,
-    },
-  ]
+  const alAlternarEnrutamiento = useCallback(() => {
+    setModoEnrutamiento((actual) => (actual === "ortogonal" ? "curvo" : "ortogonal"))
+  }, [])
+
+  const ortogonal = modoEnrutamiento === "ortogonal"
+  const IconoRuta = ortogonal ? Route : Spline
 
   return (
     <div className={`flex size-full flex-col overflow-hidden bg-background ${className ?? ""}`}>
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
         <div className="mr-auto">
           <h2 className="text-sm font-semibold text-foreground">
-            Conectividad interna · {mufa.nombre}
+            Conectividad interna · {mufa.id}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {mufa.cables.length} cables · {totales.entrada} hilos de entrada · {totales.salida}{" "}
-            hilos de salida · {empalmes.length} empalmes
+            {mufa.tipo} · {mufa.estado} · {mufa.cables.length} cables · {empalmes.length}{" "}
+            empalmes
           </p>
         </div>
 
+        <div
+          className="rounded-lg bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-800 ring-1 ring-orange-500/30 dark:text-orange-200"
+          role="status"
+          aria-live="polite"
+        >
+          Bandejas activas: {mufa.bandejasInstaladas} de {mufa.capacidadBandejas}
+        </div>
+
         <div className="flex items-center gap-1 rounded-lg bg-card p-1 ring-1 ring-border">
-          {acciones.map((accion) => {
-            const Icono = accion.icono
-            return (
-              <button
-                key={accion.id}
-                type="button"
-                onClick={accion.onClick}
-                title={accion.label}
-                aria-label={accion.label}
-                className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
-              >
-                <Icono className="size-4" />
-              </button>
-            )
-          })}
+          <button
+            type="button"
+            onClick={alAlternarEnrutamiento}
+            title={
+              ortogonal
+                ? "Cambiar a enrutamiento curvo"
+                : "Cambiar a enrutamiento ortogonal"
+            }
+            aria-label={
+              ortogonal
+                ? "Cambiar a enrutamiento curvo"
+                : "Cambiar a enrutamiento ortogonal"
+            }
+            aria-pressed={ortogonal}
+            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground transition hover:bg-accent"
+          >
+            <IconoRuta className="size-4" />
+            {ortogonal ? "Ortogonal" : "Curvo"}
+          </button>
         </div>
 
         <div className="flex items-center gap-1 rounded-lg bg-card p-1 ring-1 ring-border">
@@ -335,14 +272,15 @@ export function MufaSchematic({ datos = MUFA_MOCKUP, className }: MufaSchematicP
           ref={containerRef}
           className="relative flex-1 overflow-hidden"
           role="application"
-          aria-label="Esquema de empalmes de la mufa"
+          aria-label={`Esquema de empalmes de ${mufa.id}`}
         />
         <ListaEmpalmes empalmes={empalmes} />
       </div>
 
       <footer className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-        Arrastre desde un hilo del cable de entrada hasta un hilo de un cable de salida para crear
-        el empalme. Ctrl + rueda para acercar, arrastre el fondo para desplazarse.
+        Vista de solo lectura cargada desde el JSON de campo. Use el botón Ortogonal/Curvo para
+        cambiar el dibujo de los empalmes. Ctrl + rueda para acercar, arrastre el fondo para
+        desplazarse.
       </footer>
     </div>
   )
@@ -361,33 +299,42 @@ function AvisosDatos({ avisos }: { avisos: string[] }) {
   )
 }
 
-function ListaEmpalmes({ empalmes }: { empalmes: RegistroEmpalme[] }) {
+function ListaEmpalmes({ empalmes }: { empalmes: RegistroEmpalmeCampo[] }) {
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-card">
+    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-card">
       <h3 className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Empalmes ({empalmes.length})
       </h3>
 
       {empalmes.length === 0 ? (
         <p className="px-3 py-4 text-xs text-muted-foreground">
-          Aún no hay empalmes registrados.
+          No hay empalmes documentados en las bandejas instaladas.
         </p>
       ) : (
         <ul className="flex-1 divide-y divide-border overflow-y-auto">
           {empalmes.map((empalme) => (
-            <li key={empalme.linkId} className="flex items-center gap-2 px-3 py-2 text-xs">
-              <InsigniaHilo
-                hex={empalme.entrada.color.hex}
-                etiqueta={`B${empalme.entrada.buffer}·H${empalme.entrada.hilo}`}
-              />
-              <span className="text-muted-foreground">→</span>
-              <InsigniaHilo
-                hex={empalme.salida.color.hex}
-                etiqueta={`B${empalme.salida.buffer}·H${empalme.salida.hilo}`}
-              />
-              <span className="ml-auto truncate text-[11px] text-muted-foreground">
-                {empalme.salida.cableEtiqueta}
-              </span>
+            <li
+              key={`${empalme.bandejaId}-${empalme.slot}`}
+              className="px-3 py-2 text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <InsigniaHilo
+                  hex={empalme.origen.color.hex}
+                  etiqueta={`H${empalme.origen.numero}`}
+                />
+                <span className="text-muted-foreground">→</span>
+                <InsigniaHilo
+                  hex={empalme.destino.color.hex}
+                  etiqueta={`H${empalme.destino.numero}`}
+                />
+              </div>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                Bandeja {empalme.numeroBandeja} · Slot {empalme.slot} · {empalme.tipoEmpalme} ·{" "}
+                {empalme.atenuacion} dB
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {empalme.origen.cableCodigo} → {empalme.destino.cableCodigo}
+              </p>
             </li>
           ))}
         </ul>

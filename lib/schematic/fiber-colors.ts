@@ -1,5 +1,5 @@
 /**
- * Código de colores TIA-598-D, usado para identificar buffers e hilos
+ * Código de colores ITU-T / TIA-598-D, usado para identificar buffers e hilos
  * dentro de un cable de fibra óptica.
  */
 
@@ -62,9 +62,17 @@ const COLOR_ALIASES: Record<string, string> = {
 
 /**
  * Resuelve el nombre de color que viene en el JSON. Devuelve `undefined` si no
- * pertenece al código TIA-598-D, para que la capa de parseo pueda avisarlo.
+ * pertenece al código ITU-T / TIA-598-D, para que la capa de parseo pueda avisarlo.
  */
 export function fiberColorByName(name: string): FiberColor | undefined {
   const key = normalizeColorName(name)
   return COLORS_BY_NAME.get(key) ?? COLORS_BY_NAME.get(COLOR_ALIASES[key] ?? "")
+}
+
+/**
+ * Devuelve el HEX ITU-T correspondiente al nombre de color. Si el nombre no se
+ * reconoce, usa el color por posición (1 = Azul) para no dejar el hilo sin pintar.
+ */
+export function getColorITU(colorName: string, posicion = 1): string {
+  return fiberColorByName(colorName)?.hex ?? fiberColor(posicion).hex
 }
