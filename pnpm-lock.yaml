@@ -11,6 +11,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.5.0
         version: 1.5.0(@date-fns/tz@1.4.1)(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@joint/core':
+        specifier: ^4.3.1
+        version: 4.3.1
       '@vercel/analytics':
         specifier: ^1.6.1
         version: 1.6.1(next@16.2.6(@babel/core@7.29.7(supports-color@7.2.0))(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
@@ -539,6 +542,9 @@ packages:
     peerDependenciesMeta:
       '@types/node':
         optional: true
+
+  '@joint/core@4.3.1':
+    resolution: {integrity: sha512-ikJchpM0Ux9v7CmcR7VQhu2YGS97xrZKjF+rN8nL5XE8ZYf+pSW4Zb0J0+/1AGEvjESN2ppwcJVyxVMbyJ+2XQ==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3654,6 +3660,8 @@ snapshots:
   '@inquirer/type@4.0.7(@types/node@24.10.4)':
     optionalDependencies:
       '@types/node': 24.10.4
+
+  '@joint/core@4.3.1': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
