@@ -8,7 +8,6 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 export const metadata: Metadata = {
   title: 'GiSmart — Conexión al servidor',
   description: 'Sistema de Información Geográfica · GiSmart Redes de Telecomunicaciones',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
