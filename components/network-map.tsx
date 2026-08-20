@@ -9,6 +9,7 @@ import TileLayer from "ol/layer/Tile"
 import OSM from "ol/source/OSM"
 import VectorLayer from "ol/layer/Vector"
 import VectorSource from "ol/source/Vector"
+import GeoJSON from "ol/format/GeoJSON"
 import Feature from "ol/Feature"
 import Point from "ol/geom/Point"
 import LineString from "ol/geom/LineString"
@@ -156,6 +157,7 @@ export function NetworkMap({
   const [selected, setSelected] = useState<SelectedFeature | null>(null)
   const [nameDraft, setNameDraft] = useState("")
   const [schemaOpen, setSchemaOpen] = useState(false)
+  const [fiberLoadError, setFiberLoadError] = useState<string | null>(null)
 
   const onStatsChangeRef = useRef(onStatsChange)
   onStatsChangeRef.current = onStatsChange
@@ -205,6 +207,9 @@ export function NetworkMap({
     fiberSource.clear()
     zoneSource.clear()
     seedExamples(nodeSource, fiberSource, zoneSource)
+    loadRealFiberCables(fiberSource).then((error) => {
+      if (error) setFiberLoadError(error)
+    })
 
     ;[nodeSource, fiberSource, zoneSource].forEach((s) => {
       s.on("addfeature", recalc)
@@ -414,6 +419,21 @@ export function NetworkMap({
         aria-label="Mapa interactivo de la red de fibra"
       />
 
+      {/* Aviso si no se pudo cargar el tendido de fibra real */}
+      {fiberLoadError && (
+        <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive shadow-md ring-1 ring-destructive/30 backdrop-blur">
+          <span>{fiberLoadError}</span>
+          <button
+            type="button"
+            onClick={() => setFiberLoadError(null)}
+            className="rounded p-0.5 outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label="Cerrar aviso"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Herramientas de dibujo (izquierda) */}
       <div className="absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-xl bg-card/95 p-1.5 shadow-lg ring-1 ring-border backdrop-blur">
         {tools.map((t) => {
@@ -538,6 +558,33 @@ export function NetworkMap({
   )
 }
 
+// Carga el tendido de fibra real desde pg_featureserv (vía /api/fiber-cables,
+// que evita CORS/contenido mixto haciendo la llamada en el servidor).
+// Devuelve un mensaje de error si algo falla, o null si todo salió bien.
+async function loadRealFiberCables(fiberSource: VectorSource): Promise<string | null> {
+  try {
+    const res = await fetch("/api/fiber-cables")
+    const data = await res.json()
+    if (!res.ok) {
+      return (data?.message as string) ?? "No se pudo cargar el tendido de fibra real."
+    }
+
+    const features = new GeoJSON().readFeatures(data, {
+      dataProjection: "EPSG:4326",
+      featureProjection: "EPSG:3857",
+    })
+    features.forEach((f) => {
+      if (!f.get("nombre")) {
+        f.set("nombre", (f.get("name") as string) || (f.get("code") as string) || "Fibra")
+      }
+    })
+    fiberSource.addFeatures(features)
+    return null
+  } catch {
+    return "No se pudo conectar con el servidor de cables de fibra."
+  }
+}
+
 function seedExamples(nodeSource: VectorSource, fiberSource: VectorSource, zoneSource: VectorSource) {
   const nodes: [number, number, string][] = [
     [-76.532, 3.4516, "Mufa Central"],
@@ -551,17 +598,8 @@ function seedExamples(nodeSource: VectorSource, fiberSource: VectorSource, zoneS
     nodeSource.addFeature(f)
   })
 
-  const fiber = new Feature({
-    geometry: new LineString(
-      [
-        [-76.545, 3.44],
-        [-76.532, 3.4516],
-        [-76.52, 3.46],
-      ].map((c) => fromLonLat(c)),
-    ),
-  })
-  fiber.set("nombre", "Troncal principal")
-  fiberSource.addFeature(fiber)
+  // El tendido de fibra ya no se siembra a mano: se carga desde la API real
+  // de cables (ver loadRealFiberCables) apenas el mapa está listo.
 
   const zone = new Feature({
     geometry: new Polygon([
