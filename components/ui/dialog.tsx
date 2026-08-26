@@ -28,16 +28,21 @@ function DialogContent({
   className,
   children,
   showClose = true,
+  large = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Popup> & { showClose?: boolean }) {
+}: React.ComponentProps<typeof DialogPrimitive.Popup> & { showClose?: boolean; large?: boolean }) {
   return (
     <DialogPrimitive.Portal>
       <DialogBackdrop />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card p-6 shadow-xl ring-1 ring-border transition-all duration-150",
-          "data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
+          "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card shadow-xl ring-1 ring-border transition-all duration-150",
+          "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
+          "data-[starting-style]:scale-[0.97] data-[ending-style]:scale-[0.97]",
+          large
+            ? "h-[70vh] w-[70vw] min-h-[460px] min-w-[560px] overflow-hidden"
+            : "w-full max-w-sm p-6",
           className,
         )}
         {...props}

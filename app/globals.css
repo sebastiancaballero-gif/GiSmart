@@ -171,3 +171,20 @@
     transform: translateX(300%);
   }
 }
+
+/* Transición sutil de entrada, usada al cambiar de vista/pestaña/panel para
+   que el cambio se sienta intencional en vez de un corte brusco. */
+@keyframes gismart-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-gismart-fade-in {
+  animation: gismart-fade-in 0.18s ease-out;
+}

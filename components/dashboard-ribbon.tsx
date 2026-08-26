@@ -69,7 +69,11 @@ export function DashboardRibbon() {
       </div>
 
       {/* Toolbar */}
-      <div role="tabpanel" className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2">
+      <div
+        key={activeTab}
+        role="tabpanel"
+        className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2 animate-gismart-fade-in"
+      >
         {currentTab.groups.map((group, gi) => (
           <div key={gi} className="flex items-stretch">
             <div className="flex flex-col justify-center px-2 py-1.5">

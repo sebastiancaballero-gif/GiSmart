@@ -44,7 +44,7 @@ export default function MufaPage() {
           subtitle={`MUFA-${datos.mufa_id} · ${datos.tipo} · ${datos.estado}`}
           backHref="/dashboard"
         />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden animate-gismart-fade-in">
           <MufaSchematic datos={datos} />
         </main>
       </div>

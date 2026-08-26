@@ -48,38 +48,72 @@ export function DashboardSidebar({
     setConfirmOpen(false)
   }
 
-  if (collapsed) {
-    return (
-      <aside className="flex w-12 shrink-0 flex-col items-center border-r border-border bg-card py-3">
-        <button
-          onClick={onToggleCollapse}
-          className="mb-3 rounded-lg p-1.5 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-          title="Expandir panel de capas"
-          aria-label="Expandir panel de capas"
-        >
-          <ChevronRight className="size-5" />
-        </button>
-        {layers.map((l) => (
-          <button
-            key={l.id}
-            onClick={() => onToggleLayer(l.id)}
-            title={l.label}
-            aria-label={l.label}
-            aria-pressed={l.visible}
-            className={`mb-1.5 rounded-lg p-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${l.visible ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}
-          >
-            <span
-              className="block size-4 rounded-full ring-2 ring-white"
-              style={{ backgroundColor: l.color }}
-            />
-          </button>
-        ))}
-      </aside>
-    )
-  }
-
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card">
+    <aside
+      className={`flex shrink-0 flex-col overflow-hidden border-r border-border bg-card transition-[width] duration-200 ease-in-out ${
+        collapsed ? "w-12 items-center py-3" : "w-64"
+      }`}
+    >
+      {collapsed ? (
+        <>
+          <button
+            onClick={onToggleCollapse}
+            className="mb-3 rounded-lg p-1.5 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            title="Expandir panel de capas"
+            aria-label="Expandir panel de capas"
+          >
+            <ChevronRight className="size-5" />
+          </button>
+          {layers.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => onToggleLayer(l.id)}
+              title={l.label}
+              aria-label={l.label}
+              aria-pressed={l.visible}
+              className={`mb-1.5 rounded-lg p-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${l.visible ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}
+            >
+              <span
+                className="block size-4 rounded-full ring-2 ring-white"
+                style={{ backgroundColor: l.color }}
+              />
+            </button>
+          ))}
+        </>
+      ) : (
+        <SidebarExpandedContent
+          layers={layers}
+          onToggleLayer={onToggleLayer}
+          totalKm={totalKm}
+          onToggleCollapse={onToggleCollapse}
+          confirmOpen={confirmOpen}
+          setConfirmOpen={setConfirmOpen}
+          handleConfirmClear={handleConfirmClear}
+        />
+      )}
+    </aside>
+  )
+}
+
+function SidebarExpandedContent({
+  layers,
+  onToggleLayer,
+  totalKm,
+  onToggleCollapse,
+  confirmOpen,
+  setConfirmOpen,
+  handleConfirmClear,
+}: {
+  layers: LayerDef[]
+  onToggleLayer: (id: string) => void
+  totalKm: number
+  onToggleCollapse?: () => void
+  confirmOpen: boolean
+  setConfirmOpen: (open: boolean) => void
+  handleConfirmClear: () => void
+}) {
+  return (
+    <div className="flex h-full w-64 flex-col animate-gismart-fade-in">
       {/* Header */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2.5">
@@ -187,6 +221,6 @@ export function DashboardSidebar({
           </div>
         </DialogContent>
       </Dialog>
-    </aside>
+    </div>
   )
 }

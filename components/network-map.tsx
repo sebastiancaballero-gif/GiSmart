@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { useRouter } from "next/navigation"
 import "ol/ol.css"
 import Map from "ol/Map"
 import View from "ol/View"
@@ -20,6 +19,7 @@ import { Style, Fill, Stroke, RegularShape, Text as TextStyle } from "ol/style"
 import Draw from "ol/interaction/Draw"
 import Modify from "ol/interaction/Modify"
 import Select from "ol/interaction/Select"
+import Snap from "ol/interaction/Snap"
 import { click, pointerMove } from "ol/events/condition"
 import { defaults as defaultControls } from "ol/control"
 import type { Geometry } from "ol/geom"
@@ -27,8 +27,8 @@ import { Hand, Box, Spline, Hexagon, Trash2, X, Pencil, Waypoints, Network } fro
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
+import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
-import { setSelectedMufaSchema } from "@/lib/schematic/selected-mufa"
 
 type NetworkMapProps = {
   center?: [number, number]
@@ -55,6 +55,20 @@ const TYPE_LABELS: Record<FeatureType, string> = {
 }
 
 const COLORS = LAYER_COLORS
+
+const FIBER_HINT =
+  "Haz click sobre una mufa para iniciar el trazado de fibra y sobre otra para terminarlo. Esc para cancelar."
+
+// La fibra siempre debe unir dos mufas: exige que el punto quede exactamente
+// sobre una (el Snap hacia nodeSource hace que esto sea fácil de lograr).
+function isNearNode(coord: number[], nodeSource: VectorSource, epsilon = 1): boolean {
+  return nodeSource.getFeatures().some((f) => {
+    const geom = f.getGeometry()
+    if (!(geom instanceof Point)) return false
+    const [x, y] = geom.getCoordinates()
+    return Math.abs(x - coord[0]) < epsilon && Math.abs(y - coord[1]) < epsilon
+  })
+}
 
 // Las mufas (cajas de empalme de fibra) se representan como un marcador
 // cuadrado con un glifo "+" (empalme), distinto del punto circular genérico,
@@ -134,7 +148,6 @@ export function NetworkMap({
   onStatsChange,
   clearTrigger,
 }: NetworkMapProps) {
-  const router = useRouter()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
 
@@ -150,6 +163,8 @@ export function NetworkMap({
   const deleteHoverRef = useRef<Select | null>(null)
   const editSelectRef = useRef<Select | null>(null)
   const editModifyRef = useRef<Modify | null>(null)
+  const fiberSnapRef = useRef<Snap | null>(null)
+  const fiberNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null)
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
@@ -158,6 +173,9 @@ export function NetworkMap({
   const [nameDraft, setNameDraft] = useState("")
   const [schemaOpen, setSchemaOpen] = useState(false)
   const [fiberLoadError, setFiberLoadError] = useState<string | null>(null)
+  const [connectivityOpen, setConnectivityOpen] = useState(false)
+  const [connectivitySchema, setConnectivitySchema] = useState<MufaCampoJSON | null>(null)
+  const [fiberNotice, setFiberNotice] = useState<string | null>(null)
 
   const onStatsChangeRef = useRef(onStatsChange)
   onStatsChangeRef.current = onStatsChange
@@ -219,7 +237,14 @@ export function NetworkMap({
     mapRef.current = map
     recalc()
 
+    // Esc cancela el trazo en curso (mufa, fibra o zona), sin dejar nada a medias.
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") drawRef.current?.abortDrawing()
+    }
+    window.addEventListener("keydown", handleEscape)
+
     return () => {
+      window.removeEventListener("keydown", handleEscape)
       map.setTarget(undefined)
       mapRef.current = null
     }
@@ -250,8 +275,17 @@ export function NetworkMap({
       map.removeInteraction(editModifyRef.current)
       editModifyRef.current = null
     }
+    if (fiberSnapRef.current) {
+      map.removeInteraction(fiberSnapRef.current)
+      fiberSnapRef.current = null
+    }
     setSelected(null)
     setSchemaOpen(false)
+    if (fiberNoticeTimeoutRef.current) {
+      clearTimeout(fiberNoticeTimeoutRef.current)
+      fiberNoticeTimeoutRef.current = null
+    }
+    setFiberNotice(tool === "fiber" ? FIBER_HINT : null)
 
     if (tool === "edit") {
       // En modo "Editar": click para seleccionar un elemento (abre el panel
@@ -288,7 +322,33 @@ export function NetworkMap({
       }[tool]
 
       const draw = new Draw({ source: cfg.source, type: cfg.type })
+
+      if (tool === "fiber") {
+        // La fibra siempre debe unir dos mufas: si no arranca sobre una, se
+        // aborta el trazo de inmediato en vez de dejar dibujar al aire.
+        draw.on("drawstart", (e) => {
+          const start = (e.feature.getGeometry() as LineString).getFirstCoordinate()
+          if (!isNearNode(start, nodeSource)) {
+            draw.abortDrawing()
+            setFiberNotice("Debes iniciar el trazado sobre una mufa.")
+            if (fiberNoticeTimeoutRef.current) clearTimeout(fiberNoticeTimeoutRef.current)
+            fiberNoticeTimeoutRef.current = setTimeout(() => setFiberNotice(FIBER_HINT), 2800)
+          }
+        })
+      }
+
       draw.on("drawend", (e) => {
+        if (tool === "fiber") {
+          const end = (e.feature.getGeometry() as LineString).getLastCoordinate()
+          if (!isNearNode(end, nodeSource)) {
+            fiberSource.removeFeature(e.feature)
+            setFiberNotice("Debes terminar el trazado sobre una mufa. Inténtalo de nuevo.")
+            if (fiberNoticeTimeoutRef.current) clearTimeout(fiberNoticeTimeoutRef.current)
+            fiberNoticeTimeoutRef.current = setTimeout(() => setFiberNotice(FIBER_HINT), 2800)
+            return
+          }
+        }
+
         const count = cfg.source.getFeatures().length + 1
         e.feature.set("nombre", `${cfg.prefix} ${count}`)
         // Cada mufa lleva su propio esquema de empalme (cables/hilos/bandejas).
@@ -299,6 +359,14 @@ export function NetworkMap({
       })
       map.addInteraction(draw)
       drawRef.current = draw
+
+      if (tool === "fiber") {
+        // Se agrega después del Draw para que el snap ajuste el punto justo
+        // antes de que Draw lo use (según la documentación de OpenLayers).
+        const snap = new Snap({ source: nodeSource })
+        map.addInteraction(snap)
+        fiberSnapRef.current = snap
+      }
     }
 
     if (tool === "delete") {
@@ -401,8 +469,8 @@ export function NetworkMap({
   function handleViewConnections() {
     if (!selected || selected.type !== "node") return
     const schema = (selected.feature.get("esquema") as MufaCampoJSON | undefined) ?? MUFA_SCHEMA_EXAMPLE
-    setSelectedMufaSchema(schema)
-    router.push("/dashboard/mufa")
+    setConnectivitySchema(schema)
+    setConnectivityOpen(true)
   }
 
   const selectedLength =
@@ -431,6 +499,13 @@ export function NetworkMap({
           >
             <X className="size-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Aviso/guía de la herramienta "Trazar fibra" */}
+      {fiberNotice && (
+        <div className="absolute left-1/2 top-14 z-10 -translate-x-1/2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
+          {fiberNotice}
         </div>
       )}
 
@@ -476,7 +551,7 @@ export function NetworkMap({
 
       {/* Panel de información del elemento seleccionado */}
       {selected && (
-        <div className="absolute right-3 top-20 z-20 w-64 rounded-xl bg-card/95 p-3 shadow-lg ring-1 ring-border backdrop-blur">
+        <div className="absolute right-3 top-20 z-20 w-64 animate-gismart-fade-in rounded-xl bg-card/95 p-3 shadow-lg ring-1 ring-border backdrop-blur">
           <div className="mb-2.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {(() => {
@@ -554,6 +629,12 @@ export function NetworkMap({
           schema={selected.feature.get("esquema") ?? MUFA_SCHEMA_EXAMPLE}
         />
       )}
+
+      <MufaConnectivityModal
+        open={connectivityOpen}
+        onOpenChange={setConnectivityOpen}
+        schema={connectivitySchema}
+      />
     </div>
   )
 }
