@@ -1,30 +1,31 @@
 import { createHmac } from "node:crypto"
+import { createClient } from "@supabase/supabase-js"
 import { type NextRequest, NextResponse } from "next/server"
 
-// Credenciales de demostración, cargadas desde variables de entorno
-// (en producción esto lo valida el backend C#). Ver AUTH_DEMO_USERS en .env.local.
-type DemoUser = { password: string; role: string; nombre: string }
-
-function loadDemoUsers(): Record<string, DemoUser> {
-  const raw = process.env.AUTH_DEMO_USERS ?? ""
-  const users: Record<string, DemoUser> = {}
-  for (const entry of raw.split(",")) {
-    const [usuario, password, role, nombre] = entry.split(":").map((s) => s?.trim())
-    if (usuario && password && role && nombre) {
-      users[usuario.toLowerCase()] = { password, role, nombre }
-    }
-  }
-  return users
+// Los usuarios reales viven en la tabla `usuario_app` de Supabase (columnas:
+// id_usr, codigo, nombre, clave, activo). El login se hace por `nombre`.
+// TODO: `clave` está en texto plano hoy — migrar a un hash (bcrypt) cuando
+// se pueda tocar esa tabla; comparar en texto plano es un riesgo conocido.
+type UsuarioApp = {
+  id_usr: number
+  codigo: string | null
+  nombre: string
+  clave: string
+  activo: boolean
 }
+
+// Sin columna de rol todavía en usuario_app: se asigna uno genérico hasta
+// que exista esa información real.
+const DEFAULT_ROLE = "usuario"
 
 // Control de intentos por usuario (en memoria, solo demo)
 const attempts = new Map<string, { count: number; lockedUntil: number }>()
 const MAX_ATTEMPTS = 5
 const LOCK_MS = 30_000
 
-// Genera un token tipo JWT firmado con HMAC-SHA256, solo para la demo del frontend.
-// El backend real deberá emitir y validar sus propios tokens.
-function fakeJwt(usuario: string, role: string) {
+// Genera un token tipo JWT firmado con HMAC-SHA256 para el frontend. No es un
+// JWT emitido por Supabase Auth (usuario_app es una tabla propia, no auth.users).
+function signToken(usuario: string, role: string) {
   const secret = process.env.AUTH_JWT_SECRET
   if (!secret) throw new Error("AUTH_JWT_SECRET no está configurado.")
 
@@ -42,7 +43,7 @@ function fakeJwt(usuario: string, role: string) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!process.env.AUTH_DEMO_USERS || !process.env.AUTH_JWT_SECRET) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY || !process.env.AUTH_JWT_SECRET) {
     return NextResponse.json(
       { message: "El servidor de autenticación no está configurado. Revisa .env.local.", field: null },
       { status: 500 },
@@ -58,9 +59,6 @@ export async function POST(req: NextRequest) {
   const usuario = typeof body.usuario === "string" ? body.usuario.trim() : ""
   const contrasena = typeof body.contrasena === "string" ? body.contrasena : ""
 
-  // Simula latencia de red
-  await new Promise((r) => setTimeout(r, 1000))
-
   // Validaciones de servidor (defensa en profundidad)
   if (!usuario) {
     return NextResponse.json({ message: "El usuario es obligatorio.", field: "usuario" }, { status: 400 })
@@ -68,12 +66,6 @@ export async function POST(req: NextRequest) {
   if (usuario.length < 3) {
     return NextResponse.json(
       { message: "El usuario debe tener al menos 3 caracteres.", field: "usuario" },
-      { status: 400 },
-    )
-  }
-  if (!/^[a-zA-Z0-9._-]+$/.test(usuario)) {
-    return NextResponse.json(
-      { message: "El usuario contiene caracteres no permitidos.", field: "usuario" },
       { status: 400 },
     )
   }
@@ -93,8 +85,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const account = loadDemoUsers()[key]
-  if (!account || account.password !== contrasena) {
+  function registerFailedAttempt() {
     const count = (record?.count ?? 0) + 1
     const remaining = MAX_ATTEMPTS - count
     if (count >= MAX_ATTEMPTS) {
@@ -114,11 +105,37 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY)
+
+  const { data: account, error } = await supabase
+    .from("usuario_app")
+    .select("id_usr, codigo, nombre, clave, activo")
+    .ilike("nombre", usuario)
+    .maybeSingle<UsuarioApp>()
+
+  if (error) {
+    return NextResponse.json(
+      { message: "No se pudo conectar con la base de datos. Intenta de nuevo.", field: null },
+      { status: 502 },
+    )
+  }
+
+  if (!account || account.clave !== contrasena) {
+    return registerFailedAttempt()
+  }
+
+  if (!account.activo) {
+    return NextResponse.json(
+      { message: "Este usuario está inactivo. Contacta a un administrador.", field: null },
+      { status: 403 },
+    )
+  }
+
   // Éxito: limpia intentos
   attempts.delete(key)
 
   return NextResponse.json({
-    token: fakeJwt(key, account.role),
-    user: { usuario: key, role: account.role, nombre: account.nombre },
+    token: signToken(account.nombre, DEFAULT_ROLE),
+    user: { usuario: account.nombre, role: DEFAULT_ROLE, nombre: account.nombre },
   })
 }
