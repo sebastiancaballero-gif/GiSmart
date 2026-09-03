@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { dia } from "@joint/core"
 import {
   AlertTriangle,
-  Maximize2,
+  Maximize,
+  Minimize,
   Route,
+  Scan,
   Spline,
   ZoomIn,
   ZoomOut,
@@ -40,11 +42,13 @@ const LIMITES_ZOOM = { min: 0.35, max: 2.2, paso: 0.15 }
  */
 export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSchematicProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<dia.Graph | null>(null)
   const paperRef = useRef<dia.Paper | null>(null)
 
   const [modoEnrutamiento, setModoEnrutamiento] = useState<ModoEnrutamiento>("ortogonal")
   const [zoom, setZoom] = useState(1)
+  const [pantallaCompleta, setPantallaCompleta] = useState(false)
 
   const mufa = useMemo(() => parsearMufaCampo(datos), [datos])
   const empalmes = useMemo(() => listarEmpalmesCampo(mufa), [mufa])
@@ -192,11 +196,46 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
     setModoEnrutamiento((actual) => (actual === "ortogonal" ? "curvo" : "ortogonal"))
   }, [])
 
+  const alternarPantallaCompleta = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+      return
+    }
+    void rootRef.current?.requestFullscreen()
+  }, [])
+
+  // El lienzo ocupa "100%" del contenedor, pero al cambiar de tamaño hay que
+  // recalcular el encuadre para que el esquema aproveche el espacio nuevo.
+  useEffect(() => {
+    function alCambiarPantallaCompleta() {
+      const activa = document.fullscreenElement === rootRef.current
+      setPantallaCompleta(activa)
+      // El navegador todavía está redimensionando cuando dispara el evento.
+      requestAnimationFrame(() => ajustarVista())
+    }
+    document.addEventListener("fullscreenchange", alCambiarPantallaCompleta)
+    return () => document.removeEventListener("fullscreenchange", alCambiarPantallaCompleta)
+  }, [ajustarVista])
+
+  // En pantalla completa, Escape debe salir de ella sin cerrar además el modal
+  // que envuelve al esquema (el navegador sale igual: esto solo frena al diálogo).
+  useEffect(() => {
+    if (!pantallaCompleta) return
+    function frenarEscape(evt: KeyboardEvent) {
+      if (evt.key === "Escape") evt.stopPropagation()
+    }
+    document.addEventListener("keydown", frenarEscape, true)
+    return () => document.removeEventListener("keydown", frenarEscape, true)
+  }, [pantallaCompleta])
+
   const ortogonal = modoEnrutamiento === "ortogonal"
   const IconoRuta = ortogonal ? Route : Spline
 
   return (
-    <div className={`flex size-full flex-col overflow-hidden bg-background ${className ?? ""}`}>
+    <div
+      ref={rootRef}
+      className={`flex size-full flex-col overflow-hidden bg-background ${className ?? ""}`}
+    >
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
         <div className="mr-auto">
           <h2 className="text-sm font-semibold text-foreground">
@@ -267,7 +306,17 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
             aria-label="Ajustar a la vista"
             className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
           >
-            <Maximize2 className="size-4" />
+            <Scan className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={alternarPantallaCompleta}
+            title={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"}
+            aria-label={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"}
+            aria-pressed={pantallaCompleta}
+            className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
+          >
+            {pantallaCompleta ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
           </button>
         </div>
       </header>

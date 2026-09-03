@@ -14,7 +14,9 @@ type Props = {
 
 function formatValue(key: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—"
-  if (/^fecha_/.test(key) && typeof value === "string") {
+  // Fechas: `fecha_creacion`/`fecha_ult_act` en geo_fiber, `creado_en`/
+  // `actualizado_en` en geo_infra.
+  if ((/^fecha_/.test(key) || /_en$/.test(key)) && typeof value === "string") {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("es-CO")
   }

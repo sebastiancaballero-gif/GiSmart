@@ -5,10 +5,21 @@ import { Minimize } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 
-export function DashboardRibbon() {
+export type RibbonActions = {
+  onRefresh?: () => void
+  onFitToData?: () => void
+  onIdentify?: () => void
+  onMeasure?: () => void
+  onDraw?: () => void
+  onDelete?: () => void
+  onEditGeometry?: () => void
+}
+
+export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
   const [activeTab, setActiveTab] = useState("inicio")
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
   const currentTab = RIBBON_TABS.find((t) => t.id === activeTab) ?? RIBBON_TABS[0]
 
   useEffect(() => {
@@ -16,6 +27,13 @@ export function DashboardRibbon() {
     document.addEventListener("fullscreenchange", handler)
     return () => document.removeEventListener("fullscreenchange", handler)
   }, [])
+
+  // El aviso de "en desarrollo" se borra solo para no quedar pegado en pantalla.
+  useEffect(() => {
+    if (!aviso) return
+    const timeout = setTimeout(() => setAviso(null), 2600)
+    return () => clearTimeout(timeout)
+  }, [aviso])
 
   function toggleFullscreen() {
     if (document.fullscreenElement) {
@@ -26,16 +44,50 @@ export function DashboardRibbon() {
     }
   }
 
+  // Botones ya conectados a una capacidad real del mapa. El resto del ribbon
+  // sigue siendo la maqueta del SIG heredado y avisa que está pendiente.
   function handleItemClick(item: RibbonItem) {
-    if (item.label === "Salir") {
-      setLogoutOpen(true)
+    switch (item.label) {
+      case "Salir":
+        setLogoutOpen(true)
+        return
+      case "Extensión":
+        toggleFullscreen()
+        return
+      case "Actualizar":
+        actions?.onRefresh?.()
+        setAviso("Recargando datos de red…")
+        return
+      case "Mapa de red":
+      case "Acercar ext.":
+        actions?.onFitToData?.()
+        return
+      case "Identificar":
+      case "Atributos":
+        actions?.onIdentify?.()
+        setAviso("Haz click sobre un elemento del mapa para ver su información.")
+        return
+      case "Mediciones":
+        actions?.onMeasure?.()
+        return
+      case "Crear":
+        if (activeTab !== "edicion") break
+        actions?.onDraw?.()
+        return
+      case "Borrar":
+        actions?.onDelete?.()
+        return
+      case "Mover vértice":
+      case "Editar atributos":
+        actions?.onEditGeometry?.()
+        return
+    }
+
+    if (item.onClick) {
+      item.onClick()
       return
     }
-    if (item.label === "Extensión") {
-      toggleFullscreen()
-      return
-    }
-    item.onClick?.()
+    setAviso(`«${item.label}» todavía no está disponible.`)
   }
 
   return (
@@ -123,6 +175,15 @@ export function DashboardRibbon() {
           </div>
         ))}
       </div>
+
+      {aviso && (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-gismart-fade-in rounded-lg bg-foreground/90 px-4 py-2 text-xs font-medium text-background shadow-lg"
+        >
+          {aviso}
+        </div>
+      )}
 
       <LogoutConfirmDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </div>

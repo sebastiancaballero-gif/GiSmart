@@ -1,6 +1,7 @@
 "use client"
 
-import { Globe, Loader2, CheckCircle2 } from "lucide-react"
+import { Loader2, CheckCircle2 } from "lucide-react"
+import { GismartMark } from "@/components/gismart-mark"
 
 type Props = {
   open: boolean
@@ -25,7 +26,7 @@ export function ConnectingModal({ open, usuario, done }: Props) {
           ) : (
             <span className="relative flex items-center justify-center">
               <Loader2 className="absolute size-12 animate-spin text-primary/60" aria-hidden="true" />
-              <Globe className="size-6 text-primary" aria-hidden="true" />
+              <GismartMark className="size-6 rounded-md" />
             </span>
           )}
         </div>

@@ -5,6 +5,7 @@ export const LAYER_COLORS = {
   node: "#0ea5e9",
   fiber: "#2563eb",
   zone: "#38bdf8",
+  cabecera: "#059669",
 } as const
 
 export type LayerId = keyof typeof LAYER_COLORS
