@@ -4,6 +4,7 @@ import type { Geometry } from "ol/geom"
 import type VectorSource from "ol/source/Vector"
 
 import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
+import { fetchConSesion } from "@/lib/auth"
 
 /**
  * Carga de las capas reales del mapa.
@@ -40,7 +41,7 @@ async function cargarCapa({
   alCargar?: (f: Feature<Geometry>) => void
 }): Promise<string | null> {
   try {
-    const res = await fetch(url)
+    const res = await fetchConSesion(url)
     const data = await res.json()
     if (isCancelled()) return null
     if (!res.ok) return (data?.message as string) ?? errorHttp
@@ -97,8 +98,13 @@ export function loadRealCabeceras(source: VectorSource, isCancelled: () => boole
     url: "/api/cabeceras",
     source,
     isCancelled,
+    // `etiqueta` trae el nombre operativo ("HUB LA UNION"), más informativo en
+    // el mapa que el código interno ("C001"), igual que en las mufas.
     nombreDe: (f) =>
-      (f.get("nombre") as string | null) || (f.get("codigo") as string | null) || `Cabecera ${f.get("id")}`,
+      (f.get("etiqueta") as string | null) ||
+      (f.get("nombre") as string | null) ||
+      (f.get("codigo") as string | null) ||
+      "Cabecera",
     errorHttp: "No se pudieron cargar las cabeceras centrales.",
     errorRed: "No se pudo conectar con Supabase para cargar las cabeceras centrales.",
   })

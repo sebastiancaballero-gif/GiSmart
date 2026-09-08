@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { exigirSesion } from "@/lib/auth-server"
 
 // Nominatim (OpenStreetMap) exige identificar la aplicación en el User-Agent y
 // limita la frecuencia de consultas. Por eso se llama desde el servidor y no
@@ -16,6 +17,9 @@ type NominatimAddress = {
 }
 
 export async function GET(request: Request) {
+  const sinSesion = exigirSesion(request)
+  if (sinSesion) return sinSesion
+
   const { searchParams } = new URL(request.url)
   const lon = Number(searchParams.get("lon"))
   const lat = Number(searchParams.get("lat"))
@@ -33,6 +37,9 @@ export async function GET(request: Request) {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT },
+      // Sin límite, un Nominatim lento dejaba la petición colgada y con ella
+      // el hilo que la atiende.
+      signal: AbortSignal.timeout(8000),
       // Las coordenadas llegan redondeadas desde el cliente, así que el mismo
       // sector reutiliza la respuesta cacheada durante un día.
       next: { revalidate: 86400 },

@@ -90,8 +90,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.65 0.185 250);
+  --primary-foreground: oklch(0.99 0.01 240);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -101,7 +101,7 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.65 0.185 250);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -126,8 +126,8 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    --primary: oklch(0.65 0.185 250);
+    --primary-foreground: oklch(0.99 0.01 240);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
@@ -137,7 +137,7 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: oklch(0.65 0.185 250);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -187,4 +187,27 @@
 
 .animate-gismart-fade-in {
   animation: gismart-fade-in 0.18s ease-out;
+}
+
+/*
+ * Cartografía de fondo en modo oscuro.
+ *
+ * Las teselas de OpenStreetMap son claras y dentro de una interfaz oscura se
+ * veían como una plancha blanca. Se invierten para integrarlas, girando el
+ * tono 180° para que el agua y la vegetación conserven un color creíble.
+ *
+ * El filtro se aplica solo a esta capa: OpenLayers dibuja todas las capas en
+ * un mismo lienzo salvo que se les dé un `className` propio, y por eso la capa
+ * base lo lleva (ver network-map.tsx). Así los datos de la red no se invierten.
+ */
+.dark .gismart-basemap,
+.dark .gismart-basemap canvas {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .gismart-basemap,
+  :root:not(.light) .gismart-basemap canvas {
+    filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.72);
+  }
 }

@@ -104,16 +104,18 @@ export function GiSmartLogin() {
   const contrasenaOk = !errors.contrasena && dirtyFields.contrasena && contrasenaValue.length >= 6
 
   return (
-    <div className="w-full max-w-sm animate-gismart-fade-in">
+    // `relative z-10`: los fondos decorativos de la página van posicionados y,
+    // sin esto, se pintarían por encima del formulario aunque estén antes.
+    <div className="relative z-10 w-full max-w-sm animate-gismart-fade-in">
       {/* La tarjeta va sobre el fondo con trama, así que lleva algo más de
           elevación y un filo de marca arriba para despegarse de él. */}
-      <div className="overflow-hidden rounded-2xl bg-card shadow-xl ring-1 ring-border">
+      <div className="overflow-hidden rounded-2xl bg-card shadow-[0_20px_50px_-12px_rgb(15_23_42/0.25)] ring-1 ring-border">
         <div
           aria-hidden="true"
-          className="h-1 bg-gradient-to-r from-[#2563eb] via-[#0ea5e9] to-[#2563eb]"
+          className="h-1.5 bg-gradient-to-r from-[#2563eb] via-[#0ea5e9] to-[#2563eb]"
         />
 
-        <div className="px-7 pb-8 pt-7">
+        <div className="px-7 pb-7 pt-6">
           {/* Encabezado sobrio: la marca identifica sin acaparar la pantalla. */}
           <div className="mb-7 flex items-start justify-between gap-3">
             <div>
@@ -226,8 +228,7 @@ export function GiSmartLogin() {
               )}
             </div>
 
-            {/* Recordar + servidor */}
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-5 mt-1 flex items-center">
               <Label htmlFor="recordar" className="cursor-pointer font-normal">
                 <Controller
                   name="recordar"
@@ -242,13 +243,6 @@ export function GiSmartLogin() {
                 />
                 Recordar usuario
               </Label>
-              <span
-                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                title="Servidor de datos de la red"
-              >
-                <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                Servidor GiSmart
-              </span>
             </div>
 
             {/* Mensaje de error general del servidor */}

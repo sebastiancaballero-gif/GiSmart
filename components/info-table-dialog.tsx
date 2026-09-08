@@ -8,8 +8,25 @@ type Props = {
   onOpenChange: (open: boolean) => void
   title: string
   description: string
+  /** Nombres legibles y orden de los campos conocidos. */
   fieldLabels: Record<string, string>
   data: Record<string, unknown>
+}
+
+/**
+ * Propiedades internas del mapa, no columnas de la base: no tienen sentido en
+ * una ficha de datos.
+ */
+const CAMPOS_INTERNOS = new Set(["geometry", "esquema"])
+
+/**
+ * Nombre legible para una columna que no está en `fieldLabels`.
+ * `direccion_catastral` → `Direccion catastral`. No siempre queda perfecto
+ * (las abreviaturas se mantienen tal cual), pero es mejor que ocultar el dato.
+ */
+function humanizarCampo(key: string): string {
+  const texto = key.replace(/_/g, " ").trim()
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
 }
 
 function formatValue(key: string, value: unknown): string {
@@ -21,13 +38,20 @@ function formatValue(key: string, value: unknown): string {
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("es-CO")
   }
   if (typeof value === "number") return value.toLocaleString("es-CO")
+  if (typeof value === "object") return JSON.stringify(value)
   return String(value)
 }
 
 // Tabla informativa de solo lectura, genérica: se usa tanto para mufas como
-// para cables de fibra (mismo "identificar" que en un visor GIS clásico).
+// para cables de fibra y cabeceras (el "identificar" de un visor GIS clásico).
 export function InfoTableDialog({ open, onOpenChange, title, description, fieldLabels, data }: Props) {
-  const keys = Object.keys(fieldLabels)
+  // Primero los campos conocidos, en el orden curado; después cualquier columna
+  // nueva de la base, para que un cambio de esquema se vea sin tocar el código.
+  const conocidos = Object.keys(fieldLabels).filter((key) => key in data)
+  const nuevos = Object.keys(data).filter(
+    (key) => !(key in fieldLabels) && !CAMPOS_INTERNOS.has(key),
+  )
+  const campos = [...conocidos, ...nuevos]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -45,10 +69,10 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
         <div className="mt-4 max-h-80 overflow-y-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <tbody>
-              {keys.map((key, i) => (
+              {campos.map((key, i) => (
                 <tr key={key} className={i % 2 === 0 ? "bg-muted/40" : ""}>
                   <td className="w-2/5 px-3 py-2 align-top font-medium text-muted-foreground">
-                    {fieldLabels[key]}
+                    {fieldLabels[key] ?? humanizarCampo(key)}
                   </td>
                   <td className="px-3 py-2 text-foreground">{formatValue(key, data[key])}</td>
                 </tr>

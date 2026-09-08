@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { exigirSesion } from "@/lib/auth-server"
 
 // Búsqueda de zonas/direcciones contra Nominatim (OpenStreetMap). Igual que
 // /api/reverse-geocode, se llama desde el servidor para poder identificar la
@@ -13,6 +14,9 @@ type NominatimResult = {
 }
 
 export async function GET(request: Request) {
+  const sinSesion = exigirSesion(request)
+  if (sinSesion) return sinSesion
+
   const { searchParams } = new URL(request.url)
   const q = (searchParams.get("q") ?? "").trim()
 
@@ -29,6 +33,9 @@ export async function GET(request: Request) {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT },
+      // Sin límite, un Nominatim lento dejaba la petición colgada y con ella
+      // el hilo que la atiende.
+      signal: AbortSignal.timeout(8000),
       next: { revalidate: 86400 },
     })
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Minimize } from "lucide-react"
+import { Minimize, ChevronUp } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 
@@ -20,7 +20,35 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  // La barra de herramientas ocupa casi 100 px de alto; poder plegarla
+  // devuelve ese espacio al mapa, que es lo que de verdad se mira.
+  const [colapsado, setColapsado] = useState(false)
   const currentTab = RIBBON_TABS.find((t) => t.id === activeTab) ?? RIBBON_TABS[0]
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setColapsado(localStorage.getItem("gismart_ribbon_colapsado") === "1")
+  }, [])
+
+  function alternarColapso(valor: boolean) {
+    setColapsado(valor)
+    try {
+      localStorage.setItem("gismart_ribbon_colapsado", valor ? "1" : "0")
+    } catch {
+      // Si el navegador bloquea el almacenamiento, el ribbon simplemente no
+      // recuerda el estado entre sesiones.
+    }
+  }
+
+  function alPulsarPestana(id: string) {
+    // Volver a pulsar la pestaña activa pliega o despliega, como en Office.
+    if (id === activeTab) {
+      alternarColapso(!colapsado)
+      return
+    }
+    setActiveTab(id)
+    alternarColapso(false)
+  }
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement)
@@ -101,7 +129,8 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
               key={tab.id}
               role="tab"
               aria-selected={isActive}
-              onClick={() => setActiveTab(tab.id)}
+              title={isActive ? (colapsado ? "Desplegar la barra" : "Plegar la barra") : tab.label}
+              onClick={() => alPulsarPestana(tab.id)}
               className={`
                 relative rounded-t-lg px-4 py-2 text-sm font-semibold outline-none transition-all
                 focus-visible:ring-2 focus-visible:ring-ring/50
@@ -118,9 +147,21 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
             </button>
           )
         })}
+
+        <button
+          type="button"
+          onClick={() => alternarColapso(!colapsado)}
+          aria-expanded={!colapsado}
+          title={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"}
+          aria-label={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"}
+          className="mb-1 ml-auto mr-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <ChevronUp className={`size-4 transition-transform ${colapsado ? "rotate-180" : ""}`} />
+        </button>
       </div>
 
       {/* Toolbar */}
+      {!colapsado && (
       <div
         key={activeTab}
         role="tabpanel"
@@ -175,6 +216,7 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
           </div>
         ))}
       </div>
+      )}
 
       {aviso && (
         <div

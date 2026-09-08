@@ -1,11 +1,13 @@
-import { createHmac } from "node:crypto"
 import { createClient } from "@supabase/supabase-js"
 import { type NextRequest, NextResponse } from "next/server"
+import { emitirToken } from "@/lib/auth-server"
+import { esHash, hashClave, verificarClave } from "@/lib/password"
 
 // Los usuarios reales viven en la tabla `usuario_app` de Supabase (columnas:
 // id_usr, codigo, nombre, clave, activo). El login se hace por `nombre`.
-// TODO: `clave` está en texto plano hoy — migrar a un hash (bcrypt) cuando
-// se pueda tocar esa tabla; comparar en texto plano es un riesgo conocido.
+// Las contraseñas se guardan con hash scrypt (ver lib/password.ts). Las que
+// quedaran en texto plano de antes siguen funcionando y se migran solas la
+// primera vez que esa persona inicia sesión.
 type UsuarioApp = {
   id_usr: number
   codigo: string | null
@@ -22,25 +24,6 @@ const DEFAULT_ROLE = "usuario"
 const attempts = new Map<string, { count: number; lockedUntil: number }>()
 const MAX_ATTEMPTS = 5
 const LOCK_MS = 30_000
-
-// Genera un token tipo JWT firmado con HMAC-SHA256 para el frontend. No es un
-// JWT emitido por Supabase Auth (usuario_app es una tabla propia, no auth.users).
-function signToken(usuario: string, role: string) {
-  const secret = process.env.AUTH_JWT_SECRET
-  if (!secret) throw new Error("AUTH_JWT_SECRET no está configurado.")
-
-  const header = { alg: "HS256", typ: "JWT" }
-  const payload = {
-    sub: usuario,
-    role,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 horas
-  }
-  const enc = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url")
-  const signingInput = `${enc(header)}.${enc(payload)}`
-  const signature = createHmac("sha256", secret).update(signingInput).digest("base64url")
-  return `${signingInput}.${signature}`
-}
 
 export async function POST(req: NextRequest) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY || !process.env.AUTH_JWT_SECRET) {
@@ -120,7 +103,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (!account || account.clave !== contrasena) {
+  const claveValida = account ? await verificarClave(contrasena, account.clave ?? "") : false
+  if (!account || !claveValida) {
     return registerFailedAttempt()
   }
 
@@ -134,8 +118,33 @@ export async function POST(req: NextRequest) {
   // Éxito: limpia intentos
   attempts.delete(key)
 
+  // Migración transparente: si la contraseña estaba en texto plano, se
+  // reemplaza por su hash ahora que sabemos que es la correcta. Así las
+  // cuentas se migran solas a medida que la gente entra, sin dejar a nadie
+  // fuera ni tener que coordinar un cambio masivo.
+  //
+  // Es "el mejor esfuerzo": si el UPDATE falla (falta el permiso, o la columna
+  // sigue siendo varchar(12) y el hash no cabe), se registra y el login
+  // continúa. Nadie se queda sin entrar por esto.
+  if (!esHash(account.clave ?? "")) {
+    try {
+      const { error: errorMigracion } = await supabase
+        .from("usuario_app")
+        .update({ clave: await hashClave(contrasena) })
+        .eq("id_usr", account.id_usr)
+
+      if (errorMigracion) {
+        console.error(
+          `[login] No se pudo migrar la clave de "${account.nombre}" a hash: ${errorMigracion.message}`,
+        )
+      }
+    } catch (e) {
+      console.error(`[login] Fallo inesperado al migrar la clave a hash:`, e)
+    }
+  }
+
   return NextResponse.json({
-    token: signToken(account.nombre, DEFAULT_ROLE),
+    token: emitirToken(account.nombre, DEFAULT_ROLE),
     user: { usuario: account.nombre, role: DEFAULT_ROLE, nombre: account.nombre },
   })
 }

@@ -7,21 +7,23 @@ export default function Page() {
           lenguaje visual del mapa, sin competir con el formulario. */}
       <svg
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 size-full text-primary/[0.07]"
+        className="pointer-events-none absolute inset-0 size-full text-primary/[0.06]"
       >
         <defs>
-          <pattern id="login-red" width="220" height="180" patternUnits="userSpaceOnUse">
+          {/* Trama menuda: a mayor escala se leía como papel tapiz en vez de
+              como textura de fondo. */}
+          <pattern id="login-red" width="132" height="108" patternUnits="userSpaceOnUse">
             <path
-              d="M-20 40 H 80 M 110 40 H 240 M 40 40 V 140 M 150 10 V 40 M 150 40 C 150 90, 190 90, 190 140"
+              d="M-12 24 H 48 M 66 24 H 144 M 24 24 V 84 M 90 6 V 24 M 90 24 C 90 54, 114 54, 114 84"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.25"
               fill="none"
             />
-            <g stroke="currentColor" strokeWidth="2" fill="none">
-              <circle cx="95" cy="40" r="10" />
-              <path d="M95 30 V 50 M 85 40 H 105" />
-              <circle cx="40" cy="140" r="7" />
-              <circle cx="190" cy="140" r="7" />
+            <g stroke="currentColor" strokeWidth="1.25" fill="none">
+              <circle cx="57" cy="24" r="6" />
+              <path d="M57 18 V 30 M 51 24 H 63" />
+              <circle cx="24" cy="84" r="4" />
+              <circle cx="114" cy="84" r="4" />
             </g>
           </pattern>
         </defs>
@@ -31,11 +33,13 @@ export default function Page() {
       {/* Halo de color que concentra la atención en la tarjeta. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_65%_55%_at_50%_0%,color-mix(in_oklch,var(--color-primary)_16%,transparent)_0%,transparent_70%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_45%_at_50%_8%,color-mix(in_oklch,var(--color-primary)_12%,transparent)_0%,transparent_72%)]"
       />
+      {/* Difumina la trama justo detrás de la tarjeta para que el formulario
+          quede sobre un fondo limpio y se lea sin interferencias. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -bottom-32 left-1/2 size-[540px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-1/2 size-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-background/70 blur-2xl"
       />
 
       <GiSmartLogin />

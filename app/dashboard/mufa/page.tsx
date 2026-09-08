@@ -33,6 +33,7 @@ export default function MufaPage() {
 
   useEffect(() => {
     const stored = getSelectedMufaSchema()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored) setDatos(stored)
   }, [])
 

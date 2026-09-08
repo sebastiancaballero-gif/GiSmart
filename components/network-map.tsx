@@ -22,7 +22,9 @@ import Snap from "ol/interaction/Snap"
 import DoubleClickZoom from "ol/interaction/DoubleClickZoom"
 import { click, pointerMove } from "ol/events/condition"
 import { defaults as defaultControls } from "ol/control"
+import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry } from "ol/geom"
+import { createEmpty, extend, isEmpty } from "ol/extent"
 import {
   Hand,
   Box,
@@ -39,6 +41,7 @@ import {
   Loader2,
   Building2,
   ChevronDown,
+  Crosshair,
 } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { MEASURE_COLOR } from "@/lib/map/symbology"
@@ -53,13 +56,17 @@ import {
   MUFA_FIELD_LABELS,
   TYPE_LABELS,
   cabeceraStyle,
+  categoriaDeCable,
+  categoriaDeMufa,
   colorForFuncionCub,
   fiberStyle,
+  fiberWidth,
   formatArea,
   formatLength,
   isNearNode,
   measureStyle,
   nodeStyle,
+  seleccionStyle,
   zoneStyle,
   type FeatureType,
 } from "@/lib/map/symbology"
@@ -68,6 +75,7 @@ import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import { InfoTableDialog } from "@/components/info-table-dialog"
 import { GismartMark } from "@/components/gismart-mark"
+import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
 
 type NetworkMapProps = {
@@ -82,13 +90,21 @@ type NetworkMapProps = {
   flyTo?: { lon: number; lat: number; zoom?: number; nonce: number } | null
   /** Al incrementarse, recarga los datos reales desde los endpoints. */
   reloadTrigger?: number
-  /** Al incrementarse, reencuadra el mapa sobre los datos de red cargados. */
-  fitTrigger?: number
+  /**
+   * Reencuadra el mapa. `capa` acota a una sola capa; `"todo"` usa la red
+   * completa. `nonce` permite repetir el mismo encuadre.
+   */
+  fitTo?: { capa: "todo" | "nodes" | "fibers" | "cabeceras" | "zones"; nonce: number } | null
   /** Herramienta activa controlada desde fuera (ribbon). */
   tool?: Tool
   onToolChange?: (tool: Tool) => void
   /** Avisa mientras se están pidiendo los datos reales a los endpoints. */
   onLoadingChange?: (loading: boolean) => void
+  /**
+   * Categorías a mostrar dentro de cada capa (las del desglose del panel).
+   * Una lista vacía significa "sin filtro": se muestran todas.
+   */
+  filters?: { nodes: string[]; fibers: string[] }
 }
 
 type Tool = "pan" | "edit" | "node" | "fiber" | "zone" | "delete" | "measure-length" | "measure-area"
@@ -96,13 +112,44 @@ type Tool = "pan" | "edit" | "node" | "fiber" | "zone" | "delete" | "measure-len
 /** Herramientas del mapa, para que el ribbon pueda activarlas desde fuera. */
 export type MapTool = Tool
 
+/**
+ * Aviso mientras una herramienta que modifica está activa.
+ *
+ * Nada de lo que se dibuja o borra llega todavía a la base de datos: sin este
+ * aviso, alguien podía trazar media red creyendo que estaba trabajando y
+ * perderla al recargar, o creer que borró un registro real.
+ */
+const TOOL_HINTS: Partial<Record<Tool, string>> = {
+  fiber: FIBER_HINT,
+  node: "Click para agregar una mufa. Lo dibujado no se guarda en la base todavía.",
+  zone: "Click para dibujar la zona y doble click para terminar. No se guarda en la base todavía.",
+  edit: "Click para consultar o corregir. Los cambios no se guardan en la base todavía.",
+  delete: "Click sobre un elemento para quitarlo del mapa. No se borra de la base de datos.",
+}
+
+/** Orden de la barra de herramientas; define también los atajos 1..8. */
+const TOOL_ORDER: Tool[] = [
+  "pan",
+  "edit",
+  "node",
+  "fiber",
+  "zone",
+  "delete",
+  "measure-length",
+  "measure-area",
+]
+
 type SelectedFeature = {
   feature: Feature<Geometry>
   type: FeatureType
 }
 
-/** Una categoría del desglose de una capa, para el panel de capas. */
-export type LayerBucket = { label: string; count: number; color: string }
+/**
+ * Una categoría del desglose de una capa, para el panel de capas.
+ * `width` solo aplica a los cables: es el grosor con que se dibujan en el mapa,
+ * para que el panel muestre el mismo trazo y no un punto genérico.
+ */
+export type LayerBucket = { label: string; count: number; color: string; width?: number }
 
 /** Resumen de lo cargado en el mapa, que consume el panel lateral. */
 export type NetworkStats = {
@@ -118,28 +165,51 @@ export type NetworkStats = {
  */
 function agrupar(
   features: Feature<Geometry>[],
-  clasificar: (f: Feature<Geometry>) => { label: string; color: string },
+  clasificar: (f: Feature<Geometry>) => { label: string; color: string; width?: number },
 ): LayerBucket[] {
   // Objeto plano y no `Map`: en este archivo `Map` es el de OpenLayers.
   const buckets: Record<string, LayerBucket> = {}
   features.forEach((f) => {
-    const { label, color } = clasificar(f)
+    const { label, color, width } = clasificar(f)
     if (buckets[label]) buckets[label].count += 1
-    else buckets[label] = { label, color, count: 1 }
+    else buckets[label] = { label, color, width, count: 1 }
   })
   return Object.values(buckets).sort((a, b) => b.count - a.count)
 }
 
-// Réplica en SVG del símbolo que dibuja `nodeStyle`, para que la leyenda y el
-// mapa muestren exactamente la misma marca.
-function MufaSymbol({ color }: { color: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
-      <circle cx="8" cy="8" r="6" fill="#ffffff" stroke={color} strokeWidth="2" />
-      <line x1="8" y1="2" x2="8" y2="14" stroke={color} strokeWidth="1.5" />
-      <line x1="2" y1="8" x2="14" y2="8" stroke={color} strokeWidth="1.5" />
-    </svg>
-  )
+/**
+ * Última vista del mapa (centro y zoom), para retomarla al volver a entrar.
+ * Si el navegador bloquea el almacenamiento, se cae al encuadre por defecto.
+ */
+const CLAVE_VISTA = "gismart_vista_mapa"
+
+type VistaGuardada = { centro: [number, number]; zoom: number }
+
+function leerVistaGuardada(): VistaGuardada | null {
+  try {
+    const crudo = localStorage.getItem(CLAVE_VISTA)
+    if (!crudo) return null
+    const dato = JSON.parse(crudo) as VistaGuardada
+    const [lon, lat] = dato.centro ?? []
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(dato.zoom)) return null
+    return dato
+  } catch {
+    return null
+  }
+}
+
+function guardarVista(vista: VistaGuardada) {
+  try {
+    localStorage.setItem(CLAVE_VISTA, JSON.stringify(vista))
+  } catch {
+    // Sin almacenamiento el mapa simplemente no recuerda la vista.
+  }
+}
+
+/** Sin categorías seleccionadas no hay filtro: se muestran todas. */
+function categoriaVisible(seleccionadas: string[] | undefined, categoria: string): boolean {
+  if (!seleccionadas || seleccionadas.length === 0) return true
+  return seleccionadas.includes(categoria)
 }
 
 export function NetworkMap({
@@ -154,19 +224,23 @@ export function NetworkMap({
   onCenterChange,
   flyTo,
   reloadTrigger,
-  fitTrigger,
+  fitTo,
   tool: externalTool,
   onToolChange,
   onLoadingChange,
+  filters,
 }: NetworkMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
 
-  const nodeSource = useRef(new VectorSource()).current
-  const fiberSource = useRef(new VectorSource()).current
-  const zoneSource = useRef(new VectorSource()).current
-  const cabeceraSource = useRef(new VectorSource()).current
-  const measureSource = useRef(new VectorSource()).current
+  // Inicialización perezosa: con `useRef(new VectorSource())` se construía una
+  // fuente nueva en cada render solo para descartarla acto seguido.
+  const [nodeSource] = useState(() => new VectorSource())
+  const [fiberSource] = useState(() => new VectorSource())
+  const [zoneSource] = useState(() => new VectorSource())
+  const [cabeceraSource] = useState(() => new VectorSource())
+  const [measureSource] = useState(() => new VectorSource())
+  const [baseMapSource] = useState(() => new OSM())
 
   const nodeLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const fiberLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -182,7 +256,12 @@ export function NetworkMap({
   const fiberNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const measureOverlaysRef = useRef<Overlay[]>([])
 
-  const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null)
+  // La lectura de coordenadas y la etiqueta del cursor se actualizan por DOM,
+  // no por estado: son las dos cosas que cambian con cada movimiento del ratón
+  // y pasarlas por React obligaba a re-renderizar todo el mapa cada vez.
+  const lonRef = useRef<HTMLSpanElement>(null)
+  const latRef = useRef<HTMLSpanElement>(null)
+  const hoverRef = useRef<HTMLDivElement>(null)
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   // La herramienta puede venir de fuera (ribbon) o manejarse sola: si llega
   // `tool` por props manda esa, y los clicks del propio mapa se notifican arriba.
@@ -195,6 +274,7 @@ export function NetworkMap({
   const [fiberLoadError, setFiberLoadError] = useState<string | null>(null)
   const [mufaLoadError, setMufaLoadError] = useState<string | null>(null)
   const [cabeceraLoadError, setCabeceraLoadError] = useState<string | null>(null)
+  const [baseMapError, setBaseMapError] = useState(false)
   const [connectivityOpen, setConnectivityOpen] = useState(false)
   const [connectivitySchema, setConnectivitySchema] = useState<MufaCampoJSON | null>(null)
   const [fiberNotice, setFiberNotice] = useState<string | null>(null)
@@ -204,17 +284,33 @@ export function NetworkMap({
   const [firstLoadDone, setFirstLoadDone] = useState(false)
   const [legendOpen, setLegendOpen] = useState(true)
 
+  // Los callbacks se guardan en refs para que los manejadores de OpenLayers,
+  // registrados una sola vez, siempre llamen a la versión más reciente sin
+  // tener que recrear el mapa. La asignación va en un efecto porque escribir
+  // en una ref durante el render es un efecto secundario encubierto.
   const onStatsChangeRef = useRef(onStatsChange)
-  onStatsChangeRef.current = onStatsChange
-
   const onCenterChangeRef = useRef(onCenterChange)
-  onCenterChangeRef.current = onCenterChange
-
   const onToolChangeRef = useRef(onToolChange)
-  onToolChangeRef.current = onToolChange
-
   const onLoadingChangeRef = useRef(onLoadingChange)
-  onLoadingChangeRef.current = onLoadingChange
+
+  // El filtro se lee desde el estilo, que OpenLayers ejecuta en cada dibujado.
+  // Guardarlo en una ref evita tener que reconstruir las capas al cambiarlo.
+  const filtersRef = useRef(filters)
+
+  useEffect(() => {
+    onStatsChangeRef.current = onStatsChange
+    onCenterChangeRef.current = onCenterChange
+    onToolChangeRef.current = onToolChange
+    onLoadingChangeRef.current = onLoadingChange
+  })
+
+  // Al cambiar el filtro basta con pedir un redibujado: el estilo vuelve a
+  // consultarlo y deja fuera las categorías que no estén seleccionadas.
+  useEffect(() => {
+    filtersRef.current = filters
+    nodeLayer.current?.changed()
+    fiberLayer.current?.changed()
+  }, [filters])
 
   const setTool = useCallback((next: Tool) => {
     setInternalTool(next)
@@ -237,7 +333,9 @@ export function NetworkMap({
     [nodeSource, fiberSource, cabeceraSource, zoneSource],
   )
 
-  const recalc = useCallback(() => {
+  const recalcPendienteRef = useRef<number | null>(null)
+
+  const recalcAhora = useCallback(() => {
     const nodeFeatures = nodeSource.getFeatures()
     const fiberFeatures = fiberSource.getFeatures()
     const km = fiberFeatures.reduce((acc, f) => {
@@ -256,30 +354,60 @@ export function NetworkMap({
       // El desglose usa el mismo campo que define la simbología de cada capa,
       // así el panel explica lo que se está viendo en el mapa.
       breakdown: {
-        nodes: agrupar(nodeFeatures, (f) => {
-          const funcion = (f.get("funcion_cub") as string | null) || "Otro / sin dato"
-          return { label: funcion, color: colorForFuncionCub(f.get("funcion_cub") as string) }
-        }),
-        fibers: agrupar(fiberFeatures, (f) => {
-          const hilos = f.get("cant_hilo") as number | null
-          return {
-            label: hilos ? `${hilos} hilos` : "Sin dato de hilos",
-            color: LAYER_COLORS.fiber,
-          }
-        }),
+        nodes: agrupar(nodeFeatures, (f) => ({
+          label: categoriaDeMufa(f),
+          color: colorForFuncionCub(f.get("funcion_cub") as string),
+        })),
+        fibers: agrupar(fiberFeatures, (f) => ({
+          label: categoriaDeCable(f),
+          color: LAYER_COLORS.fiber,
+          // Mismo grosor que en el mapa: un cable de 144 hilos se ve más
+          // grueso que uno de 48 también en el panel.
+          width: fiberWidth(f.get("cant_hilo") as number | undefined),
+        })),
       },
     })
   }, [nodeSource, fiberSource, zoneSource, cabeceraSource])
 
-  // Encuadra el mapa sobre los datos de red que estén cargados.
-  const encuadrarEnDatos = useCallback(() => {
+  /**
+   * Recuento agrupado.
+   *
+   * `addfeature` se dispara por cada elemento, así que cargar las capas
+   * lanzaba el recuento 368 veces seguidas: cada una recorría todos los
+   * elementos y provocaba un render del dashboard. Agrupando las llamadas en
+   * un fotograma, una carga completa hace un solo recuento.
+   */
+  const pedirRecalculo = useCallback(() => {
+    if (recalcPendienteRef.current !== null) return
+    recalcPendienteRef.current = requestAnimationFrame(() => {
+      recalcPendienteRef.current = null
+      recalcAhora()
+    })
+  }, [recalcAhora])
+
+  /**
+   * Encuadra el mapa sobre una extensión concreta. Se usa para la red
+   * completa, para una sola capa y para el elemento seleccionado.
+   */
+  const encuadrarEn = useCallback((extent: number[] | null | undefined, maxZoom = 16) => {
     const view = mapRef.current?.getView()
-    if (!view) return
-    const extent = nodeSource.getExtent()
-    if (extent && extent.every((v) => Number.isFinite(v))) {
-      view.fit(extent, { padding: [60, 60, 60, 60], maxZoom: 16, duration: 300 })
-    }
-  }, [nodeSource])
+    if (!view || !extent || !extent.every((v) => Number.isFinite(v))) return
+    view.fit(extent, { padding: [80, 80, 80, 80], maxZoom, duration: 400 })
+  }, [])
+
+  // Extensión combinada de las capas con datos de red.
+  const extensionDeRed = useCallback(() => {
+    const juntas = createEmpty()
+    ;[nodeSource, fiberSource, cabeceraSource].forEach((s) => {
+      const e = s.getExtent()
+      if (e && e.every((v) => Number.isFinite(v))) extend(juntas, e)
+    })
+    return isEmpty(juntas) ? null : juntas
+  }, [nodeSource, fiberSource, cabeceraSource])
+
+  const encuadrarEnDatos = useCallback(() => {
+    encuadrarEn(extensionDeRed())
+  }, [encuadrarEn, extensionDeRed])
 
   // Carga (o recarga) las tres capas reales. `encuadrar` solo se pide en el
   // arranque: al actualizar manualmente conviene respetar la vista del usuario.
@@ -324,20 +452,34 @@ export function NetworkMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
-    const view = new View({ center: fromLonLat(center), zoom })
+    // Se retoma la última vista para no volver siempre al encuadre completo:
+    // quien trabaja sobre un sector concreto lo recupera al recargar.
+    const guardada = leerVistaGuardada()
+    const view = new View({
+      center: fromLonLat(guardada?.centro ?? center),
+      zoom: guardada?.zoom ?? zoom,
+    })
 
     // `declutter` descarta las etiquetas que se solapan. Los símbolos llevan
     // `declutterMode: "none"` en la simbología, así que siempre se dibujan:
     // se ordenan los rótulos sin llegar a esconder elementos de la red.
     zoneLayer.current = new VectorLayer({ source: zoneSource, style: zoneStyle as never })
+    // Devolver `undefined` deja el elemento sin dibujar, y OpenLayers tampoco
+    // lo detecta al hacer click: filtrar oculta y además vuelve inseleccionable.
     fiberLayer.current = new VectorLayer({
       source: fiberSource,
-      style: fiberStyle as never,
+      style: ((f: Feature<Geometry>, r: number) =>
+        categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f))
+          ? fiberStyle(f, r)
+          : undefined) as never,
       declutter: true,
     })
     nodeLayer.current = new VectorLayer({
       source: nodeSource,
-      style: nodeStyle as never,
+      style: ((f: Feature<Geometry>, r: number) =>
+        categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f))
+          ? nodeStyle(f, r)
+          : undefined) as never,
       declutter: true,
     })
     cabeceraLayer.current = new VectorLayer({
@@ -350,7 +492,10 @@ export function NetworkMap({
     const map = new Map({
       target: containerRef.current,
       layers: [
-        new TileLayer({ source: new OSM() }),
+        // El `className` hace que OpenLayers dibuje la capa base en su propio
+        // lienzo, y eso permite oscurecerla por CSS en modo oscuro sin tocar
+        // los datos de la red (ver globals.css).
+        new TileLayer({ source: baseMapSource, className: "gismart-basemap" }),
         zoneLayer.current,
         fiberLayer.current,
         nodeLayer.current,
@@ -360,25 +505,89 @@ export function NetworkMap({
         measureLayer.current,
       ],
       view,
-      controls: defaultControls({ attributionOptions: { collapsible: true } }),
+      controls: defaultControls({ attributionOptions: { collapsible: true } }).extend([
+        // Barra de escala: en un SIG es la referencia para juzgar distancias
+        // de un vistazo, sin tener que usar la herramienta de medir.
+        new ScaleLine({ units: "metric", bar: true, steps: 2, text: true, minWidth: 90 }),
+      ]),
     })
 
+    // El puntero se maneja fuera de React a propósito.
+    //
+    // Antes cada `pointermove` hacía `setState`, y eso volvía a renderizar el
+    // componente entero decenas de veces por segundo con solo mover el ratón
+    // sobre el mapa. Acá se escribe directo en el DOM y se limita el trabajo a
+    // un fotograma, así que mover el ratón deja de costar renders de React.
+    let pendiente: { pixel: number[]; coordinate: number[] } | null = null
+    let cuadroPedido = false
+    let ultimoResaltado: Feature<Geometry> | null = null
+
+    const capasConsultables = () =>
+      [nodeLayer.current, fiberLayer.current, cabeceraLayer.current, zoneLayer.current].filter(
+        (capa): capa is VectorLayer<VectorSource> => capa !== null,
+      )
+
+    function procesarPuntero() {
+      cuadroPedido = false
+      if (!pendiente) return
+      const { pixel, coordinate } = pendiente
+
+      const [lon, lat] = toLonLat(coordinate)
+      if (lonRef.current) lonRef.current.textContent = lon.toFixed(5)
+      if (latRef.current) latRef.current.textContent = lat.toFixed(5)
+
+      // Nombre del elemento bajo el cursor, a cualquier zoom: las etiquetas del
+      // mapa solo salen de cerca, así que sin esto había que hacer click para
+      // saber qué era cada punto.
+      const capas = capasConsultables()
+      const encontrado =
+        map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
+          hitTolerance: 4,
+          layerFilter: (capa) => capas.includes(capa as VectorLayer<VectorSource>),
+        }) ?? null
+
+      const globo = hoverRef.current
+      if (!globo) return
+
+      if (!encontrado) {
+        ultimoResaltado = null
+        globo.hidden = true
+        return
+      }
+
+      globo.hidden = false
+      globo.style.transform = `translate(${pixel[0]}px, ${pixel[1]}px)`
+
+      // El texto solo se rearma cuando cambia el elemento, no en cada píxel.
+      if (encontrado !== ultimoResaltado) {
+        ultimoResaltado = encontrado
+        const tipo = tipoDeFeature(encontrado)
+        globo.textContent = tipo
+          ? `${TYPE_LABELS[tipo]} · ${(encontrado.get("nombre") as string) || TYPE_LABELS[tipo]}`
+          : ""
+      }
+    }
+
     map.on("pointermove", (evt) => {
-      const [lon, lat] = toLonLat(evt.coordinate)
-      setCoords({ lon, lat })
+      // Mientras se arrastra el mapa no interesa lo que hay bajo el cursor.
+      if (evt.dragging) {
+        if (hoverRef.current) hoverRef.current.hidden = true
+        return
+      }
+      pendiente = { pixel: evt.pixel, coordinate: evt.coordinate }
+      if (cuadroPedido) return
+      cuadroPedido = true
+      requestAnimationFrame(procesarPuntero)
+    })
+
+    // Al salir del mapa no debe quedar una etiqueta flotando.
+    map.getViewport().addEventListener("pointerleave", () => {
+      ultimoResaltado = null
+      if (hoverRef.current) hoverRef.current.hidden = true
     })
     view.on("change:resolution", () => {
       const z = view.getZoom()
       if (typeof z === "number") setZoomLevel(Math.round(z * 10) / 10)
-    })
-
-    // "moveend" agrupa el final de cada paneo/zoom, así que evita disparar la
-    // geocodificación inversa en cada cuadro de la animación.
-    map.on("moveend", () => {
-      const center = view.getCenter()
-      if (!center) return
-      const [lon, lat] = toLonLat(center)
-      onCenterChangeRef.current?.({ lon, lat })
     })
 
     // React StrictMode monta este efecto dos veces seguidas en desarrollo
@@ -388,15 +597,44 @@ export function NetworkMap({
     let cancelled = false
     const isCancelled = () => cancelled
 
-    cargarDatosReales(isCancelled, true)
+    // Si la cartografía de fondo no carga, el mapa queda en negro sin explicar
+    // nada. Se avisa solo tras varios fallos seguidos, para no alarmar por una
+    // tesela suelta, y el aviso se retira en cuanto vuelve a cargar alguna.
+    let teselasFallidas = 0
+    baseMapSource.on("tileloaderror", () => {
+      teselasFallidas += 1
+      if (teselasFallidas >= 6 && !isCancelled()) setBaseMapError(true)
+    })
+    baseMapSource.on("tileloadend", () => {
+      teselasFallidas = 0
+      if (!isCancelled()) setBaseMapError(false)
+    })
+
+    // "moveend" agrupa el final de cada paneo/zoom, así que evita disparar la
+    // geocodificación inversa en cada cuadro de la animación.
+    map.on("moveend", () => {
+      const center = view.getCenter()
+      if (!center) return
+      const [lon, lat] = toLonLat(center)
+      onCenterChangeRef.current?.({ lon, lat })
+
+      const zoomActual = view.getZoom()
+      if (typeof zoomActual === "number") {
+        guardarVista({ centro: [lon, lat], zoom: zoomActual })
+      }
+    })
+
+    // Solo se reencuadra sobre los datos si no había una vista guardada: si la
+    // hay, respetarla es justamente el sentido de haberla guardado.
+    cargarDatosReales(isCancelled, !guardada)
 
     ;[nodeSource, fiberSource, zoneSource, cabeceraSource].forEach((s) => {
-      s.on("addfeature", recalc)
-      s.on("removefeature", recalc)
+      s.on("addfeature", pedirRecalculo)
+      s.on("removefeature", pedirRecalculo)
     })
 
     mapRef.current = map
-    recalc()
+    recalcAhora()
 
     // Esc cancela el trazo en curso (mufa, fibra o zona), sin dejar nada a medias.
     function handleEscape(e: KeyboardEvent) {
@@ -455,7 +693,7 @@ export function NetworkMap({
       clearTimeout(fiberNoticeTimeoutRef.current)
       fiberNoticeTimeoutRef.current = null
     }
-    setFiberNotice(tool === "fiber" ? FIBER_HINT : null)
+    setFiberNotice(TOOL_HINTS[tool] ?? null)
 
     // Con una herramienta de selección activa, el doble click debe actuar sobre
     // el elemento: el zoom por doble click desplazaba el mapa y hacía que el
@@ -480,7 +718,15 @@ export function NetworkMap({
       // En modo "Editar": click para seleccionar un elemento (abre el panel
       // de info) y arrastrar sus vértices para corregir el trazado. "Mover mapa"
       // queda libre solo para desplazarse, sin interceptar clicks.
-      const editSelect = new Select({ condition: click, layers: capasDeDatos })
+      const editSelect = new Select({
+        condition: click,
+        layers: capasDeDatos,
+        // Resalta lo seleccionado sobre el mapa, no solo en el panel lateral.
+        style: ((f: Feature<Geometry>, r: number) => {
+          const tipo = tipoDeFeature(f)
+          return tipo ? seleccionStyle(f, r, tipo) : undefined
+        }) as never,
+      })
       editSelect.on("select", (e) => {
         const feature = e.selected[0]
         if (!feature) {
@@ -680,21 +926,57 @@ export function NetworkMap({
 
   // "Actualizar" del ribbon: vuelve a pedir los datos a los endpoints. Se
   // cancela igual que la carga inicial, para no escribir estado si el usuario
-  // sale de la vista mientras las respuestas siguen en camino.
+  // sale de la vista mientras las respuestas siguen en camino. El encendido
+  // del indicador de carga es justamente el efecto que se busca aquí.
   useEffect(() => {
     if (!reloadTrigger) return
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarDatosReales(() => cancelled, false)
     return () => {
       cancelled = true
     }
   }, [reloadTrigger, cargarDatosReales])
 
-  // "Mapa de red" del ribbon: reencuadra sobre la red cargada.
+  // Encuadre pedido desde fuera: la red completa (ribbon) o una capa concreta
+  // (panel de capas).
   useEffect(() => {
-    if (!fitTrigger) return
-    encuadrarEnDatos()
-  }, [fitTrigger, encuadrarEnDatos])
+    if (!fitTo) return
+    if (fitTo.capa === "todo") {
+      encuadrarEnDatos()
+      return
+    }
+    const fuentes = {
+      nodes: nodeSource,
+      fibers: fiberSource,
+      cabeceras: cabeceraSource,
+      zones: zoneSource,
+    }
+    encuadrarEn(fuentes[fitTo.capa].getExtent())
+    // `nonce` es lo que marca una petición nueva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitTo?.nonce])
+
+  // Atajos: las teclas 1..8 activan las herramientas en el orden de la barra.
+  // Se ignoran mientras se escribe en un campo, para no cambiar de herramienta
+  // al teclear un nombre.
+  useEffect(() => {
+    function alPulsarTecla(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const activo = document.activeElement
+      const escribiendo =
+        activo instanceof HTMLInputElement ||
+        activo instanceof HTMLTextAreaElement ||
+        (activo instanceof HTMLElement && activo.isContentEditable)
+      if (escribiendo) return
+
+      const indice = Number(e.key) - 1
+      const herramienta = TOOL_ORDER[indice]
+      if (herramienta) setTool(herramienta)
+    }
+    window.addEventListener("keydown", alPulsarTecla)
+    return () => window.removeEventListener("keydown", alPulsarTecla)
+  }, [setTool])
 
   const tools: { id: Tool; label: string; icon: typeof Hand; color?: string; separator?: boolean }[] = [
     { id: "pan", label: "Mover mapa", icon: Hand },
@@ -747,11 +1029,33 @@ export function NetworkMap({
     closeSelection()
   }
 
+  function centrarEnSeleccion() {
+    const geom = selected?.feature.getGeometry()
+    if (!geom) return
+    // Un punto no tiene extensión útil: se acerca más para que quede claro
+    // cuál es, mientras que un cable o una zona se encuadran completos.
+    const esPunto = geom.getType() === "Point"
+    encuadrarEn(geom.getExtent(), esPunto ? 18 : 17)
+  }
+
   function handleViewConnections() {
     if (!selected || selected.type !== "node") return
     const schema = (selected.feature.get("esquema") as MufaCampoJSON | undefined) ?? MUFA_SCHEMA_EXAMPLE
     setConnectivitySchema(schema)
     setConnectivityOpen(true)
+  }
+
+  // Nombres de las capas que no pudieron cargar, para un único aviso.
+  const capasSinDatos = [
+    mufaLoadError ? "Mufas" : null,
+    fiberLoadError ? "Tendido de fibra" : null,
+    cabeceraLoadError ? "Cabeceras" : null,
+  ].filter((capa): capa is string => capa !== null)
+
+  function descartarAvisosDeCarga() {
+    setMufaLoadError(null)
+    setFiberLoadError(null)
+    setCabeceraLoadError(null)
   }
 
   const selectedLength =
@@ -775,9 +1079,21 @@ export function NetworkMap({
           [&_.ol-zoom_button]:!rounded-lg [&_.ol-zoom_button]:!bg-transparent
           [&_.ol-zoom_button]:!text-base [&_.ol-zoom_button]:!font-medium
           [&_.ol-zoom_button]:!text-foreground
-          [&_.ol-zoom_button:hover]:!bg-accent"
+          [&_.ol-zoom_button:hover]:!bg-accent
+          [&_.ol-scale-bar]:!bottom-14 [&_.ol-scale-bar]:!left-3
+          [&_.ol-scale-bar]:rounded-md [&_.ol-scale-bar]:bg-card/90
+          [&_.ol-scale-bar]:px-1.5 [&_.ol-scale-bar]:py-1
+          [&_.ol-scale-bar]:shadow-md [&_.ol-scale-bar]:ring-1
+          [&_.ol-scale-bar]:ring-border [&_.ol-scale-bar]:backdrop-blur
+          [&_.ol-scale-text]:!bottom-auto [&_.ol-scale-text]:!text-foreground
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
+          focus-visible:ring-ring/60"
+        // OpenLayers trae desplazamiento y zoom por teclado, pero solo actúan
+        // cuando el mapa tiene el foco. Sin `tabIndex` el contenedor no podía
+        // recibirlo, así que las flechas y +/- nunca hacían nada.
+        tabIndex={0}
         role="application"
-        aria-label="Mapa interactivo de la red de fibra"
+        aria-label="Mapa interactivo de la red de fibra. Con el foco puesto, las flechas desplazan y + o − acercan y alejan."
       />
 
       {/* Cortina del primer arranque: evita mostrar un mapa vacío mientras
@@ -804,13 +1120,19 @@ export function NetworkMap({
           </div>
         )}
 
-        {mufaLoadError && (
-          <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive shadow-md ring-1 ring-destructive/30 backdrop-blur">
-            <span>{mufaLoadError}</span>
+        {/* Un solo aviso para todas las capas: tres banderas apiladas tapaban
+            el mapa, y que una capa no traiga datos no siempre es una falla. */}
+        {capasSinDatos.length > 0 && (
+          <div className="pointer-events-auto flex max-w-md items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
+            <span>
+              Sin datos disponibles:{" "}
+              <span className="font-semibold">{capasSinDatos.join(", ")}</span>. El resto del
+              mapa funciona normalmente.
+            </span>
             <button
               type="button"
-              onClick={() => setMufaLoadError(null)}
-              className="rounded p-0.5 outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+              onClick={descartarAvisosDeCarga}
+              className="rounded p-0.5 outline-none transition hover:bg-amber-500/20 focus-visible:ring-2 focus-visible:ring-ring/50"
               aria-label="Cerrar aviso"
             >
               <X className="size-3.5" />
@@ -818,31 +1140,9 @@ export function NetworkMap({
           </div>
         )}
 
-        {cabeceraLoadError && (
-          <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive shadow-md ring-1 ring-destructive/30 backdrop-blur">
-            <span>{cabeceraLoadError}</span>
-            <button
-              type="button"
-              onClick={() => setCabeceraLoadError(null)}
-              className="rounded p-0.5 outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label="Cerrar aviso"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        )}
-
-        {fiberLoadError && (
-          <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive shadow-md ring-1 ring-destructive/30 backdrop-blur">
-            <span>{fiberLoadError}</span>
-            <button
-              type="button"
-              onClick={() => setFiberLoadError(null)}
-              className="rounded p-0.5 outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label="Cerrar aviso"
-            >
-              <X className="size-3.5" />
-            </button>
+        {baseMapError && (
+          <div className="flex max-w-md items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
+            No se pudo cargar la cartografía de fondo. Los datos de la red sí se muestran.
           </div>
         )}
 
@@ -881,8 +1181,9 @@ export function NetworkMap({
               <button
                 type="button"
                 onClick={() => setTool(t.id)}
-                title={t.label}
+                title={`${t.label} (${TOOL_ORDER.indexOf(t.id) + 1})`}
                 aria-label={t.label}
+                aria-keyshortcuts={String(TOOL_ORDER.indexOf(t.id) + 1)}
                 aria-pressed={active}
                 className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
                   active
@@ -903,17 +1204,40 @@ export function NetworkMap({
       {/* Barra de estado */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
         <span>
-          Lon: <span className="tabular-nums text-primary">{coords ? coords.lon.toFixed(5) : "—"}</span>
+          Lon:{" "}
+          <span ref={lonRef} className="tabular-nums text-primary">
+            —
+          </span>
         </span>
         <span className="h-3 w-px bg-border" />
         <span>
-          Lat: <span className="tabular-nums text-primary">{coords ? coords.lat.toFixed(5) : "—"}</span>
+          Lat:{" "}
+          <span ref={latRef} className="tabular-nums text-primary">
+            —
+          </span>
         </span>
         <span className="h-3 w-px bg-border" />
         <span>
           Zoom: <span className="tabular-nums text-primary">{zoomLevel}</span>
         </span>
+        <span className="h-3 w-px bg-border" />
+        {/* Qué herramienta está activa: con ocho en la barra y atajos de
+            teclado, conviene poder confirmarlo sin mirar los iconos. */}
+        <span className="text-muted-foreground">
+          {tools.find((t) => t.id === tool)?.label ?? ""}
+        </span>
       </div>
+
+      {/* Nombre del elemento bajo el cursor. Las etiquetas del mapa solo salen
+          de cerca, así que esto permite reconocer elementos a cualquier zoom.
+          Su contenido y posición los escribe el mapa directamente (ver el
+          manejador de `pointermove`), sin pasar por el estado de React. */}
+      <div
+        ref={hoverRef}
+        hidden
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
+      />
 
       {/* Leyenda plegable: mismos símbolos que se dibujan en el mapa (SIGETP).
           Se puede cerrar para no tapar el mapa en pantallas chicas. */}
@@ -931,10 +1255,7 @@ export function NetworkMap({
         {legendOpen && (
           <div className="flex flex-col gap-1 border-t border-border px-2.5 pb-2 pt-1.5">
             <span className="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
-                <circle cx="8" cy="8" r="7" fill="#ffffff" stroke={CABECERA_COLOR} strokeWidth="1.8" />
-                <polygon points="8,4 11.5,10 4.5,10" fill={CABECERA_COLOR} />
-              </svg>
+              <CabeceraSymbol size={14} />
               Cabecera central
             </span>
 
@@ -953,9 +1274,7 @@ export function NetworkMap({
             </span>
 
             <span className="mt-0.5 flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
-                <line x1="1" y1="8" x2="15" y2="8" stroke={LAYER_COLORS.fiber} strokeWidth="3" strokeLinecap="round" />
-              </svg>
+              <FiberSymbol color={LAYER_COLORS.fiber} size={14} />
               Fibra óptica
             </span>
             <span className="text-[10px] leading-tight text-muted-foreground">
@@ -1025,6 +1344,17 @@ export function NetworkMap({
               Ver conexiones
             </button>
           )}
+
+          {/* Tras filtrar o buscar, lo seleccionado puede quedar fuera de la
+              vista: esto lo trae al centro sin tener que buscarlo a mano. */}
+          <button
+            type="button"
+            onClick={centrarEnSeleccion}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Crosshair className="size-3.5" />
+            Centrar en el mapa
+          </button>
 
           {(selected.type === "node" || selected.type === "fiber" || selected.type === "cabecera") && (
             <button

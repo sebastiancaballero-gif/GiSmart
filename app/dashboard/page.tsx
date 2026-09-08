@@ -7,6 +7,7 @@ import { DashboardHeader } from "@/components/dashboard-header"
 import { NetworkMap, type MapTool, type NetworkStats } from "@/components/network-map"
 import { AuthGuard } from "@/components/auth-guard"
 import { LAYER_COLORS } from "@/lib/network-colors"
+import { fetchConSesion } from "@/lib/auth"
 
 export default function DashboardPage() {
   const [visible, setVisible] = useState({ nodes: true, fibers: true, zones: true, cabeceras: true })
@@ -17,10 +18,44 @@ export default function DashboardPage() {
   const [location, setLocation] = useState("Ubicando…")
   const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; nonce: number } | null>(null)
   const [reloadTrigger, setReloadTrigger] = useState(0)
-  const [fitTrigger, setFitTrigger] = useState(0)
+  const [fitTo, setFitTo] = useState<{ capa: "todo" | "nodes" | "fibers" | "cabeceras" | "zones"; nonce: number } | null>(null)
   const [tool, setTool] = useState<MapTool>("pan")
   const [loadingData, setLoadingData] = useState(true)
   const [breakdown, setBreakdown] = useState<NetworkStats["breakdown"]>({ nodes: [], fibers: [] })
+  // Categorías marcadas en el desglose. Vacío = sin filtro, se ve todo.
+  const [filters, setFilters] = useState<{ nodes: string[]; fibers: string[] }>({
+    nodes: [],
+    fibers: [],
+  })
+
+  const claveDeCapa = (layerId: string): "nodes" | "fibers" | null =>
+    layerId === "nodes" ? "nodes" : layerId === "fibers" ? "fibers" : null
+
+  const handleToggleItem = useCallback((layerId: string, item: string) => {
+    const clave = claveDeCapa(layerId)
+    if (!clave) return
+    setFilters((prev) => {
+      const actuales = prev[clave]
+      return {
+        ...prev,
+        [clave]: actuales.includes(item)
+          ? actuales.filter((x) => x !== item)
+          : [...actuales, item],
+      }
+    })
+  }, [])
+
+  // Encuadra el mapa sobre una capa concreta desde el panel lateral.
+  const handleZoomLayer = useCallback((layerId: string) => {
+    const capa = layerId as "nodes" | "fibers" | "cabeceras" | "zones"
+    setFitTo({ capa, nonce: Date.now() })
+  }, [])
+
+  const handleClearItems = useCallback((layerId: string) => {
+    const clave = claveDeCapa(layerId)
+    if (!clave) return
+    setFilters((prev) => ({ ...prev, [clave]: [] }))
+  }, [])
 
   const handleNavigate = useCallback((target: { lon: number; lat: number }) => {
     setFlyTo({ ...target, nonce: Date.now() })
@@ -29,7 +64,7 @@ export default function DashboardPage() {
   const ribbonActions = useMemo(
     () => ({
       onRefresh: () => setReloadTrigger((v) => v + 1),
-      onFitToData: () => setFitTrigger((v) => v + 1),
+      onFitToData: () => setFitTo({ capa: "todo", nonce: Date.now() }),
       onIdentify: () => setTool("edit"),
       onMeasure: () => setTool("measure-length"),
       onDraw: () => setTool("node"),
@@ -56,7 +91,7 @@ export default function DashboardPage() {
 
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/reverse-geocode?lon=${center.lon}&lat=${center.lat}`)
+        const res = await fetchConSesion(`/api/reverse-geocode?lon=${center.lon}&lat=${center.lat}`)
         if (!res.ok || cancelled) return
         const data = await res.json()
         if (!cancelled && data?.label) setLocation(data.label as string)
@@ -89,10 +124,10 @@ export default function DashboardPage() {
   }, [])
 
   const layers = [
-    { id: "cabeceras", label: "Cabeceras", color: LAYER_COLORS.cabecera, count: counts.cabeceras, visible: visible.cabeceras },
-    { id: "nodes", label: "Mufas", color: LAYER_COLORS.node, count: counts.nodes, visible: visible.nodes, items: breakdown.nodes },
-    { id: "fibers", label: "Tendido de fibra", color: LAYER_COLORS.fiber, count: counts.fibers, visible: visible.fibers, items: breakdown.fibers },
-    { id: "zones", label: "Zonas", color: LAYER_COLORS.zone, count: counts.zones, visible: visible.zones },
+    { id: "cabeceras", label: "Cabeceras", color: LAYER_COLORS.cabecera, count: counts.cabeceras, visible: visible.cabeceras, symbol: "cabecera" as const },
+    { id: "nodes", label: "Mufas", color: LAYER_COLORS.node, count: counts.nodes, visible: visible.nodes, items: breakdown.nodes, activeItems: filters.nodes, symbol: "mufa" as const },
+    { id: "fibers", label: "Tendido de fibra", color: LAYER_COLORS.fiber, count: counts.fibers, visible: visible.fibers, items: breakdown.fibers, activeItems: filters.fibers, symbol: "fibra" as const },
+    { id: "zones", label: "Zonas", color: LAYER_COLORS.zone, count: counts.zones, visible: visible.zones, symbol: "zona" as const },
   ]
 
   return (
@@ -104,6 +139,9 @@ export default function DashboardPage() {
           <DashboardSidebar
             layers={layers}
             onToggleLayer={handleToggleLayer}
+            onToggleItem={handleToggleItem}
+            onClearItems={handleClearItems}
+            onZoomLayer={handleZoomLayer}
             totalKm={totalKm}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
@@ -116,10 +154,11 @@ export default function DashboardPage() {
               onCenterChange={handleCenterChange}
               flyTo={flyTo}
               reloadTrigger={reloadTrigger}
-              fitTrigger={fitTrigger}
+              fitTo={fitTo}
               tool={tool}
               onToolChange={setTool}
               onLoadingChange={setLoadingData}
+              filters={filters}
             />
           </main>
         </div>

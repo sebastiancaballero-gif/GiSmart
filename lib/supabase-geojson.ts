@@ -16,13 +16,10 @@ import { NextResponse } from "next/server"
 export async function serveGeoJsonView({
   schema,
   view,
-  columns,
   entidad,
 }: {
   schema: string
   view: string
-  /** Columnas a pedir, sin `geom`: se agrega sola y se excluye de properties. */
-  columns: string[]
   /** Nombre en plural para los mensajes de error, p. ej. "las mufas". */
   entidad: string
 }) {
@@ -38,11 +35,22 @@ export async function serveGeoJsonView({
       db: { schema },
     })
 
-    const { data, error } = await supabase.from(view).select([...columns, "geom"].join(", "))
+    // Se piden todas las columnas: la vista ya define qué se expone, y repetir
+    // la lista acá solo servía para que la ruta se rompiera cada vez que
+    // cambiaba el esquema (pasó al renombrarse `est_const` a `tipo_est_const`).
+    const { data, error } = await supabase.from(view).select("*")
 
     if (error) {
+      // El detalle técnico de PostgREST viene en inglés y no le dice nada a
+      // quien usa el visor: se registra en el servidor y al cliente va un
+      // mensaje entendible.
+      console.error(`[${schema}.${view}] ${error.message}`)
       return NextResponse.json(
-        { message: `No se pudieron cargar ${entidad}: ${error.message}`, features: [] },
+        {
+          message: `No hay datos disponibles de ${entidad} en este momento.`,
+          detalle: error.message,
+          features: [],
+        },
         { status: 502 },
       )
     }

@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, EyeOff, Ruler, ChevronLeft, ChevronRight, Layers } from "lucide-react"
+import { Eye, EyeOff, Ruler, ChevronLeft, ChevronRight, Layers, X, Crosshair } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { GismartMark } from "@/components/gismart-mark"
+import { CabeceraSymbol, FiberSymbol, MufaSymbol, ZonaSymbol } from "@/components/map-symbols"
 
 type LayerDef = {
   id: string
@@ -12,12 +13,49 @@ type LayerDef = {
   count: number
   visible: boolean
   /** Desglose por categoría (p. ej. mufas por nivel), si la capa lo tiene. */
-  items?: { label: string; count: number; color: string }[]
+  items?: { label: string; count: number; color: string; width?: number }[]
+  /** Categorías marcadas para ver solo esas en el mapa. */
+  activeItems?: string[]
+  /** Qué símbolo del mapa representa esta capa. */
+  symbol?: "cabecera" | "mufa" | "fibra" | "zona"
+}
+
+/**
+ * Dibuja el mismo símbolo que el mapa. El panel usaba puntos de color, así que
+ * no se parecía a lo que se ve sobre la cartografía ni a la leyenda.
+ */
+function SimboloDeCapa({
+  symbol,
+  color,
+  width,
+  size = 16,
+}: {
+  symbol: LayerDef["symbol"]
+  color: string
+  width?: number
+  size?: number
+}) {
+  if (symbol === "cabecera") return <CabeceraSymbol size={size} />
+  if (symbol === "mufa") return <MufaSymbol color={color} size={size} />
+  if (symbol === "fibra") return <FiberSymbol color={color} width={width} size={size} />
+  if (symbol === "zona") return <ZonaSymbol color={color} size={size} />
+  return (
+    <span
+      className="size-3.5 shrink-0 rounded-full shadow-sm ring-2 ring-white"
+      style={{ backgroundColor: color }}
+    />
+  )
 }
 
 type DashboardSidebarProps = {
   layers: LayerDef[]
   onToggleLayer: (id: string) => void
+  /** Marca o desmarca una categoría del desglose para filtrar el mapa. */
+  onToggleItem?: (layerId: string, item: string) => void
+  /** Quita el filtro de categorías de una capa. */
+  onClearItems?: (layerId: string) => void
+  /** Encuadra el mapa sobre los elementos de esa capa. */
+  onZoomLayer?: (layerId: string) => void
   totalKm: number
   collapsed?: boolean
   onToggleCollapse?: () => void
@@ -28,6 +66,9 @@ type DashboardSidebarProps = {
 export function DashboardSidebar({
   layers,
   onToggleLayer,
+  onToggleItem,
+  onClearItems,
+  onZoomLayer,
   totalKm,
   collapsed = false,
   onToggleCollapse,
@@ -58,10 +99,7 @@ export function DashboardSidebar({
               aria-pressed={l.visible}
               className={`mb-1.5 rounded-lg p-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${l.visible ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}
             >
-              <span
-                className="block size-4 rounded-full ring-2 ring-white"
-                style={{ backgroundColor: l.color }}
-              />
+              <SimboloDeCapa symbol={l.symbol} color={l.color} size={18} />
             </button>
           ))}
         </>
@@ -69,6 +107,9 @@ export function DashboardSidebar({
         <SidebarExpandedContent
           layers={layers}
           onToggleLayer={onToggleLayer}
+          onToggleItem={onToggleItem}
+          onClearItems={onClearItems}
+          onZoomLayer={onZoomLayer}
           totalKm={totalKm}
           onToggleCollapse={onToggleCollapse}
           loading={loading}
@@ -81,12 +122,18 @@ export function DashboardSidebar({
 function SidebarExpandedContent({
   layers,
   onToggleLayer,
+  onToggleItem,
+  onClearItems,
+  onZoomLayer,
   totalKm,
   onToggleCollapse,
   loading,
 }: {
   layers: LayerDef[]
   onToggleLayer: (id: string) => void
+  onToggleItem?: (layerId: string, item: string) => void
+  onClearItems?: (layerId: string) => void
+  onZoomLayer?: (layerId: string) => void
   totalKm: number
   onToggleCollapse?: () => void
   loading: boolean
@@ -154,10 +201,7 @@ function SidebarExpandedContent({
                         abierta ? "rotate-90" : ""
                       } ${desglosable ? "" : "invisible"}`}
                     />
-                    <span
-                      className="size-3.5 shrink-0 rounded-full shadow-sm ring-2 ring-white"
-                      style={{ backgroundColor: layer.color }}
-                    />
+                    <SimboloDeCapa symbol={layer.symbol} color={layer.color} />
                     <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                       {layer.label}
                     </span>
@@ -173,6 +217,19 @@ function SidebarExpandedContent({
                       {layer.count}
                     </Badge>
                   )}
+                  {/* Encuadrar sobre la capa: útil para saltar a una capa con
+                      pocos elementos, como las cabeceras, sin buscarla a mano. */}
+                  {layer.count > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onZoomLayer?.(layer.id)}
+                      className="rounded-md p-1 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                      title={`Encuadrar el mapa sobre ${layer.label}`}
+                      aria-label={`Encuadrar el mapa sobre ${layer.label}`}
+                    >
+                      <Crosshair className="size-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() => onToggleLayer(layer.id)}
                     className="rounded-md p-1 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -184,24 +241,60 @@ function SidebarExpandedContent({
                 </div>
 
                 {desglosable && abierta && (
-                  <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-border pl-3">
-                    {layer.items?.map((item) => (
-                      <li
-                        key={item.label}
-                        className="flex items-center gap-2 rounded-md py-1 pr-2 text-xs"
-                      >
-                        <span
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: item.color }}
-                        />
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          {item.label}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-foreground">
-                          {item.count}
-                        </span>
+                  <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-border pl-2">
+                    {layer.items?.map((item) => {
+                      const activa = layer.activeItems?.includes(item.label) ?? false
+                      // Sin ninguna marcada no hay filtro, así que todas están
+                      // a la vista; con alguna marcada, el resto se atenúa.
+                      const hayFiltro = (layer.activeItems?.length ?? 0) > 0
+                      return (
+                        <li key={item.label}>
+                          <button
+                            type="button"
+                            onClick={() => onToggleItem?.(layer.id, item.label)}
+                            aria-pressed={activa}
+                            title={
+                              activa
+                                ? `Dejar de mostrar solo ${item.label}`
+                                : `Mostrar solo ${item.label} en el mapa`
+                            }
+                            className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                              activa ? "bg-primary/10" : "hover:bg-accent"
+                            } ${hayFiltro && !activa ? "opacity-45" : ""}`}
+                          >
+                            <SimboloDeCapa
+                              symbol={layer.symbol}
+                              color={item.color}
+                              width={item.width}
+                              size={14}
+                            />
+                            <span
+                              className={`min-w-0 flex-1 truncate text-left ${
+                                activa ? "font-semibold text-foreground" : "text-muted-foreground"
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                            <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                              {item.count}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+
+                    {(layer.activeItems?.length ?? 0) > 0 && (
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => onClearItems?.(layer.id)}
+                          className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-medium text-primary outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          <X className="size-3" />
+                          Quitar filtro
+                        </button>
                       </li>
-                    ))}
+                    )}
                   </ul>
                 )}
               </div>

@@ -6,6 +6,24 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
 }
 
+/**
+ * `fetch` con la sesión adjunta.
+ *
+ * Las rutas de datos exigen el token, así que toda llamada a `/api` desde el
+ * navegador debe pasar por acá. El servidor verifica la firma; lo que el
+ * cliente lea del token es solo para la interfaz.
+ */
+export function fetchConSesion(url: string, init?: RequestInit): Promise<Response> {
+  const token = getToken()
+  return fetch(url, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+}
+
 export function isTokenValid(token: string | null): boolean {
   if (!token) return false
   try {

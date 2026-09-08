@@ -65,14 +65,20 @@ grant select on geo_fiber.cable_fibra_geojson to service_role;
 ```sql
 create or replace view geo_infra.cabecera_central_geojson as
 select
-  id, nombre, codigo, id_proyecto, etiqueta, est_const, direccion_catastral,
-  desc_capacidad, creado_en, actualizado_en,
+  id, id_legacy, nombre, codigo, id_proyecto, etiqueta, tipo_est_const,
+  direccion_catastral, desc_capacidad, creado_en, actualizado_en,
   st_asgeojson(geom)::json as geom
 from geo_infra.cabecera_central;
 
 grant usage on schema geo_infra to service_role;
 grant select on geo_infra.cabecera_central_geojson to service_role;
 ```
+
+> Esta tabla ya se recreó dos veces con columnas distintas (`id` pasó de `int4`
+> a `uuid`, apareció `id_legacy` y `est_const` se renombró a `tipo_est_const`).
+> **Al borrar una tabla, PostgreSQL se lleva las vistas que dependen de ella y
+> sus permisos**, así que hay que volver a ejecutar este bloque cada vez.
+> Ver «Qué pasa cuando cambia el esquema» más abajo.
 
 ---
 
@@ -131,5 +137,113 @@ ya está implementada en `colorForTipoRed()` y se activará sola en cuanto se di
 `tipo_red_prin`.
 
 Los campos `id_elem_from` / `tip_elem_from` / `id_elem_to` / `tip_elem_to` de
-`cable_fibra` indican qué elementos une cada cable. Todavía no se consumen en la app; son
-el camino natural para construir la conectividad real entre mufas.
+`cable_fibra` indican qué elementos une cada cable. Ya se muestran en la ficha del cable,
+pero todavía no se usan para dibujar la topología: son el camino natural para construir
+la conectividad real entre mufas.
+
+---
+
+## Qué pasa cuando cambia el esquema
+
+Conviene tener claro qué es automático y qué no, porque ya tropezamos dos veces
+con lo mismo.
+
+| Cambio en la base | ¿Hay que tocar algo? |
+| --- | --- |
+| Agregar, editar o borrar registros | **No.** Aparecen solos al recargar. |
+| Agregar una columna a una tabla | Sí: recrear la vista. La ruta y la ficha la toman solas. |
+| Renombrar una columna | Sí: recrear la vista con el nombre nuevo. |
+| Recrear la tabla (`drop`/`create`) | Sí: la vista y sus permisos se pierden con la tabla. |
+| Una tabla nueva (capa nueva) | Sí: vista, ruta y simbología. |
+
+Del lado de la aplicación ya no hay listas de columnas que mantener:
+
+- Las rutas piden `select *`; **la vista es el contrato** de qué se expone.
+- La ficha «Ver información» muestra cualquier columna que llegue: las que
+  tienen etiqueta curada salen con su nombre y en su orden, y el resto aparece
+  con un nombre derivado del de la columna en vez de quedar oculto.
+
+> **Ojo con `select *` en la definición de la vista**: PostgreSQL congela la
+> lista de columnas al crear la vista. Escribir `select *` allí no hace que la
+> vista incorpore columnas futuras; hay que recrearla igual.
+
+### Cómo dejar de depender de las vistas
+
+Una función no se borra al borrar la tabla, y si se escribe sin nombrar las
+columnas una por una, tampoco se rompe cuando se renombren o se agreguen:
+
+```sql
+create or replace function geo_infra.cabeceras_geojson()
+returns json language sql stable as $$
+  select json_build_object(
+    'type', 'FeatureCollection',
+    'features', coalesce(json_agg(json_build_object(
+      'type', 'Feature',
+      'geometry', st_asgeojson(t.geom)::json,
+      'properties', to_jsonb(t) - 'geom'
+    )), '[]'::json)
+  )
+  from geo_infra.cabecera_central t;
+$$;
+
+grant execute on function geo_infra.cabeceras_geojson() to service_role;
+```
+
+`to_jsonb(t) - 'geom'` toma todas las columnas que existan en ese momento. Con
+este enfoque, recrear la tabla o cambiarle columnas dejaría de requerir trabajo
+ni en SQL ni en código. Está propuesto, no implementado.
+
+Complemento útil, para no tener que acordarse de dar permisos a tablas futuras:
+
+```sql
+alter default privileges in schema geo_infra grant select on tables to service_role;
+alter default privileges in schema geo_fiber grant select on tables to service_role;
+```
+
+---
+
+## Contraseñas: migración a hash
+
+Las contraseñas de `usuario_app` estaban en **texto plano**. Ahora se guardan con
+`scrypt` (ver `lib/password.ts`), pero la base necesita dos cambios antes de que
+la migración pueda completarse:
+
+```sql
+-- 1. La columna era varchar(12) y un hash ocupa 86 caracteres.
+alter table public.usuario_app alter column clave type varchar(255);
+
+-- 2. La aplicación solo tenía permiso de lectura, así que no podía reescribir
+--    la contraseña. Se concede solo sobre esa columna, no sobre toda la tabla.
+grant update (clave) on public.usuario_app to service_role;
+```
+
+### Cómo se migra
+
+**Sola, a medida que la gente entra.** El login acepta los dos formatos: si la
+contraseña guardada está en texto plano y coincide, se sustituye por su hash en
+ese mismo momento. Nadie queda fuera y no hay que coordinar nada.
+
+Si el `UPDATE` falla —falta el permiso, o la columna sigue siendo corta— **el login
+sigue funcionando** y el fallo queda registrado en la consola del servidor. Es a
+propósito: nadie debe quedarse sin entrar por un problema de migración.
+
+Para cerrarla de una vez, sin esperar a que todos inicien sesión:
+
+```bash
+node scripts/migrar-claves.mjs            # informa, no cambia nada
+node scripts/migrar-claves.mjs --aplicar  # escribe los hashes
+```
+
+### Formato guardado
+
+```
+scrypt$16384$8$1$<sal en base64>$<hash en base64>
+```
+
+Es autodescriptivo: lleva sus propios parámetros de coste, así que se puede subir
+el coste más adelante sin invalidar lo ya almacenado. Cada contraseña tiene una sal
+distinta, de modo que dos personas con la misma contraseña no comparten hash.
+
+> Cuando ya no quede ninguna contraseña en texto plano, conviene quitar del login
+> el camino que las acepta (`verificarClave` en `lib/password.ts`). Mientras exista,
+> una contraseña en texto plano sigue siendo válida para entrar.

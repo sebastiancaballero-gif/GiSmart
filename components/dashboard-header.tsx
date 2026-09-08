@@ -6,6 +6,7 @@ import { ArrowLeft, Search, LogOut, MapPin, Sun, Moon, Loader2 } from "lucide-re
 import { Input } from "@/components/ui/input"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { getCurrentTheme, toggleTheme } from "@/lib/theme"
+import { fetchConSesion } from "@/lib/auth"
 
 type SearchResult = { label: string; lat: number; lon: number }
 
@@ -36,25 +37,31 @@ export function DashboardHeader({
   const searchBoxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // El tema ya lo aplicó el script del layout sobre <html>; acá solo se lee
+    // para saber qué icono mostrar, y el tema elegido solo existe en el
+    // navegador, así que no hay forma de saberlo antes de montar.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDark(getCurrentTheme() === "dark")
   }, [])
 
   // Busca mientras se escribe, con retardo para no consultar en cada tecla.
+  // Todo el trabajo ocurre dentro del temporizador, incluido limpiar los
+  // resultados: así teclear no provoca renders extra en cada pulsación.
   useEffect(() => {
-    const term = query.trim()
-    if (term.length < 3) {
-      setResults([])
-      setSearchError(null)
-      setSearching(false)
-      return
-    }
-
     let cancelled = false
-    setSearching(true)
 
     const timeout = setTimeout(async () => {
+      const term = query.trim()
+      if (term.length < 3) {
+        setResults([])
+        setSearchError(null)
+        setSearching(false)
+        return
+      }
+
+      setSearching(true)
       try {
-        const res = await fetch(`/api/geocode?q=${encodeURIComponent(term)}`)
+        const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(term)}`)
         const data = await res.json()
         if (cancelled) return
         const found = (data?.results ?? []) as SearchResult[]
