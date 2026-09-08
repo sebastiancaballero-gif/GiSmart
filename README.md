@@ -36,6 +36,22 @@ cp .env.example .env.local   # y completar los valores reales
 pnpm run dev                 # http://localhost:3000
 ```
 
+> **Al traer cambios de otra persona, vuelve a instalar:**
+>
+> ```bash
+> git pull
+> pnpm install
+> ```
+>
+> `package.json` y el lockfile están versionados, pero tenerlos no instala nada. Si
+> alguien agregó una dependencia y tú no reinstalas, verás un error del tipo
+> `Module not found: Can't resolve '@supabase/supabase-js'`. No es un fallo del código:
+> es que esa librería no está en tu `node_modules`.
+>
+> El proyecto usa **pnpm** y así queda declarado en `package.json` (`packageManager`).
+> Instalar con `npm` o `yarn` sobre un lockfile de pnpm produce un `node_modules`
+> distinto al del resto del equipo, y con él fallos que solo le ocurren a una persona.
+
 Otros comandos:
 
 ```bash
