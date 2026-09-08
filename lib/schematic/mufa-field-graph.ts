@@ -1,4 +1,4 @@
-import { dia, routers, shapes } from "@joint/core"
+import { connectors, dia, routers, shapes } from "@joint/core"
 
 import {
   GEOMETRIA_TERMINACION,
@@ -53,6 +53,30 @@ const ROUTER_ORTOGONAL = {
   },
 } as const satisfies dia.Link.Attributes["router"]
 
+/**
+ * El conector `smooth` decide la orientación de los puntos de control
+ * comparando distancia horizontal contra vertical: como los hilos están muy
+ * juntos en vertical y las columnas muy cerca en horizontal, casi todos los
+ * empalmes caían en la variante vertical y salían disparados hacia arriba o
+ * abajo, cruzándose entre sí.
+ *
+ * `curve` permite fijar la tangente de cada extremo: se fuerza salida hacia la
+ * derecha y entrada desde la izquierda, así toda línea arranca y termina en
+ * horizontal. La longitud de esa tangente es `distancia · distanceCoefficient`,
+ * y `angleTangentCoefficient` la alarga todavía más cuanto más vertical sea el
+ * tramo, que es justo lo que agrupa los empalmes en paralelo como un bus antes
+ * de entrar a la bandeja.
+ */
+const CONECTOR_CURVO = {
+  name: "curve",
+  args: {
+    sourceDirection: connectors.curve.TangentDirections.RIGHT,
+    targetDirection: connectors.curve.TangentDirections.LEFT,
+    distanceCoefficient: 0.35,
+    angleTangentCoefficient: 40,
+  },
+} as const satisfies dia.Link.Attributes["connector"]
+
 /** Configuración de router/connector según el modo de la interfaz. */
 export function estiloEnrutamiento(modo: ModoEnrutamiento): {
   router: dia.Link.Attributes["router"] | null
@@ -64,10 +88,10 @@ export function estiloEnrutamiento(modo: ModoEnrutamiento): {
       connector: { name: "rounded", args: { radius: ESTILO.radioCodo } },
     }
   }
-  // Curva de Bézier nativa de JointJS (conector `smooth`), sin router ortogonal.
+  // Curva de Bézier con tangentes horizontales, sin router ortogonal.
   return {
     router: null,
-    connector: { name: "smooth" },
+    connector: CONECTOR_CURVO,
   }
 }
 
@@ -148,11 +172,14 @@ export const cellNamespaceCampo = {
   gismart: { Terminacion, Bandeja, EmpalmeCampo },
 }
 
+// La separación entre columnas es el margen que tienen las curvas para salir
+// en horizontal y agruparse antes de doblar: con menos espacio las tangentes
+// del conector `curve` se solapan y la línea se abomba.
 const DISPOSICION = {
   origenX: 40,
   origenY: 28,
-  separacionCableBandeja: 120,
-  separacionBandejaCable: 120,
+  separacionCableBandeja: 170,
+  separacionBandejaCable: 170,
   separacionFilas: 36,
 } as const
 

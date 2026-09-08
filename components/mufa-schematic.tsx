@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 
 import {
-  parsearMufaCampo,
+  parseMufaData,
   type MufaCampoJSON,
 } from "@/lib/schematic/mufa-field-data"
 import { MUFA_CAMPO_MOCKUP } from "@/lib/schematic/mufa-field-mockup"
@@ -50,7 +50,10 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
   const [zoom, setZoom] = useState(1)
   const [pantallaCompleta, setPantallaCompleta] = useState(false)
 
-  const mufa = useMemo(() => parsearMufaCampo(datos), [datos])
+  // El JSON se normaliza durante el render, antes de que ningún efecto toque
+  // el lienzo: así los cables, las bandejas y los empalmes ya están resueltos
+  // cuando JointJS dibuja por primera vez.
+  const mufa = useMemo(() => parseMufaData(datos), [datos])
   const empalmes = useMemo(() => listarEmpalmesCampo(mufa), [mufa])
 
   const modoRef = useRef(modoEnrutamiento)
@@ -60,7 +63,9 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
 
   const ajustarVista = useCallback(() => {
     const paper = paperRef.current
-    if (!paper) return
+    // Sin celdas no hay contenido que encuadrar y el ajuste devolvería una
+    // escala sin sentido.
+    if (!paper || paper.model.getCells().length === 0) return
     paper.transformToFitContent({
       padding: 28,
       useModelGeometry: true,
@@ -215,6 +220,26 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
     }
     document.addEventListener("fullscreenchange", alCambiarPantallaCompleta)
     return () => document.removeEventListener("fullscreenchange", alCambiarPantallaCompleta)
+  }, [ajustarVista])
+
+  // Cuando el esquema se abre dentro del modal, el contenedor todavía está
+  // creciendo mientras JointJS dibuja: sin reencuadrar queda a la escala del
+  // primer fotograma y los empalmes se ven desfasados.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    let pendiente = 0
+    const observador = new ResizeObserver(() => {
+      cancelAnimationFrame(pendiente)
+      pendiente = requestAnimationFrame(ajustarVista)
+    })
+    observador.observe(container)
+
+    return () => {
+      cancelAnimationFrame(pendiente)
+      observador.disconnect()
+    }
   }, [ajustarVista])
 
   // En pantalla completa, Escape debe salir de ella sin cerrar además el modal

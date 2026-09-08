@@ -135,3 +135,81 @@ export const MUFA_CAMPO_MOCKUP: MufaCampoJSON = {
     },
   ],
 }
+
+/**
+ * Mockup de campo tomado de `JsonNoSlots.txt`: los mismos cables, pero las 8
+ * fusiones llegan juntas en `Bandejas[0].Conectividades`, sin decir en qué
+ * bandeja ni en qué slot va cada una. `parseMufaData` las reparte entre las
+ * 2 bandejas instaladas.
+ */
+export const MUFA_CAMPO_SIN_SLOTS_MOCKUP: MufaCampoJSON = {
+  mufa_id: 231235,
+  tipo: "CM 48H",
+  estado: "Operativa",
+  capacidad_band: 4,
+  can_band_inst: 2,
+  cables: MUFA_CAMPO_MOCKUP.cables,
+  Bandejas: [
+    {
+      bandeja_id: 0,
+      Conectividades: [
+        {
+          Conectividad: 1,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456723 },
+          destino: { cable_id: 763626, hilo_id: 458901 },
+        },
+        {
+          Conectividad: 2,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456724 },
+          destino: { cable_id: 763626, hilo_id: 458902 },
+        },
+        {
+          Conectividad: 3,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456725 },
+          destino: { cable_id: 763626, hilo_id: 458903 },
+        },
+        {
+          Conectividad: 4,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456726 },
+          destino: { cable_id: 763626, hilo_id: 458904 },
+        },
+        {
+          Conectividad: 5,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456727 },
+          destino: { cable_id: 763626, hilo_id: 458905 },
+        },
+        {
+          Conectividad: 6,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456728 },
+          destino: { cable_id: 763626, hilo_id: 458906 },
+        },
+        {
+          Conectividad: 7,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456729 },
+          destino: { cable_id: 763626, hilo_id: 458907 },
+        },
+        {
+          Conectividad: 8,
+          "Tipo empalme": "Fusion",
+          atenuacion: 0.02,
+          origen: { cable_id: 763625, hilo_id: 456730 },
+          destino: { cable_id: 763626, hilo_id: 458908 },
+        },
+      ],
+    },
+  ],
+}
