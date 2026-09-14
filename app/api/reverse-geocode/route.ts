@@ -24,7 +24,10 @@ export async function GET(request: Request) {
   const lon = Number(searchParams.get("lon"))
   const lat = Number(searchParams.get("lat"))
 
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+  // Además de numéricas, tienen que ser coordenadas posibles: `Number.isFinite`
+  // deja pasar un 1e30 que luego se envía tal cual a Nominatim, y el servicio
+  // es compartido y se identifica con el User-Agent de la empresa.
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) {
     return NextResponse.json({ message: "Se requieren `lon` y `lat` numéricos." }, { status: 400 })
   }
 

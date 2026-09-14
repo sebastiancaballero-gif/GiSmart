@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { getCurrentTheme, toggleTheme } from "@/lib/theme"
 import { fetchConSesion } from "@/lib/auth"
+import { Tooltip } from "@/components/ui/tooltip"
 
 type SearchResult = { label: string; lat: number; lon: number }
 
@@ -99,7 +100,7 @@ export function DashboardHeader({
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         {backHref && (
           <button
             type="button"
@@ -111,16 +112,21 @@ export function DashboardHeader({
             <span className="hidden sm:inline">Volver al mapa</span>
           </button>
         )}
-        <div>
-          <h1 className="text-base font-bold text-foreground">{title}</h1>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="size-3" />
-            {subtitle}
+        {/* `min-w-0` + `truncate`: el subtítulo lo escribe Nominatim según
+            dónde esté el mapa, y nombres como "Corregimiento de San Antonio,
+            La Unión, Valle del Cauca, Colombia" empujaban el buscador y los
+            botones de la derecha. El texto completo queda en el `title`. */}
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-bold text-foreground">{title}</h1>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground" title={subtitle}>
+            <MapPin className="size-3 shrink-0" />
+            <span className="truncate">{subtitle}</span>
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      {/* `shrink-0`: el buscador y las acciones no ceden espacio al título. */}
+      <div className="flex shrink-0 items-center gap-3">
         <div ref={searchBoxRef} className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -164,15 +170,16 @@ export function DashboardHeader({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsDark(toggleTheme() === "dark")}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-          aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-          title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-        >
-          {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </button>
+        <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="bottom">
+          <button
+            type="button"
+            onClick={() => setIsDark(toggleTheme() === "dark")}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          >
+            {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </button>
+        </Tooltip>
 
         <button
           type="button"

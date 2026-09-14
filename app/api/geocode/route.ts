@@ -23,6 +23,15 @@ export async function GET(request: Request) {
   if (q.length < 3) {
     return NextResponse.json({ message: "La búsqueda debe tener al menos 3 caracteres.", results: [] }, { status: 400 })
   }
+  // Nominatim es un servicio público y compartido: se identifica con el
+  // User-Agent de la aplicación, así que un abuso desde aquí se paga con el
+  // bloqueo de toda la empresa. Un tope de largo corta lo más obvio.
+  if (q.length > 120) {
+    return NextResponse.json(
+      { message: "La búsqueda es demasiado larga.", results: [] },
+      { status: 400 },
+    )
+  }
 
   // Se limita a Colombia porque la red es nacional: evita que "La Unión"
   // devuelva municipios de otros países antes que el del Valle.

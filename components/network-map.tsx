@@ -40,7 +40,6 @@ import {
   Square,
   Loader2,
   Building2,
-  ChevronDown,
   Crosshair,
 } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
@@ -51,8 +50,6 @@ import {
   CABECERA_FIELD_LABELS,
   FIBER_FIELD_LABELS,
   FIBER_HINT,
-  FUNCION_CUB_COLORS,
-  FUNCION_CUB_DEFAULT_COLOR,
   MUFA_FIELD_LABELS,
   TYPE_LABELS,
   cabeceraStyle,
@@ -71,11 +68,17 @@ import {
   type FeatureType,
 } from "@/lib/map/symbology"
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas } from "@/lib/map/loaders"
+import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
+import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
+import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import { InfoTableDialog } from "@/components/info-table-dialog"
 import { GismartMark } from "@/components/gismart-mark"
-import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
+import { MapLegend } from "@/components/map-legend"
+import { MapNotice, MapNoticeStack } from "@/components/map-notices"
+import { MapStatusBar } from "@/components/map-status-bar"
+import { Tooltip } from "@/components/ui/tooltip"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
 
 type NetworkMapProps = {
@@ -96,8 +99,8 @@ type NetworkMapProps = {
    */
   fitTo?: { capa: "todo" | "nodes" | "fibers" | "cabeceras" | "zones"; nonce: number } | null
   /** Herramienta activa controlada desde fuera (ribbon). */
-  tool?: Tool
-  onToolChange?: (tool: Tool) => void
+  tool?: MapTool
+  onToolChange?: (tool: MapTool) => void
   /** Avisa mientras se están pidiendo los datos reales a los endpoints. */
   onLoadingChange?: (loading: boolean) => void
   /**
@@ -107,109 +110,9 @@ type NetworkMapProps = {
   filters?: { nodes: string[]; fibers: string[] }
 }
 
-type Tool = "pan" | "edit" | "node" | "fiber" | "zone" | "delete" | "measure-length" | "measure-area"
-
-/** Herramientas del mapa, para que el ribbon pueda activarlas desde fuera. */
-export type MapTool = Tool
-
-/**
- * Aviso mientras una herramienta que modifica está activa.
- *
- * Nada de lo que se dibuja o borra llega todavía a la base de datos: sin este
- * aviso, alguien podía trazar media red creyendo que estaba trabajando y
- * perderla al recargar, o creer que borró un registro real.
- */
-const TOOL_HINTS: Partial<Record<Tool, string>> = {
-  fiber: FIBER_HINT,
-  node: "Click para agregar una mufa. Lo dibujado no se guarda en la base todavía.",
-  zone: "Click para dibujar la zona y doble click para terminar. No se guarda en la base todavía.",
-  edit: "Click para consultar o corregir. Los cambios no se guardan en la base todavía.",
-  delete: "Click sobre un elemento para quitarlo del mapa. No se borra de la base de datos.",
-}
-
-/** Orden de la barra de herramientas; define también los atajos 1..8. */
-const TOOL_ORDER: Tool[] = [
-  "pan",
-  "edit",
-  "node",
-  "fiber",
-  "zone",
-  "delete",
-  "measure-length",
-  "measure-area",
-]
-
 type SelectedFeature = {
   feature: Feature<Geometry>
   type: FeatureType
-}
-
-/**
- * Una categoría del desglose de una capa, para el panel de capas.
- * `width` solo aplica a los cables: es el grosor con que se dibujan en el mapa,
- * para que el panel muestre el mismo trazo y no un punto genérico.
- */
-export type LayerBucket = { label: string; count: number; color: string; width?: number }
-
-/** Resumen de lo cargado en el mapa, que consume el panel lateral. */
-export type NetworkStats = {
-  counts: { nodes: number; fibers: number; zones: number; cabeceras: number }
-  totalKm: number
-  /** Conteo por categoría de cada capa, para desplegar en el panel. */
-  breakdown: { nodes: LayerBucket[]; fibers: LayerBucket[] }
-}
-
-/**
- * Cuenta los elementos por categoría, ordenados de mayor a menor. `clasificar`
- * define a qué categoría pertenece cada elemento y de qué color se muestra.
- */
-function agrupar(
-  features: Feature<Geometry>[],
-  clasificar: (f: Feature<Geometry>) => { label: string; color: string; width?: number },
-): LayerBucket[] {
-  // Objeto plano y no `Map`: en este archivo `Map` es el de OpenLayers.
-  const buckets: Record<string, LayerBucket> = {}
-  features.forEach((f) => {
-    const { label, color, width } = clasificar(f)
-    if (buckets[label]) buckets[label].count += 1
-    else buckets[label] = { label, color, width, count: 1 }
-  })
-  return Object.values(buckets).sort((a, b) => b.count - a.count)
-}
-
-/**
- * Última vista del mapa (centro y zoom), para retomarla al volver a entrar.
- * Si el navegador bloquea el almacenamiento, se cae al encuadre por defecto.
- */
-const CLAVE_VISTA = "gismart_vista_mapa"
-
-type VistaGuardada = { centro: [number, number]; zoom: number }
-
-function leerVistaGuardada(): VistaGuardada | null {
-  try {
-    const crudo = localStorage.getItem(CLAVE_VISTA)
-    if (!crudo) return null
-    const dato = JSON.parse(crudo) as VistaGuardada
-    const [lon, lat] = dato.centro ?? []
-    if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(dato.zoom)) return null
-    return dato
-  } catch {
-    return null
-  }
-}
-
-function guardarVista(vista: VistaGuardada) {
-  try {
-    localStorage.setItem(CLAVE_VISTA, JSON.stringify(vista))
-  } catch {
-    // Sin almacenamiento el mapa simplemente no recuerda la vista.
-  }
-}
-
-/** Sin categorías seleccionadas no hay filtro: se muestran todas. */
-function categoriaVisible(seleccionadas: string[] | undefined, categoria: string): boolean {
-  if (!seleccionadas || seleccionadas.length === 0) return true
-  return seleccionadas.includes(categoria)
 }
 
 export function NetworkMap({
@@ -265,7 +168,7 @@ export function NetworkMap({
   const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   // La herramienta puede venir de fuera (ribbon) o manejarse sola: si llega
   // `tool` por props manda esa, y los clicks del propio mapa se notifican arriba.
-  const [internalTool, setInternalTool] = useState<Tool>("pan")
+  const [internalTool, setInternalTool] = useState<MapTool>("pan")
   const tool = externalTool ?? internalTool
   const [selected, setSelected] = useState<SelectedFeature | null>(null)
   const [nameDraft, setNameDraft] = useState("")
@@ -282,7 +185,6 @@ export function NetworkMap({
   // La cortina de bienvenida solo cubre el arranque; las recargas posteriores
   // usan el aviso discreto para no tapar el mapa que el usuario está mirando.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
-  const [legendOpen, setLegendOpen] = useState(true)
 
   // Los callbacks se guardan en refs para que los manejadores de OpenLayers,
   // registrados una sola vez, siempre llamen a la versión más reciente sin
@@ -297,6 +199,10 @@ export function NetworkMap({
   // Guardarlo en una ref evita tener que reconstruir las capas al cambiarlo.
   const filtersRef = useRef(filters)
 
+  // El efecto del filtro está por encima de donde se define `pedirRecalculo`,
+  // así que se llega a él por referencia en vez de reordenar el componente.
+  const pedirRecalculoRef = useRef<(() => void) | null>(null)
+
   useEffect(() => {
     onStatsChangeRef.current = onStatsChange
     onCenterChangeRef.current = onCenterChange
@@ -305,14 +211,17 @@ export function NetworkMap({
   })
 
   // Al cambiar el filtro basta con pedir un redibujado: el estilo vuelve a
-  // consultarlo y deja fuera las categorías que no estén seleccionadas.
+  // consultarlo y deja fuera las categorías que no estén seleccionadas. El
+  // recuento también se rehace, porque el panel informa de cuánto queda a la
+  // vista y eso sí depende del filtro.
   useEffect(() => {
     filtersRef.current = filters
     nodeLayer.current?.changed()
     fiberLayer.current?.changed()
+    pedirRecalculoRef.current?.()
   }, [filters])
 
-  const setTool = useCallback((next: Tool) => {
+  const setTool = useCallback((next: MapTool) => {
     setInternalTool(next)
     onToolChangeRef.current?.(next)
   }, [])
@@ -338,10 +247,21 @@ export function NetworkMap({
   const recalcAhora = useCallback(() => {
     const nodeFeatures = nodeSource.getFeatures()
     const fiberFeatures = fiberSource.getFeatures()
-    const km = fiberFeatures.reduce((acc, f) => {
+    const largoKm = (f: Feature<Geometry>) => {
       const g = f.getGeometry() as LineString | undefined
-      return acc + (g ? getLength(g) / 1000 : 0)
-    }, 0)
+      return g ? getLength(g) / 1000 : 0
+    }
+    const km = fiberFeatures.reduce((acc, f) => acc + largoKm(f), 0)
+
+    // Lo mismo, pero contando solo lo que el filtro deja pintado. El filtro
+    // oculta desde el estilo, así que los elementos siguen en la fuente y hay
+    // que aplicar aquí la misma condición que usa la capa al dibujar.
+    const mufasVisibles = nodeFeatures.filter((f) =>
+      categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f)),
+    )
+    const cablesVisibles = fiberFeatures.filter((f) =>
+      categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f)),
+    )
 
     onStatsChangeRef.current?.({
       counts: {
@@ -351,6 +271,11 @@ export function NetworkMap({
         cabeceras: cabeceraSource.getFeatures().length,
       },
       totalKm: km,
+      enPantalla: {
+        nodes: mufasVisibles.length,
+        fibers: cablesVisibles.length,
+        km: cablesVisibles.reduce((acc, f) => acc + largoKm(f), 0),
+      },
       // El desglose usa el mismo campo que define la simbología de cada capa,
       // así el panel explica lo que se está viendo en el mapa.
       breakdown: {
@@ -385,6 +310,10 @@ export function NetworkMap({
     })
   }, [recalcAhora])
 
+  useEffect(() => {
+    pedirRecalculoRef.current = pedirRecalculo
+  }, [pedirRecalculo])
+
   /**
    * Encuadra el mapa sobre una extensión concreta. Se usa para la red
    * completa, para una sola capa y para el elemento seleccionado.
@@ -404,6 +333,28 @@ export function NetworkMap({
     })
     return isEmpty(juntas) ? null : juntas
   }, [nodeSource, fiberSource, cabeceraSource])
+
+  /**
+   * Extensión de una capa contando solo lo que se está viendo.
+   *
+   * Filtrar por categoría oculta elementos desde el estilo, pero siguen en la
+   * fuente: usar `getExtent()` de la fuente encuadraba también sobre los
+   * ocultos. Con el filtro en "Primer nivel" se veían dos mufas y el botón de
+   * la capa alejaba el mapa hasta abarcar las 185.
+   */
+  const extensionVisible = useCallback(
+    (source: VectorSource, sePinta?: (f: Feature<Geometry>) => boolean) => {
+      if (!sePinta) return source.getExtent()
+      const juntas = createEmpty()
+      source.getFeatures().forEach((f) => {
+        if (!sePinta(f)) return
+        const e = f.getGeometry()?.getExtent()
+        if (e && e.every((v) => Number.isFinite(v))) extend(juntas, e)
+      })
+      return isEmpty(juntas) ? null : juntas
+    },
+    [],
+  )
 
   const encuadrarEnDatos = useCallback(() => {
     encuadrarEn(extensionDeRed())
@@ -888,7 +839,7 @@ export function NetworkMap({
   }, [tool, nodeSource, fiberSource, zoneSource, cabeceraSource, measureSource, tipoDeFeature])
 
   useEffect(() => {
-    const cursors: Record<Tool, string> = {
+    const cursors: Record<MapTool, string> = {
       pan: "grab",
       edit: "pointer",
       node: "crosshair",
@@ -946,13 +897,17 @@ export function NetworkMap({
       encuadrarEnDatos()
       return
     }
+    // Cada capa se encuadra sobre lo que realmente se ve: las que se pueden
+    // filtrar por categoría pasan también su condición de pintado.
     const fuentes = {
-      nodes: nodeSource,
-      fibers: fiberSource,
-      cabeceras: cabeceraSource,
-      zones: zoneSource,
-    }
-    encuadrarEn(fuentes[fitTo.capa].getExtent())
+      nodes: [nodeSource, (f: Feature<Geometry>) => categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f))],
+      fibers: [fiberSource, (f: Feature<Geometry>) => categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f))],
+      cabeceras: [cabeceraSource, undefined],
+      zones: [zoneSource, undefined],
+    } as const
+
+    const [fuente, sePinta] = fuentes[fitTo.capa]
+    encuadrarEn(extensionVisible(fuente, sePinta))
     // `nonce` es lo que marca una petición nueva.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitTo?.nonce])
@@ -978,7 +933,7 @@ export function NetworkMap({
     return () => window.removeEventListener("keydown", alPulsarTecla)
   }, [setTool])
 
-  const tools: { id: Tool; label: string; icon: typeof Hand; color?: string; separator?: boolean }[] = [
+  const tools: { id: MapTool; label: string; icon: typeof Hand; color?: string; separator?: boolean }[] = [
     { id: "pan", label: "Mover mapa", icon: Hand },
     { id: "edit", label: "Editar elementos", icon: Pencil },
     { id: "node", label: "Dibujar mufa", icon: Box, color: LAYER_COLORS.node },
@@ -1111,49 +1066,33 @@ export function NetworkMap({
         </div>
       )}
 
-      {/* Avisos apilados (carga de datos reales, guía de herramientas) */}
-      <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">
+      <MapNoticeStack>
         {loadingData && firstLoadDone && (
-          <div className="flex items-center gap-2 rounded-lg bg-card/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md ring-1 ring-border backdrop-blur">
-            <Loader2 className="size-3.5 animate-spin text-primary" />
-            Cargando red desde Supabase…
-          </div>
+          <MapNotice cargando>Cargando red desde Supabase…</MapNotice>
         )}
 
         {/* Un solo aviso para todas las capas: tres banderas apiladas tapaban
             el mapa, y que una capa no traiga datos no siempre es una falla. */}
         {capasSinDatos.length > 0 && (
-          <div className="pointer-events-auto flex max-w-md items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
+          <MapNotice tono="aviso" onCerrar={descartarAvisosDeCarga}>
             <span>
               Sin datos disponibles:{" "}
               <span className="font-semibold">{capasSinDatos.join(", ")}</span>. El resto del
               mapa funciona normalmente.
             </span>
-            <button
-              type="button"
-              onClick={descartarAvisosDeCarga}
-              className="rounded p-0.5 outline-none transition hover:bg-amber-500/20 focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label="Cerrar aviso"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
+          </MapNotice>
         )}
 
         {baseMapError && (
-          <div className="flex max-w-md items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
+          <MapNotice tono="aviso">
             No se pudo cargar la cartografía de fondo. Los datos de la red sí se muestran.
-          </div>
+          </MapNotice>
         )}
 
-        {fiberNotice && (
-          <div className="pointer-events-auto rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-md ring-1 ring-amber-500/30 backdrop-blur dark:text-amber-300">
-            {fiberNotice}
-          </div>
-        )}
+        {fiberNotice && <MapNotice tono="aviso">{fiberNotice}</MapNotice>}
 
         {(tool === "measure-length" || tool === "measure-area") && (
-          <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-card/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
+          <MapNotice interactivo>
             <span>
               {tool === "measure-length"
                 ? "Click para trazar, doble click para terminar. Esc cancela."
@@ -1162,13 +1101,13 @@ export function NetworkMap({
             <button
               type="button"
               onClick={clearMeasurements}
-              className="rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               Limpiar
             </button>
-          </div>
+          </MapNotice>
         )}
-      </div>
+      </MapNoticeStack>
 
       {/* Herramientas de dibujo (izquierda) */}
       <div className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded-xl bg-card/95 p-1 shadow-lg ring-1 ring-border backdrop-blur">
@@ -1178,55 +1117,36 @@ export function NetworkMap({
           return (
             <span key={t.id} className="flex flex-col gap-0.5">
               {t.separator && <span className="mx-1 my-1 h-px bg-border" />}
-              <button
-                type="button"
-                onClick={() => setTool(t.id)}
-                title={`${t.label} (${TOOL_ORDER.indexOf(t.id) + 1})`}
-                aria-label={t.label}
-                aria-keyshortcuts={String(TOOL_ORDER.indexOf(t.id) + 1)}
-                aria-pressed={active}
-                className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-foreground hover:bg-accent"
-                }`}
-              >
-                <Icon
-                  className="size-[18px]"
-                  style={!active && t.color ? { color: t.color } : undefined}
-                />
-              </button>
+              <Tooltip label={`${t.label} (${TOOL_ORDER.indexOf(t.id) + 1})`}>
+                <button
+                  type="button"
+                  onClick={() => setTool(t.id)}
+                  aria-label={t.label}
+                  aria-keyshortcuts={String(TOOL_ORDER.indexOf(t.id) + 1)}
+                  aria-pressed={active}
+                  className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-foreground hover:bg-accent"
+                  }`}
+                >
+                  <Icon
+                    className="size-[18px]"
+                    style={!active && t.color ? { color: t.color } : undefined}
+                  />
+                </button>
+              </Tooltip>
             </span>
           )
         })}
       </div>
 
-      {/* Barra de estado */}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
-        <span>
-          Lon:{" "}
-          <span ref={lonRef} className="tabular-nums text-primary">
-            —
-          </span>
-        </span>
-        <span className="h-3 w-px bg-border" />
-        <span>
-          Lat:{" "}
-          <span ref={latRef} className="tabular-nums text-primary">
-            —
-          </span>
-        </span>
-        <span className="h-3 w-px bg-border" />
-        <span>
-          Zoom: <span className="tabular-nums text-primary">{zoomLevel}</span>
-        </span>
-        <span className="h-3 w-px bg-border" />
-        {/* Qué herramienta está activa: con ocho en la barra y atajos de
-            teclado, conviene poder confirmarlo sin mirar los iconos. */}
-        <span className="text-muted-foreground">
-          {tools.find((t) => t.id === tool)?.label ?? ""}
-        </span>
-      </div>
+      <MapStatusBar
+        lonRef={lonRef}
+        latRef={latRef}
+        zoom={zoomLevel}
+        herramienta={tools.find((t) => t.id === tool)?.label ?? ""}
+      />
 
       {/* Nombre del elemento bajo el cursor. Las etiquetas del mapa solo salen
           de cerca, así que esto permite reconocer elementos a cualquier zoom.
@@ -1239,50 +1159,7 @@ export function NetworkMap({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      {/* Leyenda plegable: mismos símbolos que se dibujan en el mapa (SIGETP).
-          Se puede cerrar para no tapar el mapa en pantallas chicas. */}
-      <div className="absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
-        <button
-          type="button"
-          onClick={() => setLegendOpen((v) => !v)}
-          aria-expanded={legendOpen}
-          className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <ChevronDown className={`size-3 transition-transform ${legendOpen ? "" : "-rotate-90"}`} />
-          Leyenda
-        </button>
-
-        {legendOpen && (
-          <div className="flex flex-col gap-1 border-t border-border px-2.5 pb-2 pt-1.5">
-            <span className="flex items-center gap-2">
-              <CabeceraSymbol size={14} />
-              Cabecera central
-            </span>
-
-            <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Cubiertas de empalme
-            </span>
-            {Object.entries(FUNCION_CUB_COLORS).map(([label, color]) => (
-              <span key={label} className="flex items-center gap-2">
-                <MufaSymbol color={color} />
-                {label}
-              </span>
-            ))}
-            <span className="flex items-center gap-2">
-              <MufaSymbol color={FUNCION_CUB_DEFAULT_COLOR} />
-              Otro / sin dato
-            </span>
-
-            <span className="mt-0.5 flex items-center gap-2">
-              <FiberSymbol color={LAYER_COLORS.fiber} size={14} />
-              Fibra óptica
-            </span>
-            <span className="text-[10px] leading-tight text-muted-foreground">
-              El grosor refleja la cantidad de hilos
-            </span>
-          </div>
-        )}
-      </div>
+      <MapLegend />
 
       {/* Panel de información del elemento seleccionado */}
       {selected && (
@@ -1343,6 +1220,18 @@ export function NetworkMap({
               <Network className="size-3.5" />
               Ver conexiones
             </button>
+          )}
+
+          {/* El empalme interno (bandejas e hilos) no está todavía en la base:
+              las 185 mufas se siembran con el mismo esquema de ejemplo. Sin
+              decirlo, el esquema se lee como el de esa mufa concreta y alguien
+              podría planear trabajo de campo sobre datos inventados. */}
+          {selected.type === "node" && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+              <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
+              El empalme interno es un ejemplo, igual para todas las mufas. La base
+              todavía no guarda bandejas ni hilos.
+            </p>
           )}
 
           {/* Tras filtrar o buscar, lo seleccionado puede quedar fuera de la

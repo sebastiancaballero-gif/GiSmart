@@ -20,6 +20,37 @@ conectividad interna de cada mufa.
 
 ---
 
+## Sobre las librerías de interfaz
+
+**No hace falta agregar ninguna.** Conviene dejarlo escrito porque la pregunta
+vuelve cada vez que algo se ve mejorable.
+
+El proyecto ya trae **Base UI** (`@base-ui/react`), que es la base sobre la que
+están hechos los componentes de shadcn. Base UI expone más de cuarenta
+primitivas sin estilo —tooltip, popover, menu, select, tabs, toast, switch,
+slider, scroll-area, accordion, combobox y demás—, todas accesibles y
+manejables por teclado. De esas cuarenta, el proyecto solo tenía envueltas
+**seis**: badge, button, checkbox, dialog, input y label.
+
+Así que la respuesta a «qué librería usar para que se vea mejor» casi siempre es
+«la que ya está instalada». Antes de sumar una dependencia conviene mirar si
+Base UI ya resuelve el caso: cada paquete nuevo es peso en el navegador, una
+reinstalación para todo el equipo y una cosa más que puede fallar al desplegar
+en el servidor Windows.
+
+Ejemplo real: la interfaz usaba el atributo `title` del navegador en 29 sitios.
+Ese tooltip tarda cerca de un segundo en salir, se pinta con el estilo del
+sistema operativo (un recuadro claro que desentona con el tema oscuro) y **no
+existe en pantallas táctiles**, donde media barra de herramientas quedaba sin
+explicación. Se resolvió con `components/ui/tooltip.tsx`, un envoltorio de
+treinta líneas sobre la primitiva de Base UI. Cero dependencias nuevas.
+
+Lo que sí falta y ninguna librería arregla es trabajo de diseño: jerarquía,
+espaciado y consistencia. Para eso ya están Tailwind v4 y los tokens de color de
+`app/globals.css`.
+
+---
+
 ## Requisitos
 
 - Node.js 22 LTS o superior
@@ -105,9 +136,16 @@ Esto es deliberado por tres razones:
 | `GET /api/reverse-geocode` | Traduce `lon`/`lat` al nombre del municipio (Nominatim/OSM), para el subtítulo del mapa. |
 | `GET /api/geocode` | Busca municipios/zonas por texto (Nominatim/OSM, limitado a Colombia) para el buscador de la cabecera. |
 
-Los dos endpoints geográficos leen vistas que ya exponen `geom` como GeoJSON. El detalle
-de esas vistas y de los permisos necesarios está en
+Los endpoints geográficos leen vistas que ya exponen `geom` como GeoJSON. Si una vista
+falta —se borran junto con su tabla, y ya pasó tres veces— la ruta cae automáticamente a
+la tabla base y deja que PostgREST arme el GeoJSON, de modo que la capa sigue cargando.
+El detalle de esas vistas, del respaldo y de los permisos que necesita está en
 [`docs/base-de-datos.md`](docs/base-de-datos.md).
+
+Todas las respuestas llevan cabeceras de seguridad (`X-Frame-Options`, `nosniff`,
+`Referrer-Policy`, `Permissions-Policy`) definidas en `next.config.mjs`: detrás de IIS no
+hay ninguna plataforma que las ponga por su cuenta, y sin ellas la pantalla de inicio de
+sesión se puede incrustar en un iframe ajeno.
 
 ---
 
@@ -183,7 +221,9 @@ las herramientas de medición (o con el botón «Limpiar»).
 - **Shift + arrastrar** hace zoom sobre un rectángulo.
 - **Encuadrar sobre una capa**: cada capa del panel tiene un botón de puntería que ajusta
   el mapa a sus elementos. Útil para saltar a una capa con pocos elementos —las
-  cabeceras, por ejemplo— sin buscarla a mano.
+  cabeceras, por ejemplo— sin buscarla a mano. Si hay un filtro por categoría activo,
+  encuadra **solo sobre lo que se está viendo**: filtrar a «Primer nivel» y encuadrar
+  antes alejaba el mapa hasta abarcar las 185 mufas, incluidas las ocultas.
 - **Centrar en el mapa**: el panel del elemento seleccionado permite traerlo al centro.
   Tras filtrar o buscar, lo seleccionado puede quedar fuera de la vista.
 - **Inicio → Mapa de red** encuadra sobre la red completa (cabeceras, mufas y fibra).
@@ -299,6 +339,59 @@ va dentro de lo que se firma.
 > para decidir qué pantalla mostrar. **No** es una comprobación de seguridad: la de
 > verdad es la del servidor.
 
+La sesión dura ocho horas, más que una jornada con el mapa abierto. Cuando vence, la
+aplicación lo dice y devuelve al login: `fetchConSesion` cierra la sesión ante cualquier
+401 y `AuthGuard` avisa en el momento exacto de la expiración y al volver a la pestaña.
+Antes solo se comprobaba al entrar, así que al vencer el token las capas empezaban a
+fallar una tras otra y lo que se veía era un mapa vacío, sin explicación.
+
+### Qué valida el formulario de inicio de sesión
+
+Solo lo mismo que valida la ruta, para ahorrar un viaje al servidor que ya se
+sabe que va a fallar. Nada más, y esto importa: el formulario exigía antes una
+contraseña de **al menos 6 caracteres** y un usuario sin tildes ni espacios,
+reglas que la base nunca tuvo. La columna original era `varchar(12)`, así que
+había contraseñas más cortas: quien tuviera una de 5 caracteres no podía entrar
+y el formulario le decía que su propia contraseña era inválida, sin llegar a
+enviar nada. Le pasaba a una de las cinco cuentas.
+
+Un mínimo de longitud pertenece a la pantalla donde se **crea** una contraseña,
+que este proyecto todavía no tiene. Aquí solo se comprueba que los campos no
+estén vacíos y que no superen el tope que acepta el servidor.
+
+Cuando el servidor bloquea la cuenta por intentos fallidos devuelve
+`lockedUntil`, y el formulario lo convierte en una cuenta atrás: el botón se
+apaga y dice cuántos segundos faltan, en vez de mostrar un «30s» congelado que
+obligaba a probar a ciegas.
+
+### Informe de calidad de los datos
+
+```bash
+pnpm run datos
+```
+
+`scripts/revisar-datos.mjs` contrasta lo que el mapa calcula contra lo que guarda la
+base y revisa que la red sea consistente: si las longitudes coinciden, si los extremos
+de cada cable apuntan a elementos que existen, si hay mufas superpuestas o geometrías
+a medio digitalizar. Conviene correrlo cada vez que entren datos nuevos, porque los
+problemas de datos no los ve el compilador y llegan igual al ingeniero de red.
+
+Los hallazgos de la última revisión están en
+[`docs/base-de-datos.md`](docs/base-de-datos.md).
+
+### Auditoría de seguridad
+
+```bash
+pnpm run auditar
+```
+
+`scripts/auditar-seguridad.mjs` importa la ruta de login de verdad y le lanza los
+ataques que en su momento funcionaron, sin necesidad de levantar el servidor. Comprueba
+que el nombre de usuario ya no admite comodines de SQL, que responder tarda lo mismo
+exista o no la cuenta, que el registro de intentos fallidos no crece sin techo, que el
+bloqueo por intentos sigue en pie y que el desglose del panel de capas no pierde
+elementos con categorías de nombre raro. Sale con código 1 si algo falla.
+
 ### Contraseñas
 
 Se guardan con **hash scrypt** (`lib/password.ts`), no en texto plano. Se eligió scrypt
@@ -346,19 +439,32 @@ app/
 components/
   network-map.tsx         Mapa OpenLayers: capas, interacciones, herramientas
   map-symbols.tsx         Símbolos en SVG, compartidos por leyenda y panel
+  map-legend.tsx          Leyenda plegable del mapa
+  map-notices.tsx         Pila de avisos sobre el mapa
+  map-status-bar.tsx      Coordenadas, zoom y herramienta activa
   info-table-dialog.tsx   Tabla de atributos reutilizable (identify)
   gismart-mark.tsx        Marca de la aplicación (login, panel, favicon)
   mufa-*.tsx              Esquema y conectividad interna de la mufa
   dashboard-*.tsx         Cabecera, ribbon y barra lateral
-  ui/                     Componentes base (shadcn / base-ui)
+  ui/                     Componentes base sobre Base UI
+  ui/tooltip.tsx          Etiqueta emergente, en vez del `title` del navegador
 lib/
   map/symbology.ts        Colores, símbolos, etiquetas y clasificación de capas
   map/loaders.ts          Carga de las capas reales desde los endpoints
-  supabase-geojson.ts     Sirve una vista *_geojson como FeatureCollection
+  map/capas.ts            Conteo por categoría y filtro del desglose
+  map/herramientas.ts     Las ocho herramientas, su orden y sus avisos
+  map/vista-guardada.ts   Última vista del mapa en localStorage
+  supabase-geojson.ts     Sirve una capa como FeatureCollection, con respaldo
+                          si falta la vista *_geojson
+  auth-server.ts          Firma y verifica el token de sesion
   auth.ts                 Manejo de sesión en el cliente
   theme.ts                Modo claro/oscuro persistido en localStorage
   network-colors.ts       Paleta de las capas
   schematic/              Modelo y dibujo de los esquemas JointJS
+scripts/
+  auditar-seguridad.mjs   Relanza los ataques contra el login
+  revisar-datos.mjs       Informe de calidad de los datos de la red
+  migrar-claves.mjs       Cierra la migracion de contrasenas a hash
 docs/                     Documentación operativa
 ```
 
@@ -372,7 +478,18 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   fibra, mover un vértice o cambiar un nombre solo existe en el navegador; al recargar se
   pierde. Hoy la aplicación es un **visor** con herramientas de dibujo, no un editor.
   Para que lo sea faltan endpoints de escritura y decidir permisos por usuario.
-- **Contraseñas en texto plano** en `usuario_app` (ver arriba).
+- **Contraseñas todavía en texto plano** en `usuario_app`: al 9 de septiembre de 2026
+  solo «Sebastian» está migrada. Las demás se migran solas cuando esas personas entren,
+  o de una vez con `node scripts/migrar-claves.mjs --aplicar`.
+- **La tabla `geo_infra.cabecera_central` está vacía y su vista `_geojson` no existe.**
+  La capa carga sin errores gracias al respaldo, pero no hay nada que dibujar hasta
+  volver a cargar los datos.
+- **El bloqueo por intentos es por nombre de usuario**, así que quien conozca un nombre
+  puede dejar esa cuenta bloqueada 30 segundos seguidos. Es el precio de bloquear por
+  cuenta en vez de por IP; con la aplicación detrás de IIS, limitar por IP allí es la
+  forma natural de completarlo.
+- **El token vive en `localStorage`**: cualquier XSS podría leerlo. Una cookie `httpOnly`
+  sería más segura, pero obliga a cambiar cómo se envía en cada petición.
 - **Teselas de OpenStreetMap**: `tile.openstreetmap.org` es un servicio comunitario y su
   política de uso prohíbe el uso intensivo o comercial. Durante las pruebas llegó a
   cortar el servicio y el mapa se quedó sin fondo. Para producción conviene un servidor

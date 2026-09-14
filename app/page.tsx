@@ -5,10 +5,7 @@ export default function Page() {
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
       {/* Trama tenue de red de fibra: hilos y cubiertas de empalme, el mismo
           lenguaje visual del mapa, sin competir con el formulario. */}
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 size-full text-primary/[0.06]"
-      >
+      <svg aria-hidden="true" className="gismart-trama pointer-events-none absolute inset-0 size-full">
         <defs>
           {/* Trama menuda: a mayor escala se leía como papel tapiz en vez de
               como textura de fondo. */}

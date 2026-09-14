@@ -74,7 +74,10 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
                   <td className="w-2/5 px-3 py-2 align-top font-medium text-muted-foreground">
                     {fieldLabels[key] ?? humanizarCampo(key)}
                   </td>
-                  <td className="px-3 py-2 text-foreground">{formatValue(key, data[key])}</td>
+                  {/* `break-words`: hay valores largos sin espacios donde
+                      partir, como la etiqueta NAP "1/3+5/6+9/11+13+15+17/20",
+                      que si no se salen de la celda y descuadran la tabla. */}
+                  <td className="px-3 py-2 break-words text-foreground">{formatValue(key, data[key])}</td>
                 </tr>
               ))}
             </tbody>

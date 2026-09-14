@@ -23,6 +23,7 @@ import { GismartMark } from "@/components/gismart-mark"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tooltip } from "@/components/ui/tooltip"
 
 type FormValues = {
   usuario: string
@@ -38,9 +39,44 @@ export function GiSmartLogin() {
   const [connected, setConnected] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
   const [isDark, setIsDark] = useState(false)
+  const [sesionCaducada, setSesionCaducada] = useState(false)
+  /** Instante en que se levanta el bloqueo por intentos, o `null` si no lo hay. */
+  const [bloqueoHasta, setBloqueoHasta] = useState<number | null>(null)
+  const [segundosRestantes, setSegundosRestantes] = useState(0)
+
+  // El servidor devuelve `lockedUntil` al bloquear la cuenta, pero antes solo
+  // se pintaba el "30s" del mensaje y ahí se quedaba: había que probar a ciegas
+  // para saber si ya se podía. Aquí ese dato se convierte en una cuenta atrás.
+  useEffect(() => {
+    if (!bloqueoHasta) return
+
+    const actualizar = () => {
+      const restantes = Math.max(0, Math.ceil((bloqueoHasta - Date.now()) / 1000))
+      setSegundosRestantes(restantes)
+      if (restantes === 0) {
+        setBloqueoHasta(null)
+        setServerError(null)
+      }
+    }
+
+    actualizar()
+    const id = window.setInterval(actualizar, 250)
+    return () => window.clearInterval(id)
+  }, [bloqueoHasta])
+
+  const bloqueada = bloqueoHasta !== null && segundosRestantes > 0
 
   useEffect(() => {
     setIsDark(getCurrentTheme() === "dark")
+
+    // Se llega con `?sesion=caducada` cuando el token venció con el mapa
+    // abierto. Decirlo evita que parezca que la aplicación cerró sola.
+    if (new URLSearchParams(window.location.search).get("sesion") === "caducada") {
+      setSesionCaducada(true)
+      // Se limpia de la barra de direcciones para que no reaparezca al
+      // recargar ni quede en el historial.
+      window.history.replaceState(null, "", window.location.pathname)
+    }
   }, [])
 
   function handleToggleTheme() {
@@ -80,6 +116,8 @@ export function GiSmartLogin() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setConnecting(false)
+        // 429 con `lockedUntil`: la cuenta quedó bloqueada un rato.
+        if (typeof body.lockedUntil === "number") setBloqueoHasta(body.lockedUntil)
         // Si el servidor indica el campo, marca el error inline
         if (body.field === "usuario" || body.field === "contrasena") {
           setError(body.field, { type: "server", message: body.message })
@@ -101,7 +139,9 @@ export function GiSmartLogin() {
 
   // Estado visual de un campo: error | ok | idle
   const usuarioOk = !errors.usuario && dirtyFields.usuario && usuarioValue.length >= 3
-  const contrasenaOk = !errors.contrasena && dirtyFields.contrasena && contrasenaValue.length >= 6
+  // Basta con que haya algo escrito: el visto no juzga la contraseña, solo
+  // indica que el campo está diligenciado.
+  const contrasenaOk = !errors.contrasena && dirtyFields.contrasena && contrasenaValue.length > 0
 
   return (
     // `relative z-10`: los fondos decorativos de la página van posicionados y,
@@ -127,15 +167,16 @@ export function GiSmartLogin() {
                 Accede al sistema de red de fibra
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleToggleTheme}
-              className="-mr-1.5 -mt-1.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-            >
-              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
+            <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="left">
+              <button
+                type="button"
+                onClick={handleToggleTheme}
+                className="-mr-1.5 -mt-1.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              >
+                {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </button>
+            </Tooltip>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -150,18 +191,22 @@ export function GiSmartLogin() {
                   id="usuario"
                   type="text"
                   autoComplete="username"
+                  // Es una pantalla dedicada a entrar y no hay nada más que
+                  // hacer en ella, así que el cursor empieza en el primer campo.
+                  autoFocus
                   placeholder="Ingresa tu usuario"
                   aria-invalid={!!errors.usuario}
-                  aria-describedby="usuario-error"
+                  aria-describedby={errors.usuario ? "usuario-error" : undefined}
                   className="pr-10"
+                  // Estas reglas solo evitan un viaje al servidor que ya se
+                  // sabe que va a fallar: son las mismas que aplica la ruta, ni
+                  // una más. Antes había además un patrón que solo aceptaba
+                  // letras sin tilde, números y `._-`, así que un nombre como
+                  // "José" o "Ana Maria" no habría podido ni intentarlo.
                   {...register("usuario", {
                     required: "Ingresa un usuario.",
                     minLength: { value: 3, message: "El usuario debe tener al menos 3 caracteres." },
-                    maxLength: { value: 20, message: "El usuario no puede superar 20 caracteres." },
-                    pattern: {
-                      value: /^[a-zA-Z0-9._-]+$/,
-                      message: "Solo letras, números y . _ - (sin espacios).",
-                    },
+                    maxLength: { value: 120, message: "El usuario no puede superar 120 caracteres." },
                     validate: (v) => v.trim().length > 0 || "El usuario no puede estar vacío.",
                   })}
                 />
@@ -192,14 +237,19 @@ export function GiSmartLogin() {
                   autoComplete="current-password"
                   placeholder="Ingresa tu contraseña"
                   aria-invalid={!!errors.contrasena}
-                  aria-describedby="contrasena-error"
+                  aria-describedby={errors.contrasena ? "contrasena-error" : undefined}
                   onKeyUp={handleCaps}
                   onKeyDown={handleCaps}
                   className="pr-16"
+                  // Sin mínimo de longitud: esto es entrar, no crear una cuenta.
+                  // El mínimo de 6 que había aquí dejaba fuera a quien tuviera
+                  // una contraseña más corta —la columna original era
+                  // varchar(12)— y el formulario ni siquiera enviaba la
+                  // petición: le decía que su propia contraseña era inválida.
+                  // Dario, con una de 5 caracteres, no podía entrar.
                   {...register("contrasena", {
                     required: "Ingresa una contraseña.",
-                    minLength: { value: 6, message: "La contraseña debe tener al menos 6 caracteres." },
-                    maxLength: { value: 50, message: "La contraseña no puede superar 50 caracteres." },
+                    maxLength: { value: 200, message: "La contraseña no puede superar 200 caracteres." },
                   })}
                 />
                 <div className="absolute right-2.5 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
@@ -245,6 +295,17 @@ export function GiSmartLogin() {
               </Label>
             </div>
 
+            {/* Sesión vencida mientras el mapa estaba abierto */}
+            {sesionCaducada && !serverError && (
+              <div
+                role="status"
+                className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-sm text-amber-700 dark:text-amber-400"
+              >
+                <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>Tu sesión venció por seguridad. Vuelve a conectarte para seguir.</span>
+              </div>
+            )}
+
             {/* Mensaje de error general del servidor */}
             {serverError && (
               <div
@@ -252,39 +313,42 @@ export function GiSmartLogin() {
                 className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"
               >
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span>{serverError}</span>
+                <span>
+                  {bloqueada
+                    ? `Demasiados intentos fallidos. Podrás reintentar en ${segundosRestantes} s.`
+                    : serverError}
+                </span>
               </div>
             )}
 
             {/* Acciones */}
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isSubmitting || bloqueada}
+              // Bloqueada, el botón deja de ser azul: un primario al 70 % se
+              // seguía leyendo como pulsable, y la única señal de que no lo
+              // era llegaba al intentar usarlo.
+              className={`mt-6 flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed ${
+                bloqueada
+                  ? "bg-muted text-muted-foreground shadow-none"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-70"
+              }`}
             >
-              {isSubmitting ? "Conectando..." : "Conectar"}
-              <ArrowRight className="size-4" />
+              {bloqueada ? `Espera ${segundosRestantes} s` : isSubmitting ? "Conectando..." : "Conectar"}
+              {!bloqueada && <ArrowRight className="size-4" />}
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                reset()
-                setConnected(false)
-                setServerError(null)
-                setCapsLock(false)
-              }}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <X className="size-3.5" />
-              Limpiar formulario
-            </button>
+            {/* Aquí había un botón «Limpiar formulario». En un formulario de
+                dos campos no aporta nada —se borran solos seleccionando— y
+                colocado justo debajo le restaba peso a «Conectar», que es la
+                única acción que importa en esta pantalla. */}
           </form>
         </div>
       </div>
 
-      <p className="mt-5 text-center text-[11px] text-muted-foreground">
-        GiSmart · Sistema de Información Geográfica
+      <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
+        Sistema de Información Geográfica
+        <br />
+        <span className="font-medium text-foreground/70">G&amp;G Technology SAS</span>
       </p>
 
       {/* Modal de carga durante la autenticación */}

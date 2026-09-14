@@ -190,6 +190,31 @@
 }
 
 /*
+ * Trama de red del fondo del login.
+ *
+ * El color va aquí y no en una utilidad `dark:` de Tailwind porque el variante
+ * `dark` de este proyecto es `&:is(.dark *)`: solo actúa cuando alguien eligió
+ * el tema a mano. Quien deja el tema en «sistema» no tiene esa clase, así que
+ * una utilidad `dark:` no se aplicaría y la trama seguiría invisible.
+ *
+ * Sobre el fondo claro basta un 7 % del color de marca; sobre el oscuro, ese
+ * mismo valor desaparecía por completo y hay que subirlo.
+ */
+.gismart-trama {
+  color: color-mix(in oklch, var(--primary) 7%, transparent);
+}
+
+.dark .gismart-trama {
+  color: color-mix(in oklch, var(--primary) 16%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .gismart-trama {
+    color: color-mix(in oklch, var(--primary) 16%, transparent);
+  }
+}
+
+/*
  * Cartografía de fondo en modo oscuro.
  *
  * Las teselas de OpenStreetMap son claras y dentro de una interfaz oscura se

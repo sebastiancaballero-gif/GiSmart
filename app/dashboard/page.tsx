@@ -4,8 +4,10 @@ import { useState, useCallback, useEffect, useMemo } from "react"
 import { DashboardRibbon } from "@/components/dashboard-ribbon"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
-import { NetworkMap, type MapTool, type NetworkStats } from "@/components/network-map"
+import { NetworkMap } from "@/components/network-map"
 import { AuthGuard } from "@/components/auth-guard"
+import type { MapTool } from "@/lib/map/herramientas"
+import type { NetworkStats } from "@/lib/map/capas"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { fetchConSesion } from "@/lib/auth"
 
@@ -13,6 +15,10 @@ export default function DashboardPage() {
   const [visible, setVisible] = useState({ nodes: true, fibers: true, zones: true, cabeceras: true })
   const [counts, setCounts] = useState({ nodes: 0, fibers: 0, zones: 0, cabeceras: 0 })
   const [totalKm, setTotalKm] = useState(0)
+  // Lo que queda a la vista con el filtro por categoria puesto: sin esto, el
+  // panel anunciaba los kilometros de toda la red mientras el mapa mostraba
+  // solo una parte.
+  const [enPantalla, setEnPantalla] = useState({ nodes: 0, fibers: 0, km: 0 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [center, setCenter] = useState<{ lon: number; lat: number } | null>(null)
   const [location, setLocation] = useState("Ubicando…")
@@ -120,6 +126,7 @@ export default function DashboardPage() {
   const handleStatsChange = useCallback((stats: NetworkStats) => {
     setCounts(stats.counts)
     setTotalKm(stats.totalKm)
+    setEnPantalla(stats.enPantalla)
     setBreakdown(stats.breakdown)
   }, [])
 
@@ -143,6 +150,7 @@ export default function DashboardPage() {
             onClearItems={handleClearItems}
             onZoomLayer={handleZoomLayer}
             totalKm={totalKm}
+            enPantalla={enPantalla}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
             loading={loadingData}

@@ -130,6 +130,15 @@ Relevado directamente contra la base:
 | `cubierta_empalme.tipo_empalme` | FUSION (185) |
 | `cable_fibra.tipo_fibra` | MULTI (182) |
 | `cable_fibra.tipo_red_prin` | **vacío en los 182 registros** |
+| `cable_fibra.cant_hilo` | 48 (162), 144 (20) |
+| `cabecera_central` | **0 registros, y su vista `_geojson` ya no existe** |
+
+Ni una sola geometría inválida, fuera de Colombia o sin coordenadas en las tres
+capas; tampoco etiquetas de mufa repetidas ni cables de longitud cero.
+
+La capa de cabeceras se ve vacía porque la tabla lo está: al recrearla se
+perdieron los registros y la vista. Los datos hay que volver a cargarlos; la
+vista está más arriba en este documento.
 
 Por eso el mapa colorea las mufas por `funcion_cub` (es el campo que sí discrimina) y
 dibuja los cables con grosor según `cant_hilo`. La separación visual troncal/distribución
@@ -143,6 +152,58 @@ la conectividad real entre mufas.
 
 ---
 
+## Calidad de los datos (revisión del 9 de septiembre de 2026)
+
+Se contrastó lo que el mapa calcula contra lo que guarda la base, y se revisó la
+consistencia de la red. El resumen es bueno; lo que sigue son los detalles que
+conviene tener presentes.
+
+### La longitud que muestra el mapa es correcta
+
+El mapa no lee `longitud_calc`: mide la geometría con `getLength` de OpenLayers.
+Comparando las dos sobre los 182 cables:
+
+| Medida | Valor |
+| --- | --- |
+| Diferencia mediana | 0,19 % |
+| Cables dentro del 1 % | 178 de 182 |
+| Total del panel | 18,73 km |
+| Suma de `longitud_calc` | 18,74 km |
+
+Los cuatro que se salen (ids 543, 544, 545 y 546) quedan **entre 8,6 % y 9,2 %
+por debajo** de lo que dice la base, todos en el mismo sentido. Eso no parece un
+error de cálculo sino holgura o reserva registrada en la base que la geometría no
+recoge. Vale la pena preguntarle al ingeniero de red.
+
+### `longitud_medida` no es una medición
+
+Es **idéntica a `longitud_calc` en los 182 cables**. En la ficha de datos se
+muestran como dos campos distintos, lo que sugiere que uno viene de terreno y el
+otro del cálculo. No es así: uno es copia del otro.
+
+### La topología está completa
+
+Los extremos de los cables (`tip_elem_from` / `id_elem_from` y sus pares `_to`)
+resuelven todos:
+
+- 363 extremos apuntan a una cubierta de empalme (`CUBGEN`), 1 a una cabecera (`CABE`).
+- Ninguno viene vacío y **ninguno apunta a una mufa inexistente**.
+- Solo la mufa `id 202` no aparece como extremo de ningún cable.
+- No hay dos mufas en la misma coordenada.
+
+Esto importa porque significa que la conectividad real entre mufas **ya se puede
+construir con estos campos**, sin datos nuevos.
+
+### Dos cosas que sí hay que arreglar en la base
+
+1. El cable `id 392` termina en la cabecera `id 4`, pero `geo_infra.cabecera_central`
+   está vacía: esa referencia queda colgada hasta recargar las cabeceras.
+2. Diez cables miden menos de 5 m (ids 379, 381, 399, 410, 420, 424, 441, 460,
+   475 y 525; el más corto, 1,2 m). Pueden ser tramos reales de patcheo o
+   geometrías a medio digitalizar. Conviene revisarlos.
+
+---
+
 ## Qué pasa cuando cambia el esquema
 
 Conviene tener claro qué es automático y qué no, porque ya tropezamos dos veces
@@ -153,8 +214,40 @@ con lo mismo.
 | Agregar, editar o borrar registros | **No.** Aparecen solos al recargar. |
 | Agregar una columna a una tabla | Sí: recrear la vista. La ruta y la ficha la toman solas. |
 | Renombrar una columna | Sí: recrear la vista con el nombre nuevo. |
-| Recrear la tabla (`drop`/`create`) | Sí: la vista y sus permisos se pierden con la tabla. |
+| Recrear la tabla (`drop`/`create`) | **No**, si el respaldo está armado (ver abajo). Conviene recrear la vista igual. |
 | Una tabla nueva (capa nueva) | Sí: vista, ruta y simbología. |
+
+### Respaldo automático cuando falta la vista
+
+Las vistas se borran junto con su tabla, así que recrear una tabla dejaba su
+capa sin cargar hasta volver a crear la vista a mano. Pasó tres veces con
+`cabecera_central`.
+
+Ahora, si la vista no existe, la ruta pide la tabla base con la cabecera
+`Accept: application/geo+json` y **PostgREST arma el FeatureCollection él
+mismo**, sin necesitar `st_asgeojson`. La capa sigue funcionando y en la
+consola del servidor queda el aviso de que la vista falta.
+
+Para que el respaldo funcione, `service_role` tiene que poder leer la tabla:
+
+```sql
+grant select on geo_fiber.cubierta_empalme to service_role;
+grant select on geo_fiber.cable_fibra      to service_role;
+grant select on geo_infra.cabecera_central to service_role;
+```
+
+Estado comprobado el 9 de septiembre de 2026: armado en `cubierta_empalme` y
+`cabecera_central`; **`cable_fibra` responde 403**, así que si se pierde su
+vista, esa capa sí se cae hasta ejecutar el `grant` de arriba.
+
+Dos diferencias respecto a la vista, por si algo se ve distinto:
+
+- El respaldo devuelve **todas** las columnas de la tabla, también las que la
+  vista ocultaba (`creado_por`, `actualizado_por`). Salen en «Ver información».
+- El respaldo no puede curar nombres de columnas: entrega los de la tabla.
+
+La vista sigue siendo el camino normal y el que define qué se expone. El
+respaldo es una red, no un reemplazo.
 
 Del lado de la aplicación ya no hay listas de columnas que mantener:
 

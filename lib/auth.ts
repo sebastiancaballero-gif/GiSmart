@@ -12,6 +12,11 @@ export function getToken(): string | null {
  * Las rutas de datos exigen el token, así que toda llamada a `/api` desde el
  * navegador debe pasar por acá. El servidor verifica la firma; lo que el
  * cliente lea del token es solo para la interfaz.
+ *
+ * Si el servidor responde 401, la sesión se da por terminada y se vuelve al
+ * login. Antes no: el token dura ocho horas, así que vencía en plena jornada y
+ * a partir de ahí las capas fallaban una tras otra sin que nadie avisara. Lo
+ * que se veía era un mapa vacío, no una sesión caducada.
  */
 export function fetchConSesion(url: string, init?: RequestInit): Promise<Response> {
   const token = getToken()
@@ -21,17 +26,46 @@ export function fetchConSesion(url: string, init?: RequestInit): Promise<Respons
       ...init?.headers,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+  }).then((res) => {
+    if (res.status === 401) terminarSesionCaducada()
+    return res
   })
 }
 
-export function isTokenValid(token: string | null): boolean {
-  if (!token) return false
+// Varias capas se cargan a la vez: sin esto, cada 401 lanzaría su propia
+// redirección y el aviso saldría repetido.
+let cerrandoSesion = false
+
+/** Cierra la sesión vencida y vuelve al login, una sola vez. */
+export function terminarSesionCaducada() {
+  if (cerrandoSesion || typeof window === "undefined") return
+  cerrandoSesion = true
+  clearSession()
+  window.location.replace("/?sesion=caducada")
+}
+
+/**
+ * Momento en que caduca el token, en milisegundos, o `null` si no se puede
+ * leer. Solo sirve para la interfaz: quien decide de verdad es el servidor,
+ * que comprueba la firma en cada petición.
+ */
+export function expiracionDelToken(token: string | null): number | null {
+  if (!token) return null
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]))
-    return payload.exp * 1000 > Date.now()
+    // El cuerpo va en base64url, que usa `-` y `_` donde base64 usa `+` y `/`:
+    // `atob` no los admite y hay que traducirlos antes.
+    const cuerpo = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/")
+    if (!cuerpo) return null
+    const carga = JSON.parse(atob(cuerpo))
+    return typeof carga.exp === "number" ? carga.exp * 1000 : null
   } catch {
-    return false
+    return null
   }
+}
+
+export function isTokenValid(token: string | null): boolean {
+  const expira = expiracionDelToken(token)
+  return expira !== null && expira > Date.now()
 }
 
 export function saveSession(token: string, user: unknown, remember: boolean) {

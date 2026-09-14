@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Minimize, ChevronUp } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
+import { Tooltip } from "@/components/ui/tooltip"
 
 export type RibbonActions = {
   onRefresh?: () => void
@@ -125,11 +126,17 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
         {RIBBON_TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
-            <button
+            // Sin etiqueta cuando la pestaña no está activa: su nombre ya se lee
+            // en el propio botón y repetirlo al pasar el ratón solo estorba.
+            // Activa sí aporta, porque entonces el click pliega o despliega.
+            <Tooltip
               key={tab.id}
+              side="bottom"
+              label={isActive ? (colapsado ? "Desplegar la barra" : "Plegar la barra") : undefined}
+            >
+            <button
               role="tab"
               aria-selected={isActive}
-              title={isActive ? (colapsado ? "Desplegar la barra" : "Plegar la barra") : tab.label}
               onClick={() => alPulsarPestana(tab.id)}
               className={`
                 relative rounded-t-lg px-4 py-2 text-sm font-semibold outline-none transition-all
@@ -145,19 +152,21 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
                 <span className="absolute bottom-0 left-1 right-1 h-[3px] rounded-full bg-primary" />
               )}
             </button>
+            </Tooltip>
           )
         })}
 
+        <Tooltip label={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"} side="bottom">
         <button
           type="button"
           onClick={() => alternarColapso(!colapsado)}
           aria-expanded={!colapsado}
-          title={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"}
           aria-label={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"}
           className="mb-1 ml-auto mr-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <ChevronUp className={`size-4 transition-transform ${colapsado ? "rotate-180" : ""}`} />
         </button>
+        </Tooltip>
       </div>
 
       {/* Toolbar */}
@@ -178,11 +187,10 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
                   const isDestructive = item.variant === "destructive"
 
                   return (
+                    <Tooltip key={ii} label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label} side="bottom">
                     <button
-                      key={ii}
                       onClick={() => handleItemClick(item)}
                       disabled={item.disabled}
-                      title={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
                       aria-label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
                       aria-pressed={isExtension ? isFullscreen : undefined}
                       className={`
@@ -203,6 +211,7 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
                         {item.label}
                       </span>
                     </button>
+                    </Tooltip>
                   )
                 })}
               </div>

@@ -58,8 +58,14 @@ async function cargarCapa({
     if (isCancelled()) return null
     source.addFeatures(features)
     return null
-  } catch {
-    return isCancelled() ? null : errorRed
+  } catch (e) {
+    if (isCancelled()) return null
+    // El mensaje que ve el usuario habla de conexión, pero aquí también caen
+    // los fallos al interpretar el GeoJSON (una geometría corrupta tumba la
+    // capa entera). Sin registrarlo no había forma de distinguir un caso del
+    // otro desde la consola del navegador.
+    console.error(`[${url}] no se pudo cargar la capa:`, e)
+    return errorRed
   }
 }
 

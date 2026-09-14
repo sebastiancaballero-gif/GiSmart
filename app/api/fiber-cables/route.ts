@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   return serveGeoJsonView({
     schema: "geo_fiber",
     view: "cable_fibra_geojson",
+    table: "cable_fibra",
     entidad: "los cables",
   })
 }

@@ -1,7 +1,7 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
@@ -38,8 +38,10 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/* El proveedor comparte el retardo entre todas las etiquetas: abierta
+            una, las de al lado salen al instante. Es lo que hace cómodo
+            recorrer la barra de ocho herramientas del mapa. */}
+        <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>
   )

@@ -11,6 +11,37 @@ import { NextResponse } from "next/server"
 
 const VIGENCIA_SEGUNDOS = 60 * 60 * 8 // 8 horas
 
+/** Valor de muestra de `.env.example`: si llega hasta producción, no sirve. */
+const SECRETO_DE_MUESTRA = "cambia-este-valor-por-un-secreto-aleatorio"
+const LARGO_MINIMO_SECRETO = 32
+
+/**
+ * Devuelve el secreto de firma solo si sirve para firmar.
+ *
+ * Toda la sesión se apoya en este valor: quien lo adivine puede fabricar
+ * tokens y entrar como cualquiera. Un secreto corto o el de muestra son
+ * adivinables, así que se rechazan en producción antes de emitir nada. En
+ * desarrollo solo se avisa, para no estorbar mientras se prueba.
+ */
+function secretoDeFirma(): string | null {
+  const secreto = process.env.AUTH_JWT_SECRET
+  if (!secreto) return null
+
+  const debil = secreto === SECRETO_DE_MUESTRA || secreto.length < LARGO_MINIMO_SECRETO
+  if (!debil) return secreto
+
+  const aviso =
+    `AUTH_JWT_SECRET es demasiado débil (mínimo ${LARGO_MINIMO_SECRETO} caracteres y distinto del de ejemplo). ` +
+    `Genera uno con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+
+  if (process.env.NODE_ENV === "production") {
+    console.error(`[auth] ${aviso}`)
+    return null
+  }
+  console.warn(`[auth] ${aviso}`)
+  return secreto
+}
+
 export type SesionToken = {
   sub: string
   role: string
@@ -27,8 +58,8 @@ function firmar(entrada: string, secreto: string): string {
 }
 
 export function emitirToken(usuario: string, role: string): string {
-  const secreto = process.env.AUTH_JWT_SECRET
-  if (!secreto) throw new Error("AUTH_JWT_SECRET no está configurado.")
+  const secreto = secretoDeFirma()
+  if (!secreto) throw new Error("AUTH_JWT_SECRET no está configurado o no es válido.")
 
   const ahora = Math.floor(Date.now() / 1000)
   const cuerpo = base64url({ alg: "HS256", typ: "JWT" }) + "." +
@@ -43,7 +74,7 @@ export function emitirToken(usuario: string, role: string): string {
  * tiempo de respuesta.
  */
 export function verificarToken(token: string | null | undefined): SesionToken | null {
-  const secreto = process.env.AUTH_JWT_SECRET
+  const secreto = secretoDeFirma()
   if (!token || !secreto) return null
 
   const partes = token.split(".")
