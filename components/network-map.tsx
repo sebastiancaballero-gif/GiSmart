@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, memo, type ComponentProps, type ComponentType } from "react"
 import "ol/ol.css"
 import Map from "ol/Map"
 import View from "ol/View"
@@ -25,6 +25,7 @@ import { defaults as defaultControls } from "ol/control"
 import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry } from "ol/geom"
 import { createEmpty, extend, isEmpty } from "ol/extent"
+import { unByKey } from "ol/Observable"
 import {
   Hand,
   Box,
@@ -43,8 +44,8 @@ import {
   Crosshair,
 } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR } from "@/lib/map/symbology"
-import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
+import { MEASURE_COLOR, largoEnKm, marcadorStyle, sentidoStyle } from "@/lib/map/symbology"
+import { obtenerCablesDeMufa } from "@/lib/map/cables-de-mufa"
 import {
   CABECERA_COLOR,
   CABECERA_FIELD_LABELS,
@@ -65,6 +66,7 @@ import {
   nodeStyle,
   seleccionStyle,
   zoneStyle,
+  NOMBRE_VISIBLE,
   type FeatureType,
 } from "@/lib/map/symbology"
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas } from "@/lib/map/loaders"
@@ -78,6 +80,15 @@ import { GismartMark } from "@/components/gismart-mark"
 import { MapLegend } from "@/components/map-legend"
 import { MapNotice, MapNoticeStack } from "@/components/map-notices"
 import { MapStatusBar } from "@/components/map-status-bar"
+import { LimiteDeError } from "@/components/limite-de-error"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import {
+  crearConsultor,
+  obtenerConectividad,
+  resultadoAGuardar,
+  type EstadoConectividad,
+  type ModoConectividad,
+} from "@/lib/map/conectividad"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
 
@@ -115,7 +126,17 @@ type SelectedFeature = {
   type: FeatureType
 }
 
-export function NetworkMap({
+/**
+ * El modal de conectividad es de Dario y todavía no declara `modo` entre sus
+ * props. Se le pasa igual, con el tipo ampliado, para que el dato ya viaje con
+ * cada apertura; cuando Dario lo declare, esto sobra y se usa
+ * `MufaConnectivityModal` directamente. Su archivo no se toca desde aquí.
+ */
+const ModalConectividad = MufaConnectivityModal as ComponentType<
+  ComponentProps<typeof MufaConnectivityModal> & { modo: ModoConectividad }
+>
+
+function MapaDeRed({
   // Centro/zoom iniciales sobre La Unión, Valle del Cauca, donde está la red
   // real cargada hoy — el mapa además se reencuadra solo apenas llegan las
   // mufas (ver loadRealMufas), así que esto es solo el punto de partida.
@@ -143,6 +164,11 @@ export function NetworkMap({
   const [zoneSource] = useState(() => new VectorSource())
   const [cabeceraSource] = useState(() => new VectorSource())
   const [measureSource] = useState(() => new VectorSource())
+  // Copias de los cables que pinta «Entradas y salidas». Van en una capa
+  // aparte, solo visual: los cables reales no se tocan.
+  const [sentidoSource] = useState(() => new VectorSource())
+  // Punto rojo sobre el elemento activo (ver el efecto del marcador).
+  const [marcadorSource] = useState(() => new VectorSource())
   const [baseMapSource] = useState(() => new OSM())
 
   const nodeLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -150,6 +176,8 @@ export function NetworkMap({
   const zoneLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const cabeceraLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const measureLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const sentidoLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
   const deleteHoverRef = useRef<Select | null>(null)
@@ -164,8 +192,8 @@ export function NetworkMap({
   // y pasarlas por React obligaba a re-renderizar todo el mapa cada vez.
   const lonRef = useRef<HTMLSpanElement>(null)
   const latRef = useRef<HTMLSpanElement>(null)
+  const zoomRef = useRef<HTMLSpanElement>(null)
   const hoverRef = useRef<HTMLDivElement>(null)
-  const [zoomLevel, setZoomLevel] = useState<number>(zoom)
   // La herramienta puede venir de fuera (ribbon) o manejarse sola: si llega
   // `tool` por props manda esa, y los clicks del propio mapa se notifican arriba.
   const [internalTool, setInternalTool] = useState<MapTool>("pan")
@@ -180,6 +208,36 @@ export function NetworkMap({
   const [baseMapError, setBaseMapError] = useState(false)
   const [connectivityOpen, setConnectivityOpen] = useState(false)
   const [connectivitySchema, setConnectivitySchema] = useState<MufaCampoJSON | null>(null)
+  // Última conectividad consultada de cada mufa, por UUID. Solo la llena el
+  // botón «Conectividad fina» del ribbon: una mufa no tiene conectividad en la
+  // app hasta que se consulta con él, aunque la base ya la tenga. Elegir una
+  // mufa no pregunta nada. El panel la usa para volver a abrir el esquema sin
+  // repetir la consulta. Se vacía al recargar.
+  const [conectividades, setConectividades] = useState<Record<string, EstadoConectividad>>({})
+  // Pregunta a la base cada vez, salvo que ya haya una pregunta en camino por
+  // la misma mufa (un doble click no lanza dos).
+  const [consultar] = useState(() => crearConsultor((id) => obtenerConectividad(id)))
+  // Sube al recargar los datos. Una respuesta que llega después pertenece a la
+  // carga anterior y no se guarda.
+  const cargaRef = useRef(0)
+  // Resultado de la herramienta de consulta cuando no hay nada que abrir.
+  const [avisoConsulta, setAvisoConsulta] = useState<{ texto: string; cargando?: boolean } | null>(null)
+  // Sube solo cuando el esquemático falla al dibujar: cambia la `key` del
+  // límite de error y lo deja listo para el siguiente intento. Con una `key`
+  // atada a abierto/cerrado, el modal se desmontaba en cada apertura y cierre
+  // y perdía la animación.
+  const [intentoDibujo, setIntentoDibujo] = useState(0)
+  // Si se pulsan dos cubiertas seguidas, solo cuenta la última.
+  const turnoConsultaRef = useRef(0)
+  // Mufa recién colocada a la espera de confirmación. Ya se ve en el mapa; si
+  // se cancela, se quita.
+  const [mufaPendiente, setMufaPendiente] = useState<Feature<Geometry> | null>(null)
+  // Mufa pulsada con una herramienta de consulta del ribbon: lleva el punto rojo
+  // mientras esa herramienta esté activa.
+  const [consultada, setConsultada] = useState<Feature<Geometry> | null>(null)
+  // Nombre que muestra la pregunta abierta. No se borra al cerrar: si se
+  // borrara, el texto quedaría vacío durante la animación de cierre.
+  const [nombreEnPregunta, setNombreEnPregunta] = useState("")
   const [fiberNotice, setFiberNotice] = useState<string | null>(null)
   const [loadingData, setLoadingData] = useState(true)
   // La cortina de bienvenida solo cubre el arranque; las recargas posteriores
@@ -209,6 +267,75 @@ export function NetworkMap({
     onToolChangeRef.current = onToolChange
     onLoadingChangeRef.current = onLoadingChange
   })
+
+  /**
+   * Pregunta a la base por la conectividad de una mufa y la recuerda para el
+   * panel. Consultar otra vez la misma mufa vuelve a preguntar: el JSON se arma
+   * en el momento y puede haber cambiado.
+   */
+  const pedirConectividad = useCallback(
+    async (id: string): Promise<EstadoConectividad> => {
+      const carga = cargaRef.current
+      const resultado = await consultar(id)
+      if (carga === cargaRef.current) {
+        setConectividades((previas) => ({ ...previas, [id]: resultadoAGuardar(previas[id], resultado) }))
+      }
+      return resultado
+    },
+    [consultar],
+  )
+
+  /**
+   * Consulta la conectividad de una cubierta y, si hay algo que dibujar, abre
+   * el esquemático en modo consulta. La llama la herramienta «Conectividad
+   * fina» al pulsar la cubierta, sin preguntar antes.
+   */
+  const consultarConectividad = useCallback(
+    async (id: string, nombre: string) => {
+      const turno = ++turnoConsultaRef.current
+      setAvisoConsulta({ texto: `Consultando la conectividad de ${nombre}…`, cargando: true })
+      const resultado = await pedirConectividad(id)
+      // Mientras llegaba se cambió de herramienta o se pulsó otra cubierta.
+      if (turno !== turnoConsultaRef.current) return
+
+      if (resultado.estado === "disponible") {
+        setAvisoConsulta(null)
+        setConnectivitySchema(resultado.esquema)
+        setConnectivityOpen(true)
+      } else if (resultado.estado === "sin-conectividad") {
+        setAvisoConsulta({
+          texto: `${nombre} no tiene conectividad: la base todavía no tiene cables registrados para esta cubierta.`,
+        })
+      } else if (resultado.estado === "no-dibujable") {
+        setAvisoConsulta({
+          texto: `${nombre} tiene conectividad en la base, pero el esquema no se puede dibujar: ${resultado.motivo}.`,
+        })
+      } else {
+        setAvisoConsulta({ texto: resultado.mensaje })
+      }
+    },
+    [pedirConectividad],
+  )
+
+  // Elegir una mufa no consulta su conectividad: eso solo lo hace el botón
+  // «Conectividad fina». El panel se limita a mostrar lo ya consultado.
+  // Punto rojo sobre el elemento activo, para saber cuál es entre muchas mufas
+  // juntas: con las herramientas de consulta del ribbon, la mufa que se está
+  // consultando; con las demás, el elemento seleccionado. Solo en puntos (mufas
+  // y cabeceras): un cable seleccionado ya se resalta entero. El marcador usa la
+  // misma geometría que el elemento, así que lo sigue si se mueve al editarlo.
+  const enConsulta = tool === "conectividad" || tool === "sentido"
+  const marcado = enConsulta ? consultada : (selected?.feature ?? null)
+  useEffect(() => {
+    marcadorSource.clear()
+    const geometria = marcado?.getGeometry()
+    if (geometria?.getType() === "Point") marcadorSource.addFeature(new Feature(geometria))
+  }, [marcado, marcadorSource])
+
+  const idMufaSeleccionada =
+    selected?.type === "node" && typeof selected.feature.get("id") === "string"
+      ? (selected.feature.get("id") as string)
+      : null
 
   // Al cambiar el filtro basta con pedir un redibujado: el estilo vuelve a
   // consultarlo y deja fuera las categorías que no estén seleccionadas. El
@@ -247,10 +374,7 @@ export function NetworkMap({
   const recalcAhora = useCallback(() => {
     const nodeFeatures = nodeSource.getFeatures()
     const fiberFeatures = fiberSource.getFeatures()
-    const largoKm = (f: Feature<Geometry>) => {
-      const g = f.getGeometry() as LineString | undefined
-      return g ? getLength(g) / 1000 : 0
-    }
+    const largoKm = (f: Feature<Geometry>) => largoEnKm(f.getGeometry())
     const km = fiberFeatures.reduce((acc, f) => acc + largoKm(f), 0)
 
     // Lo mismo, pero contando solo lo que el filtro deja pintado. El filtro
@@ -370,6 +494,16 @@ export function NetworkMap({
       setMufaLoadError(null)
       setFiberLoadError(null)
       setCabeceraLoadError(null)
+      // La conectividad se arma en la base en el momento: al recargar se
+      // olvida la consultada, y lo que llegue de la carga anterior se ignora.
+      cargaRef.current++
+      setConsultada(null)
+      setConectividades({})
+      // Los elementos se reemplazan por los que lleguen, así que lo que
+      // estuviera seleccionado ya no existe: el panel se quedaba abierto sobre
+      // una mufa fantasma, y el punto rojo marcándola.
+      setSelected(null)
+      editSelectRef.current?.getFeatures().clear()
       setLoadingData(true)
       onLoadingChangeRef.current?.(true)
 
@@ -439,6 +573,8 @@ export function NetworkMap({
       declutter: true,
     })
     measureLayer.current = new VectorLayer({ source: measureSource, style: measureStyle as never })
+    sentidoLayer.current = new VectorLayer({ source: sentidoSource, style: sentidoStyle as never })
+    marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
 
     const map = new Map({
       target: containerRef.current,
@@ -449,10 +585,16 @@ export function NetworkMap({
         new TileLayer({ source: baseMapSource, className: "gismart-basemap" }),
         zoneLayer.current,
         fiberLayer.current,
+        // Encima del tendido, para taparlo mientras dura, y debajo de las
+        // mufas, para que la mufa pulsada se siga viendo.
+        sentidoLayer.current,
         nodeLayer.current,
         // La cabecera va encima de las mufas: es el elemento jerárquicamente
         // más importante y no debe quedar tapada.
         cabeceraLayer.current,
+        // El punto rojo va encima de todo lo que es red, para que se vea
+        // aunque la mufa esté tapada por otras.
+        marcadorLayer.current,
         measureLayer.current,
       ],
       view,
@@ -514,7 +656,7 @@ export function NetworkMap({
         ultimoResaltado = encontrado
         const tipo = tipoDeFeature(encontrado)
         globo.textContent = tipo
-          ? `${TYPE_LABELS[tipo]} · ${(encontrado.get("nombre") as string) || TYPE_LABELS[tipo]}`
+          ? `${TYPE_LABELS[tipo]} · ${(encontrado.get(NOMBRE_VISIBLE) as string) || TYPE_LABELS[tipo]}`
           : ""
       }
     }
@@ -536,10 +678,15 @@ export function NetworkMap({
       ultimoResaltado = null
       if (hoverRef.current) hoverRef.current.hidden = true
     })
-    view.on("change:resolution", () => {
+    // El zoom se escribe en la barra de estado directamente, como las
+    // coordenadas: cambia en cada cuadro de la animación de acercar, y por
+    // estado de React eso repintaba el mapa entero una decena de veces.
+    const mostrarZoom = () => {
       const z = view.getZoom()
-      if (typeof z === "number") setZoomLevel(Math.round(z * 10) / 10)
-    })
+      if (typeof z === "number" && zoomRef.current) zoomRef.current.textContent = String(Math.round(z * 10) / 10)
+    }
+    mostrarZoom()
+    view.on("change:resolution", mostrarZoom)
 
     // React StrictMode monta este efecto dos veces seguidas en desarrollo
     // (monta → limpia → monta). Como la carga es asíncrona, sin este guard
@@ -645,6 +792,10 @@ export function NetworkMap({
       fiberNoticeTimeoutRef.current = null
     }
     setFiberNotice(TOOL_HINTS[tool] ?? null)
+    setAvisoConsulta(null)
+    setConsultada(null)
+    // Una consulta que siga en camino ya no debe abrir nada con otra herramienta.
+    turnoConsultaRef.current++
 
     // Con una herramienta de selección activa, el doble click debe actuar sobre
     // el elemento: el zoom por doble click desplazaba el mapa y hacía que el
@@ -653,7 +804,7 @@ export function NetworkMap({
       .getInteractions()
       .getArray()
       .find((interaccion) => interaccion instanceof DoubleClickZoom)
-    zoomPorDobleClick?.setActive(tool !== "edit" && tool !== "delete")
+    zoomPorDobleClick?.setActive(tool !== "edit" && tool !== "delete" && tool !== "conectividad" && tool !== "sentido")
 
     // Las interacciones de selección solo deben ver las capas de datos: si no
     // se limitan, también alcanzan los elementos auxiliares que dibujan otras
@@ -664,6 +815,133 @@ export function NetworkMap({
       zoneLayer.current,
       cabeceraLayer.current,
     ].filter((capa): capa is VectorLayer<VectorSource> => capa !== null)
+
+    // Mufa bajo el puntero, para las dos herramientas del ribbon que se usan
+    // pulsando una cubierta.
+    const cubiertaEn = (pixel: number[]) =>
+      map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
+        layerFilter: (capa) => capa === nodeLayer.current,
+        hitTolerance: 6,
+      }) ?? null
+
+    if (tool === "sentido") {
+      // «Entradas y salidas» (ribbon: Consultas → Red). Pinta los cables de la
+      // mufa pulsada en una capa aparte que solo es visual, y quedan pintados
+      // hasta pulsar otra mufa (que los reemplaza), pulsar fuera de las mufas
+      // o cambiar de herramienta. Mismo reparto que la conectividad fina: se
+      // manda el UUID de la cubierta, la función de Carlos dice qué cable
+      // entra, cuál sale y de qué color, y aquí solo se dibuja (ver
+      // lib/map/cables-de-mufa.ts).
+      //
+      // Si se pulsan dos mufas seguidas, solo se pinta la última; y nada de lo
+      // que llegue después de cambiar de herramienta.
+      let consultas = 0
+      let activa = true
+      const contar = (n: number, palabra: string) => `${n} ${palabra}${n === 1 ? "" : "s"}`
+
+      const claveMover = map.on("pointermove", (evt) => {
+        if (evt.dragging || !containerRef.current) return
+        containerRef.current.style.cursor = cubiertaEn(evt.pixel) ? "pointer" : "crosshair"
+      })
+
+      const claveClick = map.on("singleclick", (evt) => {
+        const cubierta = cubiertaEn(evt.pixel)
+        // Pulsar otra mufa reemplaza lo pintado; pulsar fuera lo quita.
+        sentidoSource.clear()
+        setConsultada(cubierta)
+        const turno = ++consultas
+        if (!cubierta) {
+          setAvisoConsulta(null)
+          return
+        }
+
+        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "La mufa"
+        const id = cubierta.get("id")
+        if (typeof id !== "string") {
+          setAvisoConsulta({ texto: `${nombre} se dibujó en el mapa y no existe en la base: no se sabe qué cables le llegan.` })
+          return
+        }
+
+        setAvisoConsulta({ texto: `Consultando los cables de ${nombre}…`, cargando: true })
+        void obtenerCablesDeMufa(id).then((resultado) => {
+          // Mientras llegaba se pulsó otra mufa o se cambió de herramienta.
+          if (!activa || turno !== consultas) return
+          if (resultado.estado === "error") {
+            setAvisoConsulta({ texto: resultado.mensaje })
+            return
+          }
+          if (resultado.cables.length === 0) {
+            setAvisoConsulta({ texto: `La base no devolvió cables para ${nombre}.` })
+            return
+          }
+
+          // La geometría sale de la capa de cables que ya está en el mapa: de la
+          // función solo interesan el UUID, el sentido y el color.
+          const enElMapa = new globalThis.Map<string, Feature<Geometry>>()
+          for (const cable of fiberSource.getFeatures()) {
+            const idCable = cable.get("id")
+            if (typeof idCable === "string") enElMapa.set(idCable, cable)
+          }
+
+          let entradas = 0
+          let salidas = 0
+          let fuera = 0
+          for (const cable of resultado.cables) {
+            const geometria = enElMapa.get(cable.id)?.getGeometry()
+            if (!geometria) {
+              fuera++
+              continue
+            }
+            if (cable.sentido === "entrada") entradas++
+            else salidas++
+            sentidoSource.addFeature(
+              new Feature({ geometry: geometria.clone(), sentido: cable.sentido, color: cable.color }),
+            )
+          }
+
+          const noEstan = fuera ? `; ${contar(fuera, "cable")} de la respuesta no ${fuera === 1 ? "está" : "están"} en el mapa` : ""
+          setAvisoConsulta({ texto: `${nombre}: ${contar(entradas, "entrada")} y ${contar(salidas, "salida")}${noEstan}.` })
+        })
+      })
+
+      return () => {
+        activa = false
+        unByKey([claveMover, claveClick])
+        sentidoSource.clear()
+      }
+    }
+
+    if (tool === "conectividad") {
+      // Consulta de conectividad (ribbon: Consultas → Red → «Conectividad
+      // fina»). El flujo lo fijó Aurelio: el usuario elige un elemento; si no
+      // es una cubierta no pasa nada; si lo es, se pide su conectividad con el
+      // UUID y se abre el esquemático de Dario en modo consulta. Antes se
+      // preguntaba «¿Consultar la conectividad?»; se quitó porque el equipo lo
+      // consideró un paso de más.
+
+      // Sobre una cubierta el cursor pasa a mano, para ver qué se puede pulsar.
+      const claveMover = map.on("pointermove", (evt) => {
+        if (evt.dragging || !containerRef.current) return
+        containerRef.current.style.cursor = cubiertaEn(evt.pixel) ? "pointer" : "crosshair"
+      })
+
+      const claveClick = map.on("singleclick", (evt) => {
+        const cubierta = cubiertaEn(evt.pixel)
+        // No es una cubierta: no se hace nada.
+        if (!cubierta) return
+        setConsultada(cubierta)
+
+        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "la mufa"
+        const id = cubierta.get("id")
+        if (typeof id !== "string") {
+          setAvisoConsulta({ texto: `${nombre} se dibujó en el mapa y no existe en la base: no tiene conectividad.` })
+          return
+        }
+        void consultarConectividad(id, nombre)
+      })
+
+      return () => unByKey([claveMover, claveClick])
+    }
 
     if (tool === "edit") {
       // En modo "Editar": click para seleccionar un elemento (abre el panel
@@ -691,7 +969,7 @@ export function NetworkMap({
         // panel con una ficha vacía.
         if (!type) return
         setSelected({ feature, type })
-        setNameDraft((feature.get("nombre") as string) ?? "")
+        setNameDraft((feature.get(NOMBRE_VISIBLE) as string) ?? "")
       })
       map.addInteraction(editSelect)
       editSelectRef.current = editSelect
@@ -708,7 +986,8 @@ export function NetworkMap({
         zone: { source: zoneSource, type: "Polygon" as const, prefix: "Zona" },
       }[tool]
 
-      const draw = new Draw({ source: cfg.source, type: cfg.type })
+      // Sin `source`: el elemento se añade a mano al terminar (ver drawend).
+      const draw = new Draw({ type: cfg.type })
 
       if (tool === "fiber") {
         // La fibra siempre debe unir dos mufas: si no arranca sobre una, se
@@ -728,7 +1007,6 @@ export function NetworkMap({
         if (tool === "fiber") {
           const end = (e.feature.getGeometry() as LineString).getLastCoordinate()
           if (!isNearNode(end, nodeSource)) {
-            fiberSource.removeFeature(e.feature)
             setFiberNotice("Debes terminar el trazado sobre una mufa. Inténtalo de nuevo.")
             if (fiberNoticeTimeoutRef.current) clearTimeout(fiberNoticeTimeoutRef.current)
             fiberNoticeTimeoutRef.current = setTimeout(() => setFiberNotice(FIBER_HINT), 2800)
@@ -737,11 +1015,21 @@ export function NetworkMap({
         }
 
         const count = cfg.source.getFeatures().length + 1
-        e.feature.set("nombre", `${cfg.prefix} ${count}`)
-        // Cada mufa lleva su propio esquema de empalme (cables/hilos/bandejas).
-        // Por ahora se siembra con el ejemplo hasta que haya un backend real.
+        e.feature.set(NOMBRE_VISIBLE, `${cfg.prefix} ${count}`)
+        // Una mufa recién dibujada no existe en la base, así que no tiene
+        // conectividad que consultar. Antes se le ponía el esquema de ejemplo.
+
+        // Se añade aquí y no con la opción `source` del Draw. OpenLayers avisa del
+        // fin del dibujo antes de añadir el elemento, así que borrarlo en este
+        // punto no servía: el borrado llegaba antes que el alta y un cable que no
+        // terminaba en una mufa se quedaba igual. Añadiéndolo a mano, lo inválido
+        // simplemente no entra.
+        cfg.source.addFeature(e.feature)
+
+        // La mufa ya se ve en su sitio, pero queda pendiente de confirmar.
         if (tool === "node") {
-          e.feature.set("esquema", { ...MUFA_SCHEMA_EXAMPLE })
+          setNombreEnPregunta(e.feature.get(NOMBRE_VISIBLE) as string)
+          setMufaPendiente(e.feature)
         }
       })
       map.addInteraction(draw)
@@ -836,7 +1124,17 @@ export function NetworkMap({
       map.addInteraction(draw)
       drawRef.current = draw
     }
-  }, [tool, nodeSource, fiberSource, zoneSource, cabeceraSource, measureSource, tipoDeFeature])
+  }, [
+    tool,
+    nodeSource,
+    fiberSource,
+    zoneSource,
+    cabeceraSource,
+    measureSource,
+    sentidoSource,
+    tipoDeFeature,
+    consultarConectividad,
+  ])
 
   useEffect(() => {
     const cursors: Record<MapTool, string> = {
@@ -848,6 +1146,9 @@ export function NetworkMap({
       delete: "pointer",
       "measure-length": "crosshair",
       "measure-area": "crosshair",
+      // Mira para elegir; sobre una cubierta pasa a mano (ver la herramienta).
+      conectividad: "crosshair",
+      sentido: "crosshair",
     }
     if (containerRef.current) containerRef.current.style.cursor = cursors[tool]
   }, [tool])
@@ -924,6 +1225,9 @@ export function NetworkMap({
         activo instanceof HTMLTextAreaElement ||
         (activo instanceof HTMLElement && activo.isContentEditable)
       if (escribiendo) return
+      // Con un diálogo abierto las teclas son suyas: cambiar de herramienta por
+      // detrás dejaba, por ejemplo, una mufa a medio confirmar.
+      if (document.querySelector('[data-slot="dialog-content"]')) return
 
       const indice = Number(e.key) - 1
       const herramienta = TOOL_ORDER[indice]
@@ -962,7 +1266,7 @@ export function NetworkMap({
 
   function handleNameChange(value: string) {
     setNameDraft(value)
-    selected?.feature.set("nombre", value)
+    selected?.feature.set(NOMBRE_VISIBLE, value)
   }
 
   function closeSelection() {
@@ -993,11 +1297,79 @@ export function NetworkMap({
     encuadrarEn(geom.getExtent(), esPunto ? 18 : 17)
   }
 
+  /**
+   * Estado de «Ver conexiones» para la mufa elegida en el panel:
+   *
+   * - `sin-consultar`: todavía no se consultó con «Conectividad fina».
+   * - `disponible`: consultada y con cables; el esquemático la puede dibujar.
+   * - `sin-conectividad`: consultada, pero la base respondió sin cables.
+   * - `no-dibujable`: consultada y con cables, pero el esquemático la rechaza.
+   * - `no-en-base`: mufa dibujada a mano, sin UUID que consultar.
+   * - `error`: la consulta falló (red, permisos).
+   */
+  const consultaSeleccionada = idMufaSeleccionada ? conectividades[idMufaSeleccionada] : undefined
+  const estadoConexiones =
+    selected?.type !== "node"
+      ? null
+      : !idMufaSeleccionada
+        ? "no-en-base"
+        : (consultaSeleccionada?.estado ?? "sin-consultar")
+  // «Gestionar esquema» sigue la misma regla que «Ver conexiones»: solo con
+  // conectividad. Sin cables, la función devuelve igual los divisores de la
+  // cubierta (su equipo físico) con cables y conectividades vacíos, y eso se
+  // leía como si la mufa ya tuviera un esquema cuando no lo tiene.
+  const esquemaSeleccionado =
+    consultaSeleccionada?.estado === "disponible" ? consultaSeleccionada.esquema : null
+
+  /** Por qué «Ver conexiones» está en gris, para escribirlo debajo del botón. */
+  const motivoSinConexiones = ((): string | null => {
+    if (estadoConexiones === "sin-consultar") {
+      return "Sin conectividad consultada. Usa el botón «Conectividad fina» (menú Consultas)."
+    }
+    if (estadoConexiones === "no-en-base") return "Esta mufa se dibujó en el mapa y no existe en la base."
+    switch (consultaSeleccionada?.estado) {
+      case "sin-conectividad":
+        return "La base todavía no tiene cables registrados para esta cubierta."
+      case "no-dibujable":
+        return `Tiene conectividad, pero el esquema no se puede dibujar: ${consultaSeleccionada.motivo}.`
+      case "error":
+        return `${consultaSeleccionada.mensaje} Vuelve a consultarla con «Conectividad fina».`
+      default:
+        return null
+    }
+  })()
+
   function handleViewConnections() {
-    if (!selected || selected.type !== "node") return
-    const schema = (selected.feature.get("esquema") as MufaCampoJSON | undefined) ?? MUFA_SCHEMA_EXAMPLE
-    setConnectivitySchema(schema)
+    if (consultaSeleccionada?.estado !== "disponible") return
+    setConnectivitySchema(consultaSeleccionada.esquema)
     setConnectivityOpen(true)
+  }
+
+  /**
+   * Para la ficha: nombre de una mufa o cabecera a partir de su UUID. Así el
+   * origen y el destino de un cable se leen «CO02» y no como un UUID.
+   */
+  function nombreDeElemento(id: string): string | null {
+    for (const fuente of [nodeSource, cabeceraSource]) {
+      const encontrado = fuente.getFeatures().find((f) => f.get("id") === id)
+      if (encontrado) return (encontrado.get(NOMBRE_VISIBLE) as string | undefined) ?? null
+    }
+    return null
+  }
+
+  /** La mufa colocada se queda. */
+  function confirmarMufa() {
+    setMufaPendiente(null)
+  }
+
+  /** La mufa colocada se quita del mapa. */
+  function cancelarMufa() {
+    if (mufaPendiente && nodeSource.hasFeature(mufaPendiente)) nodeSource.removeFeature(mufaPendiente)
+    setMufaPendiente(null)
+  }
+
+  function handleGestionarEsquema() {
+    if (esquemaSeleccionado) setSchemaOpen(true)
   }
 
   // Nombres de las capas que no pudieron cargar, para un único aviso.
@@ -1091,6 +1463,16 @@ export function NetworkMap({
 
         {fiberNotice && <MapNotice tono="aviso">{fiberNotice}</MapNotice>}
 
+        {avisoConsulta && (
+          <MapNotice
+            tono={avisoConsulta.cargando ? "neutral" : "aviso"}
+            cargando={avisoConsulta.cargando}
+            onCerrar={avisoConsulta.cargando ? undefined : () => setAvisoConsulta(null)}
+          >
+            <span>{avisoConsulta.texto}</span>
+          </MapNotice>
+        )}
+
         {(tool === "measure-length" || tool === "measure-area") && (
           <MapNotice interactivo>
             <span>
@@ -1144,8 +1526,9 @@ export function NetworkMap({
       <MapStatusBar
         lonRef={lonRef}
         latRef={latRef}
-        zoom={zoomLevel}
-        herramienta={tools.find((t) => t.id === tool)?.label ?? ""}
+        zoomRef={zoomRef}
+        zoom={zoom}
+        herramienta={tools.find((t) => t.id === tool)?.label ?? (tool === "conectividad" ? "Consulta de conectividad" : tool === "sentido" ? "Entradas y salidas" : "")}
       />
 
       {/* Nombre del elemento bajo el cursor. Las etiquetas del mapa solo salen
@@ -1159,7 +1542,7 @@ export function NetworkMap({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      <MapLegend />
+      <MapLegend sentido={tool === "sentido"} />
 
       {/* Panel de información del elemento seleccionado */}
       {selected && (
@@ -1200,37 +1583,45 @@ export function NetworkMap({
             </p>
           )}
 
+          {/* Los dos botones solo se activan después de consultar la mufa con
+              «Conectividad fina»: elegirla no pregunta a la base. */}
           {selected.type === "node" && (
             <button
               type="button"
-              onClick={() => setSchemaOpen(true)}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-1.5 text-xs font-semibold text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
+              onClick={handleGestionarEsquema}
+              disabled={!esquemaSeleccionado}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-1.5 text-xs font-semibold text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
             >
               <Waypoints className="size-3.5" />
               Gestionar esquema
             </button>
           )}
 
+          {/* En gris hasta consultar, y también cuando la consulta no trajo
+              cables: así no se abre un diagrama que va a fallar. */}
           {selected.type === "node" && (
             <button
               type="button"
               onClick={handleViewConnections}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+              disabled={estadoConexiones !== "disponible"}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted"
             >
               <Network className="size-3.5" />
-              Ver conexiones
+              {estadoConexiones === "sin-conectividad" ? "Sin conectividad" : "Ver conexiones"}
             </button>
           )}
 
-          {/* El empalme interno (bandejas e hilos) no está todavía en la base:
-              las 185 mufas se siembran con el mismo esquema de ejemplo. Sin
-              decirlo, el esquema se lee como el de esa mufa concreta y alguien
-              podría planear trabajo de campo sobre datos inventados. */}
-          {selected.type === "node" && (
-            <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+          {/* Por qué está en gris. El botón deshabilitado no muestra
+              etiqueta emergente, así que la razón va escrita debajo. */}
+          {selected.type === "node" && motivoSinConexiones !== null && (
+            <p
+              role="status"
+              className={`mt-1.5 flex items-start gap-1.5 px-0.5 text-[11px] leading-snug ${
+                estadoConexiones === "error" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+              }`}
+            >
               <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
-              El empalme interno es un ejemplo, igual para todas las mufas. La base
-              todavía no guarda bandejas ni hilos.
+              <span>{motivoSinConexiones}</span>
             </p>
           )}
 
@@ -1272,7 +1663,9 @@ export function NetworkMap({
           open={schemaOpen}
           onOpenChange={setSchemaOpen}
           mufaName={nameDraft || "Mufa"}
-          schema={selected.feature.get("esquema") ?? MUFA_SCHEMA_EXAMPLE}
+          // Solo se abre después de traer la conectividad de la base, así que
+          // aquí ya está; ya no hay esquema de ejemplo como respaldo.
+          schema={esquemaSeleccionado}
         />
       )}
 
@@ -1294,6 +1687,7 @@ export function NetworkMap({
           title={`Información del cable — ${nameDraft || "Fibra"}`}
           description="Datos de geo_fiber.cable_fibra."
           fieldLabels={FIBER_FIELD_LABELS}
+          nombreDeElemento={nombreDeElemento}
           data={selected.feature.getProperties()}
         />
       )}
@@ -1309,12 +1703,46 @@ export function NetworkMap({
         />
       )}
 
-      <MufaConnectivityModal
-        open={connectivityOpen}
-        onOpenChange={setConnectivityOpen}
-        schema={connectivitySchema}
+      <ConfirmDialog
+        open={mufaPendiente !== null}
+        icono={Box}
+        titulo="¿Agregar esta mufa?"
+        descripcion={`Se colocará «${nombreEnPregunta}» en el punto que marcaste. Queda solo en el mapa: todavía no se guarda en la base de datos.`}
+        textoConfirmar="Agregar mufa"
+        onConfirmar={confirmarMufa}
+        onCancelar={cancelarMufa}
       />
+
+      {/* El JSON lo arma la base en el momento y lo dibuja el esquemático de
+          Dario, dos piezas que se escriben por separado. Si no encajan, el
+          fallo se queda en el diagrama en vez de tumbar el mapa entero. */}
+      <LimiteDeError
+        key={intentoDibujo}
+        alFallar={() => {
+          setConnectivityOpen(false)
+          setIntentoDibujo((n) => n + 1)
+          setAvisoConsulta({
+            texto: "No se pudo dibujar la conectividad de esta mufa: el JSON no tiene la forma que espera el esquemático.",
+          })
+        }}
+      >
+        {/* Ver conexiones es solo lectura: se le indica a Dario con `modo`,
+            nunca dentro del JSON (ver lib/map/conectividad.ts). */}
+        <ModalConectividad
+          open={connectivityOpen}
+          onOpenChange={setConnectivityOpen}
+          schema={connectivitySchema}
+          modo="consulta"
+        />
+      </LimiteDeError>
     </div>
   )
 }
-
+
+/**
+ * El mapa se memoriza. El dashboard se vuelve a pintar al terminar cada paneo o
+ * zoom (cambia el centro y, poco después, el nombre del lugar en la cabecera), y
+ * el mapa no usa ninguno de los dos: sin esto, cada movimiento repintaba este
+ * componente entero dos veces justo al soltar el mapa.
+ */
+export const NetworkMap = memo(MapaDeRed)

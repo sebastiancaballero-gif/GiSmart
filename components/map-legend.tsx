@@ -4,7 +4,7 @@ import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR } from "@/lib/map/symbology"
+import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, SENTIDO_COLORS } from "@/lib/map/symbology"
 import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
 
 /**
@@ -16,8 +16,11 @@ import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbol
  *
  * Se pliega porque en pantallas chicas tapaba una esquina útil del mapa. Como
  * abierto o cerrado no le importa a nadie más, ese estado se queda aquí.
+ *
+ * `sentido` agrega los colores de «Entradas y salidas» mientras esa
+ * herramienta está activa: son los únicos momentos en que aparecen en el mapa.
  */
-export function MapLegend() {
+export function MapLegend({ sentido = false }: { sentido?: boolean }) {
   const [abierta, setAbierta] = useState(true)
 
   return (
@@ -60,6 +63,25 @@ export function MapLegend() {
           <span className="text-[10px] leading-tight text-muted-foreground">
             El grosor refleja la cantidad de hilos
           </span>
+
+          {sentido && (
+            <>
+              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Cables de la mufa
+              </span>
+              <span className="flex items-center gap-2">
+                <FiberSymbol color={SENTIDO_COLORS.entrada} width={4} size={14} />
+                Entrada
+              </span>
+              <span className="flex items-center gap-2">
+                <FiberSymbol color={SENTIDO_COLORS.salida} width={4} size={14} />
+                Salida
+              </span>
+              <span className="text-[10px] leading-tight text-muted-foreground">
+                Según la función de cables de la base
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>

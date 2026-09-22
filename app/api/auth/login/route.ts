@@ -3,18 +3,22 @@ import { type NextRequest, NextResponse } from "next/server"
 import { emitirToken } from "@/lib/auth-server"
 import { esHash, hashClave, verificarClave, HASH_SENUELO } from "@/lib/password"
 
-// Los usuarios reales viven en la tabla `usuario_app` de Supabase (columnas:
-// id_usr, codigo, nombre, clave, activo). El login se hace por `nombre`.
+// Los usuarios reales viven en `public.usuario_app`. La tabla se recreó en
+// septiembre de 2026 con otras columnas: antes eran id_usr, codigo, nombre,
+// clave y activo; ahora `nombre_usuario` (clave primaria, con él se entra),
+// `nombre_completo`, `correo`, `clave` y `activo`.
 // Las contraseñas se guardan con hash scrypt (ver lib/password.ts). Las que
-// quedaran en texto plano de antes siguen funcionando y se migran solas la
-// primera vez que esa persona inicia sesión.
+// quedaran en texto plano siguen funcionando y se migran solas la primera vez
+// que esa persona inicia sesión.
 type UsuarioApp = {
-  id_usr: number
-  codigo: string | null
-  nombre: string
+  nombre_usuario: string
+  nombre_completo: string | null
   clave: string
   activo: boolean
 }
+
+/** Las columnas que se piden, en un solo sitio para que no se desincronicen. */
+const COLUMNAS_USUARIO = "nombre_usuario, nombre_completo, clave, activo"
 
 // Sin columna de rol todavía en usuario_app: se asigna uno genérico hasta
 // que exista esa información real.
@@ -164,13 +168,24 @@ export async function POST(req: NextRequest) {
 
   const { data: cuenta, error } = await supabase
     .from("usuario_app")
-    .select("id_usr, codigo, nombre, clave, activo")
-    .ilike("nombre", escaparComodines(usuario))
+    .select(COLUMNAS_USUARIO)
+    .ilike("nombre_usuario", escaparComodines(usuario))
     .maybeSingle<UsuarioApp>()
 
   if (error) {
+    // Antes este fallo no dejaba rastro: en la terminal solo aparecía
+    // «POST /api/auth/login 502» y había que adivinar la causa. Cuando se
+    // recreó usuario_app, el motivo real era una columna que ya no existía
+    // (42703) y un permiso perdido (42501).
+    console.error(`[login] usuario_app: ${error.code} ${error.message}`)
     return NextResponse.json(
-      { message: "No se pudo conectar con la base de datos. Intenta de nuevo.", field: null },
+      {
+        message:
+          error.code === "42501"
+            ? "El servidor no tiene permiso para leer los usuarios. Avisa al administrador de la base."
+            : "No se pudo conectar con la base de datos. Intenta de nuevo.",
+        field: null,
+      },
       { status: 502 },
     )
   }
@@ -178,7 +193,7 @@ export async function POST(req: NextRequest) {
   // Segunda comprobación del nombre, ya en memoria: `ilike` sigue siendo una
   // comparación por patrón y esto la convierte en una igualdad exacta sin
   // distinguir mayúsculas, pase lo que pase con el escapado.
-  const cuentaValida = cuenta && cuenta.nombre.toLowerCase() === clave ? cuenta : null
+  const cuentaValida = cuenta && cuenta.nombre_usuario.toLowerCase() === clave ? cuenta : null
 
   // Se verifica siempre, exista la cuenta o no: si no hay contra qué comparar
   // se usa el hash señuelo, que cuesta lo mismo. Antes se salía sin verificar
@@ -212,11 +227,11 @@ export async function POST(req: NextRequest) {
       const { error: errorMigracion } = await supabase
         .from("usuario_app")
         .update({ clave: await hashClave(contrasena) })
-        .eq("id_usr", cuentaValida.id_usr)
+        .eq("nombre_usuario", cuentaValida.nombre_usuario)
 
       if (errorMigracion) {
         console.error(
-          `[login] No se pudo migrar la clave de "${cuentaValida.nombre}" a hash: ${errorMigracion.message}`,
+          `[login] No se pudo migrar la clave de "${cuentaValida.nombre_usuario}" a hash: ${errorMigracion.message}`,
         )
       }
     } catch (e) {
@@ -225,7 +240,12 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    token: emitirToken(cuentaValida.nombre, ROL_POR_DEFECTO),
-    user: { usuario: cuentaValida.nombre, role: ROL_POR_DEFECTO, nombre: cuentaValida.nombre },
+    token: emitirToken(cuentaValida.nombre_usuario, ROL_POR_DEFECTO),
+    user: {
+      usuario: cuentaValida.nombre_usuario,
+      role: ROL_POR_DEFECTO,
+      // El nombre para mostrar; si viene vacío, el de usuario.
+      nombre: cuentaValida.nombre_completo || cuentaValida.nombre_usuario,
+    },
   })
 }

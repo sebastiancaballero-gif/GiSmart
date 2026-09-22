@@ -14,6 +14,10 @@ export type RibbonActions = {
   onDraw?: () => void
   onDelete?: () => void
   onEditGeometry?: () => void
+  /** Consulta de conectividad de una cubierta (Consultas → Red). */
+  onConnectivity?: () => void
+  /** Pinta los cables de entrada y salida de una mufa (Consultas → Red). */
+  onSentido?: () => void
 }
 
 export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
@@ -105,6 +109,14 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
         return
       case "Borrar":
         actions?.onDelete?.()
+        return
+      // Flujo acordado con Aurelio: cambia el cursor, el usuario elige un
+      // elemento y, si es una cubierta, se abre su conectividad en consulta.
+      case "Conectividad fina":
+        actions?.onConnectivity?.()
+        return
+      case "Entradas y salidas":
+        actions?.onSentido?.()
         return
       case "Mover vértice":
       case "Editar atributos":

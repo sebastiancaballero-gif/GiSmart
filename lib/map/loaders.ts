@@ -3,8 +3,8 @@ import type Feature from "ol/Feature"
 import type { Geometry } from "ol/geom"
 import type VectorSource from "ol/source/Vector"
 
-import { MUFA_SCHEMA_EXAMPLE } from "@/lib/mufa-schema"
 import { fetchConSesion } from "@/lib/auth"
+import { NOMBRE_VISIBLE } from "@/lib/map/symbology"
 
 /**
  * Carga de las capas reales del mapa.
@@ -28,7 +28,6 @@ async function cargarCapa({
   nombreDe,
   errorHttp,
   errorRed,
-  alCargar,
 }: {
   url: string
   source: VectorSource
@@ -37,8 +36,6 @@ async function cargarCapa({
   nombreDe: (f: Feature<Geometry>) => string
   errorHttp: string
   errorRed: string
-  /** Ajustes extra sobre cada feature ya cargado. */
-  alCargar?: (f: Feature<Geometry>) => void
 }): Promise<string | null> {
   try {
     const res = await fetchConSesion(url)
@@ -50,10 +47,7 @@ async function cargarCapa({
       dataProjection: "EPSG:4326",
       featureProjection: "EPSG:3857",
     })
-    features.forEach((f) => {
-      f.set("nombre", nombreDe(f))
-      alCargar?.(f)
-    })
+    features.forEach((f) => f.set(NOMBRE_VISIBLE, nombreDe(f)))
 
     if (isCancelled()) return null
     source.addFeatures(features)
@@ -69,36 +63,41 @@ async function cargarCapa({
   }
 }
 
-/** Cubiertas de empalme, desde geo_fiber.cubierta_empalme_geojson. */
+/** Cubiertas de empalme, desde geo_fiber.cubierta_empalme. */
 export function loadRealMufas(source: VectorSource, isCancelled: () => boolean) {
   return cargarCapa({
     url: "/api/mufas",
     source,
     isCancelled,
-    nombreDe: (f) => (f.get("etiqueta") as string | null) || `Mufa ${f.get("id")}`,
-    // El esquema de empalme (cables/bandejas/hilos) todavía no viene de esa
-    // tabla, así que se siembra con el ejemplo hasta que haya una fuente real
-    // para "Gestionar esquema" y "Ver conexiones".
-    alCargar: (f) => f.set("esquema", { ...MUFA_SCHEMA_EXAMPLE }),
+    // Desde que la tabla se recreó, `id` es un UUID: como respaldo del nombre
+    // se usa el código anterior, `id_legacy`, que sí es legible.
+    nombreDe: (f) =>
+      (f.get("etiqueta") as string | null) || `Mufa ${f.get("id_legacy") ?? f.get("id")}`,
+    // Ya no se siembra ningún esquema de ejemplo. Antes las 185 mufas cargaban
+    // el mismo JSON inventado y «Ver conexiones» enseñaba el mismo diagrama
+    // para todas. La conectividad real se pide a la base al elegir la mufa
+    // (ver lib/map/conectividad.ts).
     errorHttp: "No se pudieron cargar las mufas reales.",
     errorRed: "No se pudo conectar con Supabase para cargar las mufas.",
   })
 }
 
-/** Tendido de fibra, desde geo_fiber.cable_fibra_geojson. */
+/** Tendido de fibra, desde geo_fiber.cable_fibra. */
 export function loadRealFiberCables(source: VectorSource, isCancelled: () => boolean) {
   return cargarCapa({
     url: "/api/fiber-cables",
     source,
     isCancelled,
     nombreDe: (f) =>
-      (f.get("nombre") as string | null) || (f.get("codigo") as string | null) || `Fibra ${f.get("id")}`,
+      (f.get("nombre") as string | null) ||
+      (f.get("codigo") as string | null) ||
+      `Fibra ${f.get("id_legacy") ?? f.get("id")}`,
     errorHttp: "No se pudo cargar el tendido de fibra real.",
     errorRed: "No se pudo conectar con Supabase para cargar el tendido de fibra.",
   })
 }
 
-/** Cabeceras centrales, desde geo_infra.cabecera_central_geojson. */
+/** Cabeceras centrales, desde geo_infra.cabecera_central. */
 export function loadRealCabeceras(source: VectorSource, isCancelled: () => boolean) {
   return cargarCapa({
     url: "/api/cabeceras",

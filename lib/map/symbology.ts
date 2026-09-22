@@ -18,6 +18,15 @@ import { LAYER_COLORS } from "@/lib/network-colors"
 
 export type FeatureType = "node" | "fiber" | "zone" | "cabecera"
 
+/**
+ * Propiedad donde se guarda el nombre que se ve en el mapa (etiqueta, código o
+ * uno generado). Va aparte de la columna `nombre` de la base a propósito:
+ * antes se escribía encima de ella, y la ficha «Ver información» enseñaba
+ * como «Nombre» el código de un cable o la etiqueta de una cabecera, algo que
+ * la base no dice.
+ */
+export const NOMBRE_VISIBLE = "nombre_visible"
+
 export const TYPE_LABELS: Record<FeatureType, string> = {
   node: "Mufa",
   fiber: "Fibra",
@@ -33,51 +42,67 @@ export const CABECERA_COLOR = LAYER_COLORS.cabecera
 const CABECERA_SYMBOL_RADIUS = 11
 
 // Campos que muestra el modal "Ver información" (identify) de cada elemento,
-// con la etiqueta legible de cada columna de la base.
-export const MUFA_FIELD_LABELS: Record<string, string> = {
+// con la etiqueta legible de cada columna de la base. El orden es el de
+// consulta en campo: primero qué es, luego cómo es, y los identificadores y la
+// auditoría al final. Una columna que no esté aquí sale igual, con un nombre
+// derivado del suyo (ver info-table-dialog).
+//
+// Revisado contra el esquema recreado en septiembre de 2026: la auditoría pasó
+// a `creado_en`/`modificado_en` en las tres tablas y algunas columnas cambiaron
+// de nombre (`capacidad_bandejas` → `cantidad_bandejas`, `estado_const` →
+// `tipo_est_const` en las mufas).
+const CAMPOS_DE_AUDITORIA: Record<string, string> = {
   id: "ID",
+  id_legacy: "ID en el sistema anterior",
+  creado_en: "Creado",
+  creado_por: "Creado por",
+  modificado_en: "Última modificación",
+  modificado_por: "Modificado por",
+}
+
+export const MUFA_FIELD_LABELS: Record<string, string> = {
   etiqueta: "Etiqueta",
-  tipo_carcasa: "Tipo de carcasa",
   funcion_cub: "Función",
+  tipo_carcasa: "Tipo de carcasa",
   tipo_empalme: "Tipo de empalme",
-  cod_fabricante: "Fabricante",
+  tipo_est_const: "Estado de construcción",
+  cantidad_bandejas: "Bandejas",
+  modelo_divisor: "Modelo de divisor",
+  cant_div: "Cantidad de divisores",
+  tipo_conect_roseta: "Conector de roseta",
+  sfp_ont: "SFP / ONT",
+  long_acometida: "Longitud de acometida (m)",
   tipo_instala: "Tipo de instalación",
-  estado_const: "Estado",
+  cod_fabricante: "Fabricante",
   id_proyecto: "Proyecto",
   direccion: "Dirección",
   ubicacion: "Ubicación",
-  capacidad_bandejas: "Capacidad de bandejas",
-  fecha_creacion: "Creado",
-  fecha_ult_act: "Última actualización",
+  ...CAMPOS_DE_AUDITORIA,
 }
 
-// El orden no sigue el de las columnas de la base, sino el de consulta en
-// campo: primero identificar el cable, luego sus características, y la
-// longitud al final.
 export const FIBER_FIELD_LABELS: Record<string, string> = {
   etq_naps: "Etiqueta NAP",
   nombre: "Nombre",
   codigo: "Código",
-  id: "ID",
-  estado_const: "Estado",
-  id_proyecto: "Proyecto",
+  tipo_red_prin: "Tipo de red",
+  estado_const: "Estado de construcción",
+  cant_hilo: "Cantidad de hilos",
+  cant_buff: "Cantidad de buffers",
+  tipo_cable: "Tipo de fibra",
+  tipo_instala: "Tipo de instalación",
+  cod_fabricante: "Fabricante",
+  atenuacion_1490: "Atenuación 1490 nm (dB/km)",
+  atenuacion_1550: "Atenuación 1550 nm (dB/km)",
+  longitud_medida: "Longitud medida (m)",
+  longitud_calc: "Longitud calculada (m)",
   tip_elem_from: "Tipo de elemento origen",
   id_elem_from: "Elemento origen",
   tip_elem_to: "Tipo de elemento destino",
   id_elem_to: "Elemento destino",
-  tipo_red_prin: "Tipo de red",
-  tipo_fibra: "Tipo de fibra",
-  cant_hilo: "Cantidad de hilos",
-  cant_buff: "Cantidad de buffers",
-  atenuacion_1490: "Atenuación 1490nm (dB/km)",
-  atenuacion_1550: "Atenuación 1550nm (dB/km)",
-  tipo_cable: "Tipo de cable",
-  tipo_instala: "Tipo de instalación",
-  marca: "Marca",
-  modelo: "Modelo",
-  cod_fabricante: "Fabricante",
-  longitud_medida: "Longitud medida (m)",
-  longitud_calc: "Longitud calculada (m)",
+  tipo_origen_red: "Tipo de origen de red",
+  id_origen_red: "Origen de red",
+  id_proyecto: "Proyecto",
+  ...CAMPOS_DE_AUDITORIA,
 }
 
 export const CABECERA_FIELD_LABELS: Record<string, string> = {
@@ -88,20 +113,40 @@ export const CABECERA_FIELD_LABELS: Record<string, string> = {
   id_proyecto: "Proyecto",
   direccion_catastral: "Dirección catastral",
   desc_capacidad: "Capacidad",
-  id: "ID",
-  id_legacy: "ID en el sistema anterior",
-  creado_en: "Creado",
-  actualizado_en: "Última actualización",
+  ...CAMPOS_DE_AUDITORIA,
 }
+
+/**
+ * Columnas que guardan el UUID de otro elemento de la red. La ficha las
+ * muestra con el nombre de ese elemento, porque un UUID suelto no le dice
+ * nada a quien consulta un cable.
+ */
+export const CAMPOS_REFERENCIA = new Set(["id_elem_from", "id_elem_to", "id_origen_red"])
 
 // Color de la mufa según `funcion_cub` (pedido del ingeniero de red), dentro
 // de la paleta que ya usa SIGETP para la red de fibra.
+//
+// Las claves son los valores exactos del enum de la base
+// (`geo_fiber.enum_tipo_fun_cubierta`). Hasta septiembre de 2026 el tercero
+// era «Empalme pasivo»; al recrear la tabla pasó a «Empalme», y con la clave
+// vieja esas mufas perdían el naranja y el tamaño y salían en gris.
 export const FUNCION_CUB_COLORS: Record<string, string> = {
   "Segundo nivel": "#c2185b",
   "Primer nivel": "#1d4ed8",
-  "Empalme pasivo": "#ea580c",
+  Empalme: "#ea580c",
 }
 export const FUNCION_CUB_DEFAULT_COLOR = "#64748b"
+
+/**
+ * Colores del botón «Entradas y salidas» (Consultas → Red). Los decide la
+ * función de Carlos (`color_resalte`): entrante verde, saliente naranja. El
+ * mapa pinta con el color que ella mande; estos son los mismos, para la
+ * leyenda y para cuando la función no mande color.
+ */
+export const SENTIDO_COLORS = {
+  entrada: "#00FF00",
+  salida: "#FF8C00",
+} as const
 
 export function colorForFuncionCub(funcionCub: string | undefined | null): string {
   if (!funcionCub) return FUNCION_CUB_DEFAULT_COLOR
@@ -122,13 +167,24 @@ export function categoriaDeCable(feature: Feature<Geometry>): string {
   return hilos ? `${hilos} hilos` : "Sin dato de hilos"
 }
 
-// SIGETP separa la fibra troncal (azul) de la de distribución (magenta). Hoy
-// `tipo_red_prin` llega vacío en los 182 cables de la BD, así que el mapeo
-// queda listo y mientras tanto se usa el color por defecto de la capa.
+// SIGETP separa la fibra troncal (azul) de la de distribución (magenta).
+//
+// Las claves son los valores del enum de la base (`geo_fiber.enum_tipo_red`).
+// Antes eran TRONCAL y DISTRIBUCION, que la base nunca usó: el día que se
+// diligenciara `tipo_red_prin`, ningún cable habría cambiado de color. El de
+// acceso no está en SIGETP; el cian es provisional hasta que lo defina el
+// ingeniero de red.
 export const TIPO_RED_COLORS: Record<string, string> = {
-  TRONCAL: "#1e3a8a",
-  DISTRIBUCION: "#c2185b",
-  DISTRIBUCIÓN: "#c2185b",
+  "FO-TRNC": "#1e3a8a",
+  "FO-DIST": "#c2185b",
+  ACCES: "#0891b2",
+}
+
+/** Nombre legible de cada tipo de red, para la leyenda y las fichas. */
+export const TIPO_RED_NOMBRES: Record<string, string> = {
+  "FO-TRNC": "Troncal",
+  "FO-DIST": "Distribución",
+  ACCES: "Acceso",
 }
 
 export function colorForTipoRed(tipoRed: string | undefined | null): string {
@@ -180,7 +236,7 @@ function radioSegunResolucion(base: number, resolution: number): number {
  */
 function jerarquiaDeMufa(funcionCub: string | undefined | null): { escala: number; zIndex: number } {
   if (funcionCub === "Primer nivel") return { escala: 1.3, zIndex: 3 }
-  if (funcionCub === "Empalme pasivo") return { escala: 1.15, zIndex: 2 }
+  if (funcionCub === "Empalme") return { escala: 1.15, zIndex: 2 }
   return { escala: 1, zIndex: 1 }
 }
 
@@ -207,7 +263,7 @@ function simbolosCacheados(clave: string, crear: () => Style[]): Style[] {
 }
 
 export function nodeStyle(feature: Feature<Geometry>, resolution: number) {
-  const label = (feature.get("nombre") as string) ?? "Mufa"
+  const label = (feature.get(NOMBRE_VISIBLE) as string) ?? "Mufa"
   const funcionCub = feature.get("funcion_cub") as string | undefined
   const color = colorForFuncionCub(funcionCub)
   const { escala, zIndex } = jerarquiaDeMufa(funcionCub)
@@ -282,7 +338,7 @@ export function nodeStyle(feature: Feature<Geometry>, resolution: number) {
 // para que se lea como el origen de la red. Su etiqueta se muestra siempre,
 // porque son muy pocas y conviene ubicarlas de un vistazo.
 export function cabeceraStyle(feature: Feature<Geometry>, resolution: number) {
-  const label = (feature.get("nombre") as string) ?? "Cabecera"
+  const label = (feature.get(NOMBRE_VISIBLE) as string) ?? "Cabecera"
   const radius = radioSegunResolucion(CABECERA_SYMBOL_RADIUS, resolution)
   return [
     // Mismo halo que la mufa, algo mayor por ser el elemento más importante.
@@ -357,8 +413,7 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
   if (resolution > FIBER_LABEL_MAX_RESOLUTION) return trazos
 
   const styles = [...trazos]
-  const geom = feature.getGeometry() as LineString
-  const km = geom ? getLength(geom) / 1000 : 0
+  const km = largoEnKm(feature.getGeometry())
 
   {
     const etiquetaNap = feature.get("etq_naps") as string | null
@@ -462,6 +517,75 @@ export function measureStyle(feature: Feature<Geometry>) {
   })
 }
 
+/**
+ * Cables pintados por «Entradas y salidas», con el color que mandó la función
+ * (`color`) o, si no mandó uno, el de su sentido. Llevan un borde oscuro debajo
+ * para que el verde y el naranja se lean igual sobre el mapa base que sobre el
+ * azul del tendido. Los colores son pocos, así que cada estilo se crea una vez.
+ */
+const estilosSentido = new Map<string, Style[]>()
+
+export function sentidoStyle(feature: Feature<Geometry>) {
+  const sentido = feature.get("sentido") as keyof typeof SENTIDO_COLORS
+  const color = (feature.get("color") as string | null | undefined) ?? SENTIDO_COLORS[sentido] ?? SENTIDO_COLORS.entrada
+  let estilo = estilosSentido.get(color)
+  if (!estilo) {
+    estilo = [
+      new Style({ stroke: new Stroke({ color: "rgba(15, 23, 42, 0.55)", width: 10, lineCap: "round" }) }),
+      new Style({ stroke: new Stroke({ color, width: 6, lineCap: "round" }) }),
+    ]
+    estilosSentido.set(color, estilo)
+  }
+  return estilo
+}
+
+/**
+ * Punto rojo sobre el elemento activo: el seleccionado o el que se está
+ * consultando. Entre 185 mufas juntas, el resalte de selección no bastaba para
+ * saber de un vistazo cuál era. Estilo fijo, creado una sola vez.
+ */
+const ESTILO_MARCADOR = [
+  new Style({
+    image: new CircleStyle({
+      radius: 13,
+      fill: new Fill({ color: "rgba(220, 38, 38, 0.16)" }),
+      stroke: new Stroke({ color: "rgba(220, 38, 38, 0.6)", width: 1.5 }),
+      declutterMode: "none",
+    }),
+  }),
+  new Style({
+    image: new CircleStyle({
+      radius: 5,
+      fill: new Fill({ color: "#dc2626" }),
+      stroke: new Stroke({ color: "#ffffff", width: 2 }),
+      declutterMode: "none",
+    }),
+  }),
+]
+
+export function marcadorStyle() {
+  return ESTILO_MARCADOR
+}
+
+/**
+ * Largo de un cable en kilómetros, medido sobre la esfera.
+ *
+ * Las etiquetas de los cables lo muestran y la función de estilo corre en cada
+ * redibujado: medir la línea cada vez era trabajo repetido. Se guarda por
+ * geometría y solo se vuelve a medir si la geometría cambió (al editarla).
+ */
+const largosMedidos = new WeakMap<Geometry, { revision: number; km: number }>()
+
+export function largoEnKm(geometria: Geometry | undefined): number {
+  if (!geometria) return 0
+  const revision = geometria.getRevision()
+  const guardado = largosMedidos.get(geometria)
+  if (guardado && guardado.revision === revision) return guardado.km
+  const km = getLength(geometria) / 1000
+  largosMedidos.set(geometria, { revision, km })
+  return km
+}
+
 export function formatLength(lengthM: number): string {
   return lengthM >= 1000 ? `${(lengthM / 1000).toFixed(2)} km` : `${lengthM.toFixed(1)} m`
 }
@@ -473,7 +597,7 @@ export function formatArea(areaM2: number): string {
 }
 
 export function zoneStyle(feature: Feature<Geometry>) {
-  const label = feature.get("nombre") as string | undefined
+  const label = feature.get(NOMBRE_VISIBLE) as string | undefined
   return new Style({
     fill: new Fill({ color: "rgba(56, 189, 248, 0.18)" }),
     stroke: new Stroke({ color: COLORS.zone, width: 2, lineDash: [6, 4] }),

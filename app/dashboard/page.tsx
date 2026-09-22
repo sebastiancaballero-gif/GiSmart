@@ -76,6 +76,8 @@ export default function DashboardPage() {
       onDraw: () => setTool("node"),
       onDelete: () => setTool("delete"),
       onEditGeometry: () => setTool("edit"),
+      onConnectivity: () => setTool("conectividad"),
+      onSentido: () => setTool("sentido"),
     }),
     [],
   )

@@ -6,6 +6,41 @@ serie de errores que costó descubrir la primera vez.
 
 ---
 
+## Estado de la base (21 de septiembre de 2026)
+
+### Resuelto
+
+Varias tablas se recrearon y perdieron sus permisos: nadie podía iniciar sesión ni
+consultar la conectividad de las mufas. Se arregló ejecutando
+[`sql/permisos-service-role.sql`](sql/permisos-service-role.sql), que incluye además
+los privilegios por defecto para que recrear una tabla no vuelva a romper la
+aplicación.
+
+### Recarga en curso (21 de septiembre de 2026, tarde)
+
+Carlos está recargando las tablas. Lo que ya se ve en lo cargado:
+
+| Qué | Estado |
+| --- | --- |
+| Columnas de auditoría | Pasaron a `creado_en`/`creado_por`/`modificado_en`/`modificado_por` en las tres tablas. Con eso el disparador `fn_auditar()` ya no falla, y los cables se pudieron insertar |
+| `geo_fiber.cable_fibra` | 182 cables cargados |
+| Origen y destino de cada cable | **Sin cargar**: `tip_elem_from`/`tip_elem_to` son `DESCON` e `id_elem_from`/`id_elem_to` vienen vacíos en los 182. Antes resolvían todos |
+| `cable_fibra.codigo` | Trae el identificador antiguo (`2099967`) y no el código del cable (`D_CD2_T1`, que sigue en `stg_cables.cod_cable`). Con `nombre` vacío, el mapa rotula los cables con esos números |
+| `cable_fibra.cant_buff` | 0 en los 182, aunque tienen 48 o 144 hilos |
+| `cubierta_empalme.funcion_cub` | El tercer valor pasó de «Empalme pasivo» a «Empalme». La aplicación ya usa el valor nuevo |
+| Mufas, hilos, divisores | En 0 mientras dura la carga |
+| Las vistas `*_geojson` | No existen; sin fallo visible gracias al respaldo |
+
+Cuando termine la carga, `pnpm run datos` revisa la cadena completa de la que
+depende «Ver conexiones» (cubierta → conexiones → hilos → cables) y cuenta en cuántas
+mufas saldría el botón activo.
+
+Sobre los UUID de los cables: `stg_cables` no trae ninguna columna que relacione cada
+fila con su UUID. Se probó a emparejarlos por el orden de creación y solo coincidían
+150 de 182, así que esa relación la tiene quien generó los UUID.
+
+---
+
 ## Tablas y esquemas que usa la app
 
 | Objeto | Esquema | Uso |
@@ -14,10 +49,139 @@ serie de errores que costó descubrir la primera vez.
 | `cubierta_empalme` | `geo_fiber` | Cubiertas de empalme (mufas). |
 | `cable_fibra` | `geo_fiber` | Cables de fibra. |
 | `cabecera_central` | `geo_infra` | Cabeceras centrales (origen de la red). |
+| `get_json_conectividad_cubierta(uuid)` | `public` | Conectividad interna de una mufa, generada al momento. Lee de `tab_fiber`. |
+
+### `usuario_app`, recreada en septiembre de 2026
+
+| Antes | Ahora |
+| --- | --- |
+| `id_usr`, `codigo`, `nombre`, `clave`, `activo` | `nombre_usuario` (clave primaria), `nombre_completo`, `correo`, `clave` (text), `activo` |
+
+Se entra con `nombre_usuario`. La ruta de login y `scripts/migrar-claves.mjs` ya usan
+las columnas nuevas. Como `clave` ahora es `text`, los hashes scrypt caben sin cambiar
+el tipo de la columna.
+
+### `cubierta_empalme`, recreada en septiembre de 2026
+
+El `id` pasó de entero a **UUID**; el entero anterior quedó en `id_legacy`. Ese UUID es
+el que recibe la función de conectividad.
+
+### Conectividad de una mufa: quién hace qué
+
+Acordado con Aurelio el 15 de septiembre de 2026:
+
+1. **Carlos** (backend) mantiene `get_json_conectividad_cubierta`. Genera el JSON en el
+   momento a partir de la conectividad registrada, así que cambia con cada cubierta.
+2. **GISmart** solo hace de intermediario. Le manda a la función el UUID de la
+   cubierta, recibe el JSON y se lo pasa al esquemático. Solo pregunta cuando se consulta una
+   cubierta con el botón «Conectividad fina» del ribbon; elegir una mufa en el panel
+   no pregunta nada. Es solo lectura.
+3. **Dario** dibuja ese JSON. GISmart le indica aparte, con la prop `modo`, si es
+   `"consulta"` o `"escritura"`. **El modo no va dentro del JSON**: la función solo
+   genera la conectividad, sin saber para qué se va a usar.
+
+> **Al 22 de septiembre de 2026, 3 p. m.: la carga está a medio hacer.** El
+> ingeniero de backend está rehaciendo los extremos de los cables. Ahora mismo
+> los 182 cables tienen `id_elem_from` vacío y `id_elem_to` apuntando al propio
+> cable, así que ninguna mufa devuelve cables: las dos funciones responden bien
+> (HTTP 200) pero con la lista vacía, y en la aplicación todas las mufas salen
+> «sin conectividad». Lo que sigue en este apartado se midió antes de esa
+> recarga y hay que volver a comprobarlo cuando termine, con `pnpm run datos` y
+> `pnpm run conectividad`.
+
+Qué devuelve hoy la función (21 de septiembre de 2026, después de corregirla con
+`docs/sql/arreglar-funcion-conectividad.sql`): 184 de las 185 cubiertas traen sus
+cables, cada uno con sus buffers e hilos, y sus divisores dentro de una bandeja que
+arma la propia función (`bandeja_empalme` está vacía). La que falta no es extremo de
+ningún cable. Pendiente para Carlos:
+
+- `Conectividades` sale vacío en todas: las 562 filas de `tab_fiber.conectividad_fina`
+  son de antes de la recarga y apuntan a cubiertas e hilos que ya no existen.
+- El color de cada buffer sale igual al del primer hilo («Azul» en todos); debería
+  salir de `hilo_cable.color_buffer`.
+- En 151 cubiertas los divisores repiten `num_divisor` y `cod_divisor` (dos «D-1»).
+- Los puertos de los divisores salen vacíos y `cable_fibra.cant_buff` está en 0.
+
+Y una que toca a Carlos y a Dario: de las 184 cubiertas con cables, **56 no se pueden
+dibujar**. El esquemático exige al menos un cable de entrada y uno de salida, y 44
+cubiertas solo tienen cables con `sentido: "Salida"` (como la 13/14) y 12 solo con
+`"Entrada"` (como CO01).
+
+La causa (revisado el 22 de septiembre de 2026): la función decide el sentido por **el
+sentido en que se dibujó el cable**, no por el de la señal. Si el cable termina en la
+cubierta (`id_elem_to`) es «Entrada»; si empieza en ella (`id_elem_from`), «Salida». Se
+cumple en 139 de 139 cables revisados. Y **147 de los 182 cables están dibujados al
+revés**, desde la punta del ramal hacia la cabecera. Por ejemplo, los tres cables de
+CO01 terminan en CO01, así que salen los tres como entrada, aunque dos de ellos (los
+de 48 hilos hacia 11/12 y 9/10) son salidas. Por lo mismo, muchas de las 128 cubiertas
+que sí se dibujan salen con entradas y salidas invertidas.
+
+La regla del ingeniero de red: **una cubierta de primer nivel tiene una entrada y
+salidas; una de segundo nivel puede ser terminal, con solo la entrada.** Recorriendo
+la red desde la cabecera, los datos la cumplen:
+
+| Nivel | Cubiertas | Cómo quedan con el sentido real |
+| --- | --- | --- |
+| Primer nivel | 21 | 19 con una entrada y sus salidas; CO90 y CO91 no están unidas a la cabecera |
+| Segundo nivel | 162 | 111 con entrada y salidas; 47 terminales (solo entrada); 3 sin unir a la cabecera; 1 sin cables |
+| Empalme | 2 | 1 con entrada y salidas; 1 sin unir a la cabecera |
+
+Solo 25 cubiertas tienen hoy todos sus cables en el sentido correcto.
+
+Qué hace falta:
+
+- **Carlos:** que la función calcule el sentido por el recorrido desde la cabecera
+  (entra el cable que viene del lado de la cabecera) o que se inviertan los 147 cables
+  dibujados al revés. Y unir a la cabecera las 6 cubiertas sueltas.
+- **Dario:** aceptar las cubiertas terminales de segundo nivel, con solo la entrada.
+  Hoy el esquemático las rechaza (47 cubiertas). El JSON no dice de qué nivel es la
+  cubierta: si Dario quiere exigir salidas solo en primer nivel, Carlos tiene que
+  agregar el nivel (`funcion_cub`) al JSON.
+
+`pnpm run datos` revisa todo esto cada vez que se corre (sección 2).
+
+Mientras tanto, GISmart pasa el JSON por el mismo analizador del esquemático antes de
+abrirlo y, si lo rechaza, muestra el motivo en vez de un diagrama roto.
+
+Mientras un JSON no traiga cables, la aplicación trata la cubierta como **sin
+conectividad**: «Ver conexiones» y «Gestionar esquema» salen en gris. Es la misma regla
+del esquemático de Dario, que rechaza un JSON sin cables.
+
+Dos detalles que costaron tiempo:
+
+- El argumento de la función se llama **`p_cubierta_id`**. El ejemplo que llegó usaba
+  `id_parametro`, y con ese nombre PostgREST responde que la función no existe
+  (PGRST202).
+- El ejemplo la llamaba desde el navegador. En GISmart va por la ruta del servidor
+  `GET /api/mufas/{id}/conectividad`, porque la aplicación no tiene cliente de Supabase
+  en el navegador: la clave nunca sale del servidor.
+
+Para Dario: el modal `MufaConnectivityModal` todavía no declara `modo`. GISmart ya se
+lo manda en cada apertura; basta con añadirlo a sus props y reenviarlo al esquemático:
+
+```ts
+type Props = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  schema: MufaCampoJSON | null
+  modo: "consulta" | "escritura"
+}
+```
+
+Cuando lo declare, en `components/network-map.tsx` sobra el tipo ampliado
+`ModalConectividad` y se usa su componente directamente.
 
 ---
 
 ## Por qué hay vistas `_geojson`
+
+> **Desactualizado (21 de septiembre de 2026).** Las tablas se recrearon con otras
+> columnas y los bloques de esta sección nombran algunas que ya no existen
+> (`estado_const`, `capacidad_bandejas`, `tipo_fibra`, `marca`, `modelo`):
+> ejecutarlos tal cual daría error. Hoy las tres vistas no existen y **no hacen falta**,
+> porque las rutas caen solas a la tabla y PostgREST arma el GeoJSON (ver «Respaldo
+> automático cuando falta la vista»). Si se quieren recrear, hay que ajustar antes la
+> lista de columnas a la tabla actual.
 
 PostgREST devuelve las columnas `geometry` de PostGIS en **WKB hexadecimal**, que
 OpenLayers no sabe leer. Para evitar convertir en el cliente, cada tabla geográfica se

@@ -133,6 +133,8 @@ Esto es deliberado por tres razones:
 | `GET /api/mufas` | Devuelve un `FeatureCollection` con las cubiertas de empalme. |
 | `GET /api/fiber-cables` | Devuelve un `FeatureCollection` con los cables de fibra. |
 | `GET /api/cabeceras` | Devuelve un `FeatureCollection` con las cabeceras centrales. |
+| `GET /api/mufas/{id}/conectividad` | Conectividad interna de una mufa, generada por la función `get_json_conectividad_cubierta`. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
+| `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_obtener_conectividad_cables(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
 | `GET /api/reverse-geocode` | Traduce `lon`/`lat` al nombre del municipio (Nominatim/OSM), para el subtítulo del mapa. |
 | `GET /api/geocode` | Busca municipios/zonas por texto (Nominatim/OSM, limitado a Colombia) para el buscador de la cabecera. |
 
@@ -202,9 +204,20 @@ Barra vertical a la izquierda del mapa:
 | Eliminar geometría | Resalta en rojo lo que está bajo el cursor y lo borra al hacer click. |
 | Medir distancia | Traza una línea libre y muestra la distancia en vivo (m / km). |
 | Medir área | Dibuja un polígono libre y muestra el área en vivo (m² / ha / km²). |
+| Conectividad fina | Desde el ribbon (Consultas → Red). El cursor pasa a mira y a mano sobre las cubiertas; al pulsar una se pide su conectividad y se abre el esquemático en modo consulta. Otros elementos se ignoran. |
+| Entradas y salidas | Desde el ribbon (Consultas → Red). Al pulsar una mufa se llama a `geo_fiber.fn_obtener_conectividad_cables` (de Carlos) con su UUID, por `GET /api/mufas/{id}/cables`, y sus cables quedan pintados con el color que manda la función: **entrante verde, saliente naranja**. Siguen pintados hasta pulsar otra mufa (que los reemplaza), pulsar fuera de las mufas o cambiar de herramienta, y la leyenda los muestra mientras la herramienta está activa. Es una capa solo visual: la geometría se toma de la capa de cables del mapa; de la función solo se usan el UUID, el sentido y el color. |
+
+Una mufa **no tiene conectividad en la app hasta que se consulta con el botón
+«Conectividad fina»**, aunque la base ya la tenga: elegir la mufa no pregunta nada. Por
+eso en el panel «Ver conexiones» y «Gestionar esquema» salen en gris hasta consultarla.
+Después se activan para esa mufa, y así se vuelve a abrir el esquema sin repetir la
+consulta. Siguen en gris si la consulta no trajo cables. Consultar es solo leer: la
+función arma el JSON en el momento y no guarda nada.
 
 Las **teclas 1 a 8** activan las herramientas en ese mismo orden. Se ignoran mientras se
 escribe en un campo, para no cambiar de herramienta al teclear un nombre.
+
+El elemento activo lleva un **punto rojo**: la mufa que se está consultando con «Conectividad fina» o «Entradas y salidas» y, con las demás herramientas, la mufa o cabecera seleccionada. Así se distingue entre muchas mufas juntas. Un cable seleccionado no lleva punto: ya se resalta entero.
 
 Con las herramientas de selección activas, el **doble click no hace zoom**: en ese modo
 debe actuar sobre el elemento, y el salto de zoom hacía perder lo que se estaba
@@ -478,12 +491,17 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   fibra, mover un vértice o cambiar un nombre solo existe en el navegador; al recargar se
   pierde. Hoy la aplicación es un **visor** con herramientas de dibujo, no un editor.
   Para que lo sea faltan endpoints de escritura y decidir permisos por usuario.
-- **Contraseñas todavía en texto plano** en `usuario_app`: al 9 de septiembre de 2026
-  solo «Sebastian» está migrada. Las demás se migran solas cuando esas personas entren,
-  o de una vez con `node scripts/migrar-claves.mjs --aplicar`.
-- **La tabla `geo_infra.cabecera_central` está vacía y su vista `_geojson` no existe.**
-  La capa carga sin errores gracias al respaldo, pero no hay nada que dibujar hasta
-  volver a cargar los datos.
+- **Cables sin cargar** (21 de septiembre de 2026): `geo_fiber.cable_fibra` está vacía,
+  así que el mapa no dibuja tendido y ninguna mufa tiene conectividad que mostrar. Además,
+  un disparador de esa tabla impide insertar cables hasta que se corrija. El detalle está
+  en [`docs/base-de-datos.md`](docs/base-de-datos.md). Los permisos que se habían
+  perdido ya se restauraron con
+  [`docs/sql/permisos-service-role.sql`](docs/sql/permisos-service-role.sql).
+- **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
+  que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
+  vez con `node scripts/migrar-claves.mjs --aplicar`.
+- **Las tres vistas `*_geojson` ya no existen.** Las capas cargan sin errores gracias al
+  respaldo que lee las tablas directamente.
 - **El bloqueo por intentos es por nombre de usuario**, así que quien conozca un nombre
   puede dejar esa cuenta bloqueada 30 segundos seguidos. Es el precio de bloquear por
   cuenta en vez de por IP; con la aplicación detrás de IIS, limitar por IP allí es la

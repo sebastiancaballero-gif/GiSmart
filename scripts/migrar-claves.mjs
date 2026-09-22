@@ -12,8 +12,9 @@
  * Conviene migrar primero una cuenta propia y comprobar que se puede entrar,
  * antes de tocar las de los demás: el cambio no tiene vuelta atrás.
  *
- * Requisitos en la base (ver docs/base-de-datos.md):
- *   alter table public.usuario_app alter column clave type varchar(255);
+ * Requisitos en la base (ver docs/base-de-datos.md). Desde que la tabla se
+ * recreó, `clave` es de tipo text y ya caben los hashes; faltan los permisos:
+ *   grant select on public.usuario_app to service_role;
  *   grant update (clave) on public.usuario_app to service_role;
  */
 import { readFileSync } from "node:fs"
@@ -46,7 +47,7 @@ const supabase = createClient(leerEnv("SUPABASE_URL"), leerEnv("SUPABASE_SECRET_
 
 const { data: usuarios, error } = await supabase
   .from("usuario_app")
-  .select("id_usr, nombre, clave")
+  .select("nombre_usuario, clave")
 
 if (error) {
   console.error("No se pudo leer usuario_app:", error.message)
@@ -61,7 +62,7 @@ const soloEste = indiceSolo > -1 ? process.argv[indiceSolo + 1]?.toLowerCase() :
 // las cuentas excluidas por el filtro se contaban como ya migradas.
 const enTextoPlano = usuarios.filter((u) => u.clave && !u.clave.startsWith(`${PREFIJO}$`))
 const pendientes = soloEste
-  ? enTextoPlano.filter((u) => u.nombre.toLowerCase() === soloEste)
+  ? enTextoPlano.filter((u) => u.nombre_usuario.toLowerCase() === soloEste)
   : enTextoPlano
 
 if (soloEste) console.log(`(acotado a la cuenta "${soloEste}")\n`)
@@ -78,7 +79,7 @@ if (pendientes.length === 0) {
 
 if (!APLICAR) {
   console.log("\nSe migrarían (sin mostrar las contraseñas):")
-  pendientes.forEach((u) => console.log(`  id ${u.id_usr} · ${u.nombre}`))
+  pendientes.forEach((u) => console.log(`  ${u.nombre_usuario}`))
   console.log("\nEjecuta con --aplicar para escribir los cambios.")
   process.exit(0)
 }
@@ -88,17 +89,17 @@ for (const usuario of pendientes) {
   const { error: fallo } = await supabase
     .from("usuario_app")
     .update({ clave: await hashClave(usuario.clave) })
-    .eq("id_usr", usuario.id_usr)
+    .eq("nombre_usuario", usuario.nombre_usuario)
 
   if (fallo) {
-    console.error(`  FALLA  ${usuario.nombre}: ${fallo.message}`)
+    console.error(`  FALLA  ${usuario.nombre_usuario}: ${fallo.message}`)
   } else {
     migrados += 1
-    console.log(`  OK     ${usuario.nombre}`)
+    console.log(`  OK     ${usuario.nombre_usuario}`)
   }
 }
 
 console.log(`\nMigrados ${migrados} de ${pendientes.length}.`)
 if (migrados < pendientes.length) {
-  console.log("Revisa que la columna sea varchar(255) y que exista el permiso de UPDATE.")
+  console.log("Revisa que exista el permiso de UPDATE sobre la columna clave.")
 }

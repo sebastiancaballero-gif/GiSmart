@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "auditar": "node --experimental-strip-types --expose-gc --import ./scripts/registrar-alias.mjs scripts/auditar-seguridad.mjs",
-    "datos": "node scripts/revisar-datos.mjs"
+    "datos": "node scripts/revisar-datos.mjs",
+    "conectividad": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-conectividad.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

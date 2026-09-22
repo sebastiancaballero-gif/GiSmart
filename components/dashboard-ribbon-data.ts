@@ -5,7 +5,7 @@ import {
   Move, Save, PlusCircle, Trash2, Move3d, Plug, Unplug,
   CircuitBoard, Cable, Wifi, Server, Route, BarChart3, ClipboardList,
   MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
-  Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu,
+  Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ArrowLeftRight,
 } from "lucide-react"
 
 export type RibbonItem = {
@@ -85,7 +85,10 @@ export const RIBBON_TABS: RibbonTab[] = [
       },
       {
         label: "Red",
-        items: [{ icon: GitBranch, label: "Conectividad fina" }],
+        items: [
+          { icon: GitBranch, label: "Conectividad fina" },
+          { icon: ArrowLeftRight, label: "Entradas y salidas" },
+        ],
       },
     ],
   },
