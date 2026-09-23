@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { expiracionDelToken, getToken, isTokenValid, terminarSesionCaducada } from "@/lib/auth"
+import { GismartLogo } from "@/components/gismart-mark"
+import { TramaRed } from "@/components/trama-red"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false)
@@ -45,11 +47,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [])
 
   if (!authorized) {
+    // Mismo fondo y logo que el login: es el paso intermedio entre las dos
+    // pantallas, y así el cambio se siente continuo.
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <Loader2 className="size-6 animate-spin text-primary" />
-          <p className="text-sm">Verificando sesión...</p>
+      <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-background">
+        <TramaRed />
+        <div className="gismart-entrada relative flex flex-col items-center gap-5">
+          <GismartLogo tamanoMarca="h-11" tamanoNombre="text-3xl" />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+            <p>Verificando sesión…</p>
+          </div>
         </div>
       </div>
     )

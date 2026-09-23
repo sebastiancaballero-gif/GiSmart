@@ -7,10 +7,16 @@ type Props = {
   open: boolean
   usuario?: string
   done?: boolean
+  /** Nombre que devolvió el servidor; con él, el saludo final es personal. */
+  nombre?: string
 }
 
-export function ConnectingModal({ open, usuario, done }: Props) {
+export function ConnectingModal({ open, usuario, done, nombre }: Props) {
   if (!open) return null
+
+  // Solo el primer nombre: «Bienvenido, Sebastián» se lee mejor que con el
+  // nombre completo en una ventana tan pequeña.
+  const primerNombre = nombre?.trim().split(" ")[0]
 
   return (
     <div
@@ -26,17 +32,17 @@ export function ConnectingModal({ open, usuario, done }: Props) {
           ) : (
             <span className="relative flex items-center justify-center">
               <Loader2 className="absolute size-12 animate-spin text-primary/60" aria-hidden="true" />
-              <GismartMark className="size-6 rounded-md" />
+              <GismartMark className="h-7 w-auto" />
             </span>
           )}
         </div>
 
         <p className="text-sm font-semibold text-foreground">
-          {done ? "Conexión establecida" : "Conectando al servidor..."}
+          {done ? (primerNombre ? `Bienvenido, ${primerNombre}` : "Conexión establecida") : "Conectando al servidor..."}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {done
-            ? "Redirigiendo al mapa de red"
+            ? "Abriendo el mapa de la red"
             : usuario
               ? `Validando credenciales de "${usuario}"`
               : "Validando credenciales"}

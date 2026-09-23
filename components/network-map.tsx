@@ -10,6 +10,7 @@ import VectorLayer from "ol/layer/Vector"
 import VectorSource from "ol/source/Vector"
 import Feature from "ol/Feature"
 import LineString from "ol/geom/LineString"
+import Point from "ol/geom/Point"
 import Polygon from "ol/geom/Polygon"
 import Overlay from "ol/Overlay"
 import { fromLonLat, toLonLat } from "ol/proj"
@@ -44,7 +45,17 @@ import {
   Crosshair,
 } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR, largoEnKm, marcadorStyle, sentidoStyle } from "@/lib/map/symbology"
+import {
+  CABLE_CONSULTADO_COLOR,
+  SENTIDO_COLORS,
+  MEASURE_COLOR,
+  TIPO_RED_NOMBRES,
+  extremoStyle,
+  largoEnKm,
+  marcadorStyle,
+  sentidoStyle,
+} from "@/lib/map/symbology"
+import { orientarDesde, partirPorLaMitad, type Coordenada } from "@/lib/map/partir-linea"
 import { obtenerCablesDeMufa } from "@/lib/map/cables-de-mufa"
 import {
   CABECERA_COLOR,
@@ -169,6 +180,8 @@ function MapaDeRed({
   const [sentidoSource] = useState(() => new VectorSource())
   // Punto rojo sobre el elemento activo (ver el efecto del marcador).
   const [marcadorSource] = useState(() => new VectorSource())
+  // Puntas del cable consultado con el botón «Cable».
+  const [extremosSource] = useState(() => new VectorSource())
   const [baseMapSource] = useState(() => new OSM())
 
   const nodeLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -178,6 +191,7 @@ function MapaDeRed({
   const measureLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const sentidoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
   const deleteHoverRef = useRef<Select | null>(null)
@@ -221,7 +235,12 @@ function MapaDeRed({
   // carga anterior y no se guarda.
   const cargaRef = useRef(0)
   // Resultado de la herramienta de consulta cuando no hay nada que abrir.
-  const [avisoConsulta, setAvisoConsulta] = useState<{ texto: string; cargando?: boolean } | null>(null)
+  // Sin tono es «info»: el resultado de una consulta o una indicación.
+  const [avisoConsulta, setAvisoConsulta] = useState<{
+    texto: string
+    cargando?: boolean
+    tono?: "info" | "aviso" | "error"
+  } | null>(null)
   // Sube solo cuando el esquemático falla al dibujar: cambia la `key` del
   // límite de error y lo deja listo para el siguiente intento. Con una `key`
   // atada a abierto/cerrado, el modal se desmontaba en cada apertura y cierre
@@ -305,13 +324,15 @@ function MapaDeRed({
       } else if (resultado.estado === "sin-conectividad") {
         setAvisoConsulta({
           texto: `${nombre} no tiene conectividad: la base todavía no tiene cables registrados para esta cubierta.`,
+          tono: "aviso",
         })
       } else if (resultado.estado === "no-dibujable") {
         setAvisoConsulta({
           texto: `${nombre} tiene conectividad en la base, pero el esquema no se puede dibujar: ${resultado.motivo}.`,
+          tono: "aviso",
         })
       } else {
-        setAvisoConsulta({ texto: resultado.mensaje })
+        setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
       }
     },
     [pedirConectividad],
@@ -319,17 +340,33 @@ function MapaDeRed({
 
   // Elegir una mufa no consulta su conectividad: eso solo lo hace el botón
   // «Conectividad fina». El panel se limita a mostrar lo ya consultado.
-  // Punto rojo sobre el elemento activo, para saber cuál es entre muchas mufas
-  // juntas: con las herramientas de consulta del ribbon, la mufa que se está
-  // consultando; con las demás, el elemento seleccionado. Solo en puntos (mufas
-  // y cabeceras): un cable seleccionado ya se resalta entero. El marcador usa la
-  // misma geometría que el elemento, así que lo sigue si se mueve al editarlo.
+  /**
+   * Nombre de una mufa o cabecera a partir de su UUID. Así el origen y el
+   * destino de un cable se leen «CO02» y no como un UUID, tanto en la ficha
+   * como en el aviso de la herramienta de entradas y salidas.
+   */
+  const nombreDeElemento = useCallback(
+    (id: string): string | null => {
+      for (const fuente of [nodeSource, cabeceraSource]) {
+        const encontrado = fuente.getFeatures().find((f) => f.get("id") === id)
+        if (encontrado) return (encontrado.get(NOMBRE_VISIBLE) as string | undefined) ?? null
+      }
+      return null
+    },
+    [nodeSource, cabeceraSource],
+  )
+
+  // Marca roja sobre el elemento activo, para saber cuál es entre muchas mufas
+  // juntas o entre cables que se cruzan: con las herramientas de consulta del
+  // ribbon, la mufa que se está consultando; con las demás, el elemento
+  // seleccionado, sea mufa, cabecera, cable o zona. La marca usa la misma
+  // geometría que el elemento, así que lo sigue si se mueve al editarlo.
   const enConsulta = tool === "conectividad" || tool === "sentido"
   const marcado = enConsulta ? consultada : (selected?.feature ?? null)
   useEffect(() => {
     marcadorSource.clear()
     const geometria = marcado?.getGeometry()
-    if (geometria?.getType() === "Point") marcadorSource.addFeature(new Feature(geometria))
+    if (geometria) marcadorSource.addFeature(new Feature(geometria))
   }, [marcado, marcadorSource])
 
   const idMufaSeleccionada =
@@ -575,6 +612,7 @@ function MapaDeRed({
     measureLayer.current = new VectorLayer({ source: measureSource, style: measureStyle as never })
     sentidoLayer.current = new VectorLayer({ source: sentidoSource, style: sentidoStyle as never })
     marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
+    extremosLayer.current = new VectorLayer({ source: extremosSource, style: extremoStyle as never })
 
     const map = new Map({
       target: containerRef.current,
@@ -595,6 +633,7 @@ function MapaDeRed({
         // El punto rojo va encima de todo lo que es red, para que se vea
         // aunque la mufa esté tapada por otras.
         marcadorLayer.current,
+        extremosLayer.current,
         measureLayer.current,
       ],
       view,
@@ -804,7 +843,9 @@ function MapaDeRed({
       .getInteractions()
       .getArray()
       .find((interaccion) => interaccion instanceof DoubleClickZoom)
-    zoomPorDobleClick?.setActive(tool !== "edit" && tool !== "delete" && tool !== "conectividad" && tool !== "sentido")
+    zoomPorDobleClick?.setActive(
+      tool !== "edit" && tool !== "delete" && tool !== "conectividad" && tool !== "sentido" && tool !== "cable",
+    )
 
     // Las interacciones de selección solo deben ver las capas de datos: si no
     // se limitan, también alcanzan los elementos auxiliares que dibujan otras
@@ -816,13 +857,206 @@ function MapaDeRed({
       cabeceraLayer.current,
     ].filter((capa): capa is VectorLayer<VectorSource> => capa !== null)
 
-    // Mufa bajo el puntero, para las dos herramientas del ribbon que se usan
-    // pulsando una cubierta.
+    // Mufa y cable bajo el puntero, para las herramientas de consulta del
+    // ribbon, que se usan pulsando un elemento del mapa.
     const cubiertaEn = (pixel: number[]) =>
       map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
         layerFilter: (capa) => capa === nodeLayer.current,
         hitTolerance: 6,
       }) ?? null
+
+    const cableEn = (pixel: number[]) =>
+      map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
+        layerFilter: (capa) => capa === fiberLayer.current,
+        hitTolerance: 6,
+      }) ?? null
+
+    /** Código, hilos y tipo de red del cable, con lo que ya está cargado en el mapa. */
+    const datosDelCable = (cable: Feature<Geometry>) => {
+      const partes: string[] = [(cable.get(NOMBRE_VISIBLE) as string | undefined) ?? "Cable"]
+      const hilos = cable.get("cant_hilo")
+      if (typeof hilos === "number" && hilos > 0) partes.push(`${hilos} hilo${hilos === 1 ? "" : "s"}`)
+      const tipoRed = TIPO_RED_NOMBRES[cable.get("tipo_red_prin") as string]
+      if (tipoRed) partes.push(tipoRed)
+      return partes
+    }
+
+    /** Lo anterior más los dos elementos que une, según la capa de cables. */
+    const describirCable = (cable: Feature<Geometry>) => {
+      const partes = datosDelCable(cable)
+      const extremos = [cable.get("id_elem_from"), cable.get("id_elem_to")].map((id) =>
+        typeof id === "string" ? (nombreDeElemento(id) ?? "un elemento que no está en el mapa") : null,
+      )
+      partes.push(
+        extremos[0] && extremos[1]
+          ? `une ${extremos[0]} con ${extremos[1]}`
+          : "sin sus extremos registrados en la base",
+      )
+      return partes.join(" · ")
+    }
+
+    if (tool === "cable") {
+      // Consulta de cable (ribbon: Consultas → Red → «Cable»). Lo mismo que
+      // «Entradas y salidas», pero desde el cable: se pinta en naranja la mitad
+      // junto a la mufa de donde sale y en verde la mitad junto a la mufa a la
+      // que entra, y sus puntas se marcan «Salida» y «Entrada».
+      //
+      // Un cable es salida de una mufa y entrada de otra, así que el sentido se
+      // pregunta en sus dos puntas a la misma función de «Entradas y salidas»
+      // (`fn_generar_conectividad_cables`). La función propia del cable,
+      // `fn_obtener_extremos_cable`, falla todavía en la base; su ruta queda
+      // lista (app/api/cables/[id]/extremos) para cuando la arreglen.
+      //
+      // Si se pulsan dos cables seguidos, solo cuenta el último; y nada de lo
+      // que llegue después de cambiar de herramienta.
+      let consultas = 0
+      let activa = true
+
+      /** La mufa o cabecera del mapa con ese UUID, si está. */
+      const elementoDelMapa = (idElemento: string) => {
+        for (const fuente of [nodeSource, cabeceraSource]) {
+          const encontrado = fuente.getFeatures().find((f) => f.get("id") === idElemento)
+          if (encontrado) return { feature: encontrado, esMufa: fuente === nodeSource }
+        }
+        return null
+      }
+      const nombreDe = (f: Feature<Geometry>) => (f.get(NOMBRE_VISIBLE) as string | undefined) ?? "un elemento sin nombre"
+
+      const claveMover = map.on("pointermove", (evt) => {
+        if (evt.dragging || !containerRef.current) return
+        containerRef.current.style.cursor = cableEn(evt.pixel) ? "pointer" : "crosshair"
+      })
+
+      const claveClick = map.on("singleclick", (evt) => {
+        const cable = cableEn(evt.pixel)
+        // Pulsar otro cable reemplaza lo pintado; pulsar fuera lo quita.
+        extremosSource.clear()
+        sentidoSource.clear()
+        const turno = ++consultas
+        if (!cable) {
+          setAvisoConsulta(null)
+          return
+        }
+
+        // Mientras llega la respuesta, el cable va en rojo para que se vea cuál
+        // se pulsó. Va en la capa de resaltes, debajo de las mufas.
+        const geometriaCable = cable.getGeometry()
+        if (geometriaCable) {
+          sentidoSource.addFeature(new Feature({ geometry: geometriaCable, color: CABLE_CONSULTADO_COLOR }))
+        }
+
+        const datos = datosDelCable(cable).join(" · ")
+        const id = cable.get("id")
+        if (typeof id !== "string") {
+          setAvisoConsulta({ texto: `${datos}: se dibujó en el mapa y no existe en la base.`, tono: "aviso" })
+          return
+        }
+
+        // Sus dos puntas, según la capa de cables.
+        const puntas = [cable.get("id_elem_from"), cable.get("id_elem_to")]
+          .filter((valor): valor is string => typeof valor === "string")
+          .map((idElemento) => ({ idElemento, ...elementoDelMapa(idElemento) }))
+          .filter((punta): punta is { idElemento: string; feature: Feature<Geometry>; esMufa: boolean } => !!punta.feature)
+        const mufas = puntas.filter((punta) => punta.esMufa)
+        if (mufas.length === 0) {
+          setAvisoConsulta({ texto: `${datos}: no tiene sus puntas registradas en la base.`, tono: "aviso" })
+          return
+        }
+
+        setAvisoConsulta({ texto: `Consultando el sentido de ${datos}…`, cargando: true })
+        void Promise.all(mufas.map((punta) => obtenerCablesDeMufa(punta.idElemento).then((resultado) => ({ punta, resultado })))).then(
+          (respuestas) => {
+            // Mientras llegaba se pulsó otro cable o se cambió de herramienta.
+            if (!activa || turno !== consultas) return
+            for (const { resultado } of respuestas) {
+              if (resultado.estado === "error") {
+                setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
+                return
+              }
+            }
+
+            // Cómo ve cada mufa a este cable: si le sale o le entra.
+            const vistas = respuestas.map(({ punta, resultado }) => ({
+              punta,
+              cable: resultado.estado === "ok" ? resultado.cables.find((c) => c.id === id) : undefined,
+            }))
+            let salida = vistas.find((v) => v.cable?.sentido === "salida")
+            let entrada = vistas.find((v) => v.cable?.sentido === "entrada")
+            if (!salida && !entrada) {
+              setAvisoConsulta({ texto: `${datos}: la base no devolvió este cable en ninguna de sus puntas.`, tono: "aviso" })
+              return
+            }
+            if (vistas.length === 2 && vistas[0].cable?.sentido === vistas[1].cable?.sentido) {
+              const sentido = vistas[0].cable?.sentido === "salida" ? "salida" : "entrada"
+              setAvisoConsulta({ texto: `${datos}: la base lo marca como ${sentido} en las dos puntas.`, tono: "aviso" })
+              return
+            }
+            // Si solo se supo en una punta (la otra es la cabecera o no está en
+            // el mapa), la otra punta es la contraria.
+            const otra = (usada: (typeof puntas)[number]) => puntas.find((pt) => pt.idElemento !== usada.idElemento)
+            if (salida && !entrada) {
+              const punta = otra(salida.punta)
+              if (punta) entrada = { punta, cable: undefined }
+            }
+            if (entrada && !salida) {
+              const punta = otra(entrada.punta)
+              if (punta) salida = { punta, cable: undefined }
+            }
+
+            const colorSalida = salida?.cable?.color ?? SENTIDO_COLORS.salida
+            const colorEntrada = entrada?.cable?.color ?? SENTIDO_COLORS.entrada
+
+            // Dos mitades: la de salida arranca en la punta de donde sale.
+            const geometria = cable.getGeometry()
+            const coordenadas: Coordenada[] =
+              geometria instanceof LineString
+                ? geometria.getCoordinates()
+                : geometria?.getType() === "MultiLineString"
+                  ? (geometria as unknown as { getCoordinates(): Coordenada[][] }).getCoordinates().flat()
+                  : []
+            const puntoDe = (f: Feature<Geometry>) => {
+              const g = f.getGeometry()
+              return g instanceof Point ? g.getCoordinates() : null
+            }
+            const desde = salida ? puntoDe(salida.punta.feature) : null
+            const hasta = entrada ? puntoDe(entrada.punta.feature) : null
+            if (coordenadas.length >= 2 && (desde || hasta)) {
+              const orientadas = desde
+                ? orientarDesde(coordenadas, desde)
+                : [...orientarDesde(coordenadas, hasta as Coordenada)].reverse()
+              const [mitadSalida, mitadEntrada] = partirPorLaMitad(orientadas)
+              sentidoSource.clear()
+              sentidoSource.addFeature(new Feature({ geometry: new LineString(mitadSalida), color: colorSalida }))
+              sentidoSource.addFeature(new Feature({ geometry: new LineString(mitadEntrada), color: colorEntrada }))
+            }
+
+            // Las puntas, marcadas sobre la mufa (o la cabecera).
+            for (const [vista, rol, color] of [
+              [salida, "origen", colorSalida],
+              [entrada, "destino", colorEntrada],
+            ] as const) {
+              const g = vista?.punta.feature.getGeometry()
+              if (g) extremosSource.addFeature(new Feature({ geometry: g, rol, color }))
+            }
+
+            const recorrido =
+              salida && entrada
+                ? `sale de ${nombreDe(salida.punta.feature)} y entra a ${nombreDe(entrada.punta.feature)}`
+                : salida
+                  ? `sale de ${nombreDe(salida.punta.feature)}`
+                  : `entra a ${nombreDe((entrada as NonNullable<typeof entrada>).punta.feature)}`
+            setAvisoConsulta({ texto: `${datos}: ${recorrido}.` })
+          },
+        )
+      })
+
+      return () => {
+        activa = false
+        unByKey([claveMover, claveClick])
+        extremosSource.clear()
+        sentidoSource.clear()
+      }
+    }
 
     if (tool === "sentido") {
       // «Entradas y salidas» (ribbon: Consultas → Red). Pinta los cables de la
@@ -839,26 +1073,34 @@ function MapaDeRed({
       let activa = true
       const contar = (n: number, palabra: string) => `${n} ${palabra}${n === 1 ? "" : "s"}`
 
+
       const claveMover = map.on("pointermove", (evt) => {
         if (evt.dragging || !containerRef.current) return
-        containerRef.current.style.cursor = cubiertaEn(evt.pixel) ? "pointer" : "crosshair"
+        containerRef.current.style.cursor = cubiertaEn(evt.pixel) || cableEn(evt.pixel) ? "pointer" : "crosshair"
       })
 
       const claveClick = map.on("singleclick", (evt) => {
         const cubierta = cubiertaEn(evt.pixel)
         // Pulsar otra mufa reemplaza lo pintado; pulsar fuera lo quita.
         sentidoSource.clear()
-        setConsultada(cubierta)
         const turno = ++consultas
         if (!cubierta) {
-          setAvisoConsulta(null)
+          // Sobre un cable: se resalta y se dice cuál es. Fuera de todo, se
+          // limpia lo que hubiera.
+          const cable = cableEn(evt.pixel)
+          setConsultada(cable)
+          setAvisoConsulta(cable ? { texto: describirCable(cable) } : null)
           return
         }
+        setConsultada(cubierta)
 
         const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "La mufa"
         const id = cubierta.get("id")
         if (typeof id !== "string") {
-          setAvisoConsulta({ texto: `${nombre} se dibujó en el mapa y no existe en la base: no se sabe qué cables le llegan.` })
+          setAvisoConsulta({
+            texto: `${nombre} se dibujó en el mapa y no existe en la base: no se sabe qué cables le llegan.`,
+            tono: "aviso",
+          })
           return
         }
 
@@ -867,11 +1109,11 @@ function MapaDeRed({
           // Mientras llegaba se pulsó otra mufa o se cambió de herramienta.
           if (!activa || turno !== consultas) return
           if (resultado.estado === "error") {
-            setAvisoConsulta({ texto: resultado.mensaje })
+            setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
             return
           }
           if (resultado.cables.length === 0) {
-            setAvisoConsulta({ texto: `La base no devolvió cables para ${nombre}.` })
+            setAvisoConsulta({ texto: `La base no devolvió cables para ${nombre}.`, tono: "aviso" })
             return
           }
 
@@ -934,7 +1176,10 @@ function MapaDeRed({
         const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "la mufa"
         const id = cubierta.get("id")
         if (typeof id !== "string") {
-          setAvisoConsulta({ texto: `${nombre} se dibujó en el mapa y no existe en la base: no tiene conectividad.` })
+          setAvisoConsulta({
+            texto: `${nombre} se dibujó en el mapa y no existe en la base: no tiene conectividad.`,
+            tono: "aviso",
+          })
           return
         }
         void consultarConectividad(id, nombre)
@@ -1132,8 +1377,10 @@ function MapaDeRed({
     cabeceraSource,
     measureSource,
     sentidoSource,
+    extremosSource,
     tipoDeFeature,
     consultarConectividad,
+    nombreDeElemento,
   ])
 
   useEffect(() => {
@@ -1149,6 +1396,7 @@ function MapaDeRed({
       // Mira para elegir; sobre una cubierta pasa a mano (ver la herramienta).
       conectividad: "crosshair",
       sentido: "crosshair",
+      cable: "crosshair",
     }
     if (containerRef.current) containerRef.current.style.cursor = cursors[tool]
   }, [tool])
@@ -1345,18 +1593,6 @@ function MapaDeRed({
     setConnectivityOpen(true)
   }
 
-  /**
-   * Para la ficha: nombre de una mufa o cabecera a partir de su UUID. Así el
-   * origen y el destino de un cable se leen «CO02» y no como un UUID.
-   */
-  function nombreDeElemento(id: string): string | null {
-    for (const fuente of [nodeSource, cabeceraSource]) {
-      const encontrado = fuente.getFeatures().find((f) => f.get("id") === id)
-      if (encontrado) return (encontrado.get(NOMBRE_VISIBLE) as string | undefined) ?? null
-    }
-    return null
-  }
-
   /** La mufa colocada se queda. */
   function confirmarMufa() {
     setMufaPendiente(null)
@@ -1389,6 +1625,18 @@ function MapaDeRed({
     selected?.type === "fiber"
       ? getLength(selected.feature.getGeometry() as LineString) / 1000
       : null
+
+  // Lo que se ve de un vistazo en el panel, según el tipo de elemento.
+  const datosSeleccion: { etiqueta: string; valor: string; color?: string }[] = []
+  if (selected?.type === "node") {
+    const nivel = selected.feature.get("funcion_cub") as string | undefined
+    if (nivel) datosSeleccion.push({ etiqueta: "Nivel", valor: nivel, color: colorForFuncionCub(nivel) })
+  }
+  if (selected?.type === "fiber") {
+    if (selectedLength !== null) datosSeleccion.push({ etiqueta: "Longitud", valor: `${selectedLength.toFixed(2)} km` })
+    const hilos = selected.feature.get("cant_hilo")
+    if (typeof hilos === "number" && hilos > 0) datosSeleccion.push({ etiqueta: "Hilos", valor: String(hilos) })
+  }
 
   return (
     <div className={`relative size-full ${className ?? ""}`}>
@@ -1461,11 +1709,15 @@ function MapaDeRed({
           </MapNotice>
         )}
 
-        {fiberNotice && <MapNotice tono="aviso">{fiberNotice}</MapNotice>}
+        {/* Las indicaciones de cada herramienta son ayuda; lo demás que pasa
+            por aquí (un trazo de fibra rechazado) es una advertencia. */}
+        {fiberNotice && (
+          <MapNotice tono={Object.values(TOOL_HINTS).includes(fiberNotice) ? "info" : "aviso"}>{fiberNotice}</MapNotice>
+        )}
 
         {avisoConsulta && (
           <MapNotice
-            tono={avisoConsulta.cargando ? "neutral" : "aviso"}
+            tono={avisoConsulta.cargando ? "neutral" : (avisoConsulta.tono ?? "info")}
             cargando={avisoConsulta.cargando}
             onCerrar={avisoConsulta.cargando ? undefined : () => setAvisoConsulta(null)}
           >
@@ -1528,7 +1780,7 @@ function MapaDeRed({
         latRef={latRef}
         zoomRef={zoomRef}
         zoom={zoom}
-        herramienta={tools.find((t) => t.id === tool)?.label ?? (tool === "conectividad" ? "Consulta de conectividad" : tool === "sentido" ? "Entradas y salidas" : "")}
+        herramienta={tools.find((t) => t.id === tool)?.label ?? (tool === "conectividad" ? "Consulta de conectividad" : tool === "sentido" ? "Entradas y salidas" : tool === "cable" ? "Consulta de cable" : "")}
       />
 
       {/* Nombre del elemento bajo el cursor. Las etiquetas del mapa solo salen
@@ -1542,119 +1794,153 @@ function MapaDeRed({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      <MapLegend sentido={tool === "sentido"} />
+      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} />
 
-      {/* Panel de información del elemento seleccionado */}
+      {/* Panel del elemento seleccionado. Arriba qué es y sus datos clave; en
+          el medio sus acciones, las propias del tipo primero; abajo, apartado,
+          quitarlo del mapa. Antes eran seis botones iguales uno bajo otro y
+          nada decía cuál era el importante. */}
       {selected && (
-        <div className="absolute right-3 top-20 z-20 w-64 animate-gismart-fade-in rounded-xl bg-card/95 p-3 shadow-lg ring-1 ring-border backdrop-blur">
-          <div className="mb-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur animate-gismart-fade-in">
+          <div className="border-b border-border px-3.5 pb-3 pt-3">
+            <div className="flex items-center justify-between">
               {(() => {
                 const Icon = TYPE_ICONS[selected.type]
-                return <Icon className="size-3.5" style={{ color: LAYER_COLORS[selected.type] }} />
+                const color = LAYER_COLORS[selected.type]
+                return (
+                  <span
+                    className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ color, backgroundColor: `color-mix(in oklch, ${color} 14%, transparent)` }}
+                  >
+                    <Icon className="size-3" aria-hidden="true" />
+                    {TYPE_LABELS[selected.type]}
+                  </span>
+                )
               })()}
-              {TYPE_LABELS[selected.type]}
+              <button
+                type="button"
+                onClick={closeSelection}
+                className="-mr-1 rounded-md p-1 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label="Cerrar panel"
+              >
+                <X className="size-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={closeSelection}
-              className="rounded-md p-1 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-              aria-label="Cerrar panel"
-            >
-              <X className="size-3.5" />
-            </button>
+
+            {/* El nombre es el título del panel, y se puede editar ahí mismo. */}
+            <label htmlFor="feature-nombre" className="sr-only">
+              Nombre
+            </label>
+            <div className="group relative mt-2">
+              <input
+                id="feature-nombre"
+                type="text"
+                value={nameDraft}
+                onChange={(e) => handleNameChange(e.target.value)}
+                className="w-full rounded-md border border-transparent bg-transparent py-1 pl-1.5 pr-7 text-base font-bold tracking-tight text-foreground outline-none transition hover:border-border focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/25"
+              />
+              <Pencil
+                className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground opacity-60 transition group-hover:opacity-100"
+                aria-hidden="true"
+              />
+            </div>
+
+            {datosSeleccion.length > 0 && (
+              <dl className="mt-1.5 flex flex-wrap gap-1.5 px-1.5">
+                {datosSeleccion.map((d) => (
+                  <div key={d.etiqueta} className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-[11px]">
+                    {d.color && <span className="size-2 rounded-full" style={{ backgroundColor: d.color }} aria-hidden="true" />}
+                    <dt className="text-muted-foreground">{d.etiqueta}</dt>
+                    <dd className="font-semibold tabular-nums text-foreground">{d.valor}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </div>
 
-          <label htmlFor="feature-nombre" className="mb-1 flex items-center gap-1 text-xs font-medium text-foreground">
-            <Pencil className="size-3" />
-            Nombre
-          </label>
-          <input
-            id="feature-nombre"
-            type="text"
-            value={nameDraft}
-            onChange={(e) => handleNameChange(e.target.value)}
-            className="w-full rounded-lg border border-input bg-card px-2.5 py-1.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
-          />
+          <div className="space-y-2 p-3">
+            {selected.type === "node" && (
+              <>
+                {/* Los dos botones solo se activan después de consultar la mufa
+                    con «Conectividad fina»: elegirla no pregunta a la base. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGestionarEsquema}
+                    disabled={!esquemaSeleccionado}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-2 py-2 text-xs font-semibold text-primary-foreground shadow-sm outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+                  >
+                    <Waypoints className="size-3.5 shrink-0" />
+                    Gestionar esquema
+                  </button>
+                  {/* En gris hasta consultar, y también cuando la consulta no
+                      trajo cables: así no se abre un diagrama que va a fallar. */}
+                  <button
+                    type="button"
+                    onClick={handleViewConnections}
+                    disabled={estadoConexiones !== "disponible"}
+                    className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-2 py-2 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted"
+                  >
+                    <Network className="size-3.5 shrink-0" />
+                    {estadoConexiones === "sin-conectividad" ? "Sin conectividad" : "Ver conexiones"}
+                  </button>
+                </div>
 
-          {selectedLength !== null && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Longitud: <span className="font-semibold tabular-nums text-primary">{selectedLength.toFixed(2)} km</span>
-            </p>
-          )}
+                {/* Por qué están en gris. Un botón deshabilitado no muestra
+                    etiqueta emergente, así que la razón va escrita debajo. */}
+                {motivoSinConexiones !== null && (
+                  <p
+                    role="status"
+                    className={`flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1.5 text-[11px] leading-snug ${
+                      estadoConexiones === "error" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+                    }`}
+                  >
+                    <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
+                    <span>{motivoSinConexiones}</span>
+                  </p>
+                )}
+              </>
+            )}
 
-          {/* Los dos botones solo se activan después de consultar la mufa con
-              «Conectividad fina»: elegirla no pregunta a la base. */}
-          {selected.type === "node" && (
+            <div className="grid grid-cols-2 gap-2">
+              {/* Tras filtrar o buscar, lo seleccionado puede quedar fuera de
+                  la vista: esto lo trae al centro sin tener que buscarlo. */}
+              <button
+                type="button"
+                onClick={centrarEnSeleccion}
+                className={`flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-2 py-2 text-xs font-medium text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  selected.type === "zone" ? "col-span-2" : ""
+                }`}
+              >
+                <Crosshair className="size-3.5 shrink-0" />
+                Centrar
+              </button>
+              {(selected.type === "node" || selected.type === "fiber" || selected.type === "cabecera") && (
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(true)}
+                  className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-2 py-2 text-xs font-medium text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <Info className="size-3.5 shrink-0" />
+                  Información
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Aparte y discreto: es la única acción que cambia el mapa. Solo
+              quita el elemento del mapa; la base de datos no se toca. */}
+          <div className="border-t border-border px-2 py-1.5">
             <button
               type="button"
-              onClick={handleGestionarEsquema}
-              disabled={!esquemaSeleccionado}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-1.5 text-xs font-semibold text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+              onClick={handleDeleteSelected}
+              title="Se quita solo del mapa; no se borra de la base de datos."
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-destructive outline-none transition hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              <Waypoints className="size-3.5" />
-              Gestionar esquema
+              <Trash2 className="size-3.5" />
+              Quitar del mapa
             </button>
-          )}
-
-          {/* En gris hasta consultar, y también cuando la consulta no trajo
-              cables: así no se abre un diagrama que va a fallar. */}
-          {selected.type === "node" && (
-            <button
-              type="button"
-              onClick={handleViewConnections}
-              disabled={estadoConexiones !== "disponible"}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted"
-            >
-              <Network className="size-3.5" />
-              {estadoConexiones === "sin-conectividad" ? "Sin conectividad" : "Ver conexiones"}
-            </button>
-          )}
-
-          {/* Por qué está en gris. El botón deshabilitado no muestra
-              etiqueta emergente, así que la razón va escrita debajo. */}
-          {selected.type === "node" && motivoSinConexiones !== null && (
-            <p
-              role="status"
-              className={`mt-1.5 flex items-start gap-1.5 px-0.5 text-[11px] leading-snug ${
-                estadoConexiones === "error" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
-              }`}
-            >
-              <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
-              <span>{motivoSinConexiones}</span>
-            </p>
-          )}
-
-          {/* Tras filtrar o buscar, lo seleccionado puede quedar fuera de la
-              vista: esto lo trae al centro sin tener que buscarlo a mano. */}
-          <button
-            type="button"
-            onClick={centrarEnSeleccion}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <Crosshair className="size-3.5" />
-            Centrar en el mapa
-          </button>
-
-          {(selected.type === "node" || selected.type === "fiber" || selected.type === "cabecera") && (
-            <button
-              type="button"
-              onClick={() => setInfoOpen(true)}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-1.5 text-xs font-semibold text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <Info className="size-3.5" />
-              Ver información
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleDeleteSelected}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 py-1.5 text-xs font-semibold text-destructive outline-none transition hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <Trash2 className="size-3.5" />
-            Eliminar
-          </button>
+          </div>
         </div>
       )}
 
@@ -1723,6 +2009,7 @@ function MapaDeRed({
           setIntentoDibujo((n) => n + 1)
           setAvisoConsulta({
             texto: "No se pudo dibujar la conectividad de esta mufa: el JSON no tiene la forma que espera el esquemático.",
+            tono: "error",
           })
         }}
       >

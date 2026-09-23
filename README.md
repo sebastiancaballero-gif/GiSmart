@@ -134,7 +134,8 @@ Esto es deliberado por tres razones:
 | `GET /api/fiber-cables` | Devuelve un `FeatureCollection` con los cables de fibra. |
 | `GET /api/cabeceras` | Devuelve un `FeatureCollection` con las cabeceras centrales. |
 | `GET /api/mufas/{id}/conectividad` | Conectividad interna de una mufa, generada por la función `get_json_conectividad_cubierta`. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
-| `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_obtener_conectividad_cables(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
+| `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_generar_conectividad_cables(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
+| `GET /api/cables/{id}/extremos` | Extremos de un cable (dónde sale y dónde entra), según `geo_fiber.fn_obtener_extremos_cable(p_uuid_cable)`. Solo lectura. |
 | `GET /api/reverse-geocode` | Traduce `lon`/`lat` al nombre del municipio (Nominatim/OSM), para el subtítulo del mapa. |
 | `GET /api/geocode` | Busca municipios/zonas por texto (Nominatim/OSM, limitado a Colombia) para el buscador de la cabecera. |
 
@@ -205,7 +206,8 @@ Barra vertical a la izquierda del mapa:
 | Medir distancia | Traza una línea libre y muestra la distancia en vivo (m / km). |
 | Medir área | Dibuja un polígono libre y muestra el área en vivo (m² / ha / km²). |
 | Conectividad fina | Desde el ribbon (Consultas → Red). El cursor pasa a mira y a mano sobre las cubiertas; al pulsar una se pide su conectividad y se abre el esquemático en modo consulta. Otros elementos se ignoran. |
-| Entradas y salidas | Desde el ribbon (Consultas → Red). Al pulsar una mufa se llama a `geo_fiber.fn_obtener_conectividad_cables` (de Carlos) con su UUID, por `GET /api/mufas/{id}/cables`, y sus cables quedan pintados con el color que manda la función: **entrante verde, saliente naranja**. Siguen pintados hasta pulsar otra mufa (que los reemplaza), pulsar fuera de las mufas o cambiar de herramienta, y la leyenda los muestra mientras la herramienta está activa. Es una capa solo visual: la geometría se toma de la capa de cables del mapa; de la función solo se usan el UUID, el sentido y el color. |
+| Entradas y salidas | Desde el ribbon (Consultas → Red). Al pulsar una mufa se llama a `geo_fiber.fn_generar_conectividad_cables` (de Carlos) con su UUID, por `GET /api/mufas/{id}/cables`, y sus cables quedan pintados con el color que manda la función: **entrante verde, saliente naranja**. Siguen pintados hasta pulsar otra mufa (que los reemplaza), pulsar fuera o cambiar de herramienta, y la leyenda los muestra mientras la herramienta está activa. Al pulsar un cable, en vez de pintar entradas y salidas, se resalta ese cable y el aviso dice cuál es: código, hilos, tipo de red y los dos elementos que une. Es una capa solo visual: la geometría se toma de la capa de cables del mapa; de la función solo se usan el UUID, el sentido y el color. |
+| Cable | Desde el ribbon (Consultas → Red). Lo mismo que «Entradas y salidas», pero desde el cable: al pulsarlo se pinta en **naranja la mitad junto a la mufa de donde sale** y en **verde la mitad junto a la mufa a la que entra**, y sus puntas se marcan «Salida» y «Entrada». El sentido se pregunta en sus dos puntas a `fn_generar_conectividad_cables`. El aviso dice el código, los hilos, el tipo de red y de dónde sale y a dónde entra. Solo lectura. La función propia del cable, `fn_obtener_extremos_cable`, todavía falla en la base; su ruta (`GET /api/cables/{id}/extremos`) queda lista para cuando la arreglen. |
 
 Una mufa **no tiene conectividad en la app hasta que se consulta con el botón
 «Conectividad fina»**, aunque la base ya la tenga: elegir la mufa no pregunta nada. Por
@@ -217,7 +219,7 @@ función arma el JSON en el momento y no guarda nada.
 Las **teclas 1 a 8** activan las herramientas en ese mismo orden. Se ignoran mientras se
 escribe en un campo, para no cambiar de herramienta al teclear un nombre.
 
-El elemento activo lleva un **punto rojo**: la mufa que se está consultando con «Conectividad fina» o «Entradas y salidas» y, con las demás herramientas, la mufa o cabecera seleccionada. Así se distingue entre muchas mufas juntas. Un cable seleccionado no lleva punto: ya se resalta entero.
+El elemento activo lleva una **marca roja**: la mufa que se está consultando con «Conectividad fina» o «Entradas y salidas» y, con las demás herramientas, el elemento seleccionado. Una mufa o una cabecera llevan un punto con su anillo; un cable se resalta entero y lleva el punto en la mitad, para poder ubicarlo con el mapa alejado; una zona lleva el borde resaltado. Así se distingue cuál es entre muchas mufas juntas o entre cables que se cruzan.
 
 Con las herramientas de selección activas, el **doble click no hace zoom**: en ese modo
 debe actuar sobre el elemento, y el salto de zoom hacía perder lo que se estaba

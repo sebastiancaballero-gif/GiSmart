@@ -540,31 +540,125 @@ export function sentidoStyle(feature: Feature<Geometry>) {
 }
 
 /**
- * Punto rojo sobre el elemento activo: el seleccionado o el que se está
- * consultando. Entre 185 mufas juntas, el resalte de selección no bastaba para
- * saber de un vistazo cuál era. Estilo fijo, creado una sola vez.
+ * Marca roja sobre el elemento activo: el seleccionado o el que se está
+ * consultando. Entre 185 mufas juntas, y con cables que se cruzan, el resalte
+ * de selección no bastaba para saber de un vistazo cuál era.
+ *
+ * Una mufa o una cabecera llevan un punto con su anillo. Un cable se resalta
+ * entero y además lleva el punto en la mitad, que es lo que permite encontrarlo
+ * con el mapa alejado, cuando la línea se confunde con las demás. Una zona
+ * lleva el borde resaltado y el punto en su interior.
+ *
+ * Son estilos fijos: se crean una vez y se reutilizan en cada redibujado.
  */
-const ESTILO_MARCADOR = [
+const MARCA_ROJA = "#dc2626"
+
+const anilloMarcador = new Style({
+  image: new CircleStyle({
+    radius: 17,
+    fill: new Fill({ color: "rgba(220, 38, 38, 0.15)" }),
+    stroke: new Stroke({ color: "rgba(220, 38, 38, 0.65)", width: 2 }),
+    declutterMode: "none",
+  }),
+})
+
+const puntoMarcador = new Style({
+  image: new CircleStyle({
+    radius: 7,
+    fill: new Fill({ color: MARCA_ROJA }),
+    stroke: new Stroke({ color: "#ffffff", width: 2.5 }),
+    declutterMode: "none",
+  }),
+})
+
+/** Centro de una línea o de un área, para colgar ahí el punto. */
+function centroDelElemento(geometria: Geometry | undefined): Point | undefined {
+  if (!geometria) return undefined
+  if (geometria instanceof LineString) return new Point(geometria.getCoordinateAt(0.5))
+  const extension = geometria.getExtent()
+  if (!extension.every((v) => Number.isFinite(v))) return undefined
+  return new Point([(extension[0] + extension[2]) / 2, (extension[1] + extension[3]) / 2])
+}
+
+const conCentro = (estilo: Style) => {
+  const copia = estilo.clone()
+  copia.setGeometry((f) => centroDelElemento((f as Feature<Geometry>).getGeometry()))
+  return copia
+}
+
+const ESTILO_MARCADOR_PUNTO = [anilloMarcador, puntoMarcador]
+
+const ESTILO_MARCADOR_LINEA = [
   new Style({
-    image: new CircleStyle({
-      radius: 13,
-      fill: new Fill({ color: "rgba(220, 38, 38, 0.16)" }),
-      stroke: new Stroke({ color: "rgba(220, 38, 38, 0.6)", width: 1.5 }),
-      declutterMode: "none",
-    }),
+    stroke: new Stroke({ color: "rgba(220, 38, 38, 0.3)", width: 12, lineCap: "round", lineJoin: "round" }),
   }),
   new Style({
-    image: new CircleStyle({
-      radius: 5,
-      fill: new Fill({ color: "#dc2626" }),
-      stroke: new Stroke({ color: "#ffffff", width: 2 }),
-      declutterMode: "none",
-    }),
+    stroke: new Stroke({ color: MARCA_ROJA, width: 3, lineDash: [10, 8], lineCap: "butt" }),
   }),
+  conCentro(anilloMarcador),
+  conCentro(puntoMarcador),
 ]
 
-export function marcadorStyle() {
-  return ESTILO_MARCADOR
+const ESTILO_MARCADOR_AREA = [
+  new Style({
+    stroke: new Stroke({ color: MARCA_ROJA, width: 2.5, lineDash: [10, 8] }),
+    fill: new Fill({ color: "rgba(220, 38, 38, 0.08)" }),
+  }),
+  conCentro(puntoMarcador),
+]
+
+export function marcadorStyle(feature: Feature<Geometry>) {
+  const tipo = feature.getGeometry()?.getType()
+  if (tipo === "LineString" || tipo === "MultiLineString") return ESTILO_MARCADOR_LINEA
+  if (tipo === "Polygon" || tipo === "MultiPolygon") return ESTILO_MARCADOR_AREA
+  return ESTILO_MARCADOR_PUNTO
+}
+
+/**
+ * Puntas de un cable, para el botón «Cable» (Consultas → Red). Mismo criterio
+ * que «Entradas y salidas», visto desde el cable: «Salida» es la punta de
+ * donde sale y «Entrada» la punta a la que llega, con los mismos colores.
+ * Llevan un anillo y la palabra escrita, para no depender solo del color. Si
+ * la función de la base manda un color, se usa ese.
+ */
+export const EXTREMO_COLORS = {
+  origen: SENTIDO_COLORS.salida,
+  destino: SENTIDO_COLORS.entrada,
+  otro: "#475569",
+} as const
+
+/** El cable consultado con el botón «Cable» se pinta de este color. */
+export const CABLE_CONSULTADO_COLOR = "#dc2626"
+
+const estilosExtremo = new Map<string, Style[]>()
+
+export function extremoStyle(feature: Feature<Geometry>) {
+  const rol = feature.get("rol") as "origen" | "destino" | null
+  const color = (feature.get("color") as string | null | undefined) ?? EXTREMO_COLORS[rol ?? "otro"]
+  const etiqueta = rol === "origen" ? "Salida" : rol === "destino" ? "Entrada" : "Extremo"
+  const clave = `${color}|${etiqueta}`
+  let estilo = estilosExtremo.get(clave)
+  if (!estilo) {
+    estilo = [
+      new Style({
+        image: new CircleStyle({
+          radius: 14,
+          fill: new Fill({ color: "rgba(255, 255, 255, 0.35)" }),
+          stroke: new Stroke({ color, width: 3.5 }),
+          declutterMode: "none",
+        }),
+        text: new TextStyle({
+          text: etiqueta,
+          offsetY: 26,
+          font: "700 11px Inter, sans-serif",
+          fill: new Fill({ color }),
+          stroke: new Stroke({ color: "#ffffff", width: 3.5 }),
+        }),
+      }),
+    ]
+    estilosExtremo.set(clave, estilo)
+  }
+  return estilo
 }
 
 /**

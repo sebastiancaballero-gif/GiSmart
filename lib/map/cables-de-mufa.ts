@@ -5,7 +5,7 @@ import { fetchConSesion } from "@/lib/auth"
  * salidas» (ribbon: Consultas → Red).
  *
  * Mismo reparto que la conectividad fina: GISmart manda el UUID de la
- * cubierta, la función `geo_fiber.fn_obtener_conectividad_cables` de Carlos
+ * cubierta, la función `geo_fiber.fn_generar_conectividad_cables` de Carlos
  * decide qué cable entra, cuál sale y de qué color se pinta, y el mapa solo lo
  * dibuja. Aurelio pidió usarla ya, aunque el sentido que calcula todavía no
  * esté bien.

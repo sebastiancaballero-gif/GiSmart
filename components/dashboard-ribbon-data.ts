@@ -11,6 +11,8 @@ import {
 export type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
+  /** Texto de la etiqueta emergente, cuando el botón necesita explicarse más que su nombre. */
+  tooltip?: string
   onClick?: () => void
   disabled?: boolean
   variant?: "default" | "primary" | "destructive"
@@ -88,6 +90,7 @@ export const RIBBON_TABS: RibbonTab[] = [
         items: [
           { icon: GitBranch, label: "Conectividad fina" },
           { icon: ArrowLeftRight, label: "Entradas y salidas" },
+          { icon: Cable, label: "Cable", tooltip: "Extremos de un cable" },
         ],
       },
     ],

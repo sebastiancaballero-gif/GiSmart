@@ -17,10 +17,11 @@ import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbol
  * Se pliega porque en pantallas chicas tapaba una esquina útil del mapa. Como
  * abierto o cerrado no le importa a nadie más, ese estado se queda aquí.
  *
- * `sentido` agrega los colores de «Entradas y salidas» mientras esa
- * herramienta está activa: son los únicos momentos en que aparecen en el mapa.
+ * `sentido` y `extremos` agregan los colores de «Entradas y salidas» y de
+ * «Cable» mientras esas herramientas están activas: son los únicos momentos en
+ * que aparecen en el mapa.
  */
-export function MapLegend({ sentido = false }: { sentido?: boolean }) {
+export function MapLegend({ sentido = false, extremos = false }: { sentido?: boolean; extremos?: boolean }) {
   const [abierta, setAbierta] = useState(true)
 
   return (
@@ -79,6 +80,25 @@ export function MapLegend({ sentido = false }: { sentido?: boolean }) {
               </span>
               <span className="text-[10px] leading-tight text-muted-foreground">
                 Según la función de cables de la base
+              </span>
+            </>
+          )}
+
+          {extremos && (
+            <>
+              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Cable consultado
+              </span>
+              <span className="flex items-center gap-2">
+                <FiberSymbol color={SENTIDO_COLORS.salida} width={4} size={14} />
+                Tramo de salida
+              </span>
+              <span className="flex items-center gap-2">
+                <FiberSymbol color={SENTIDO_COLORS.entrada} width={4} size={14} />
+                Tramo de entrada
+              </span>
+              <span className="text-[10px] leading-tight text-muted-foreground">
+                Naranja del lado de donde sale, verde del lado al que entra
               </span>
             </>
           )}

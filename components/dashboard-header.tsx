@@ -6,10 +6,17 @@ import { ArrowLeft, Search, LogOut, MapPin, Sun, Moon, Loader2 } from "lucide-re
 import { Input } from "@/components/ui/input"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { getCurrentTheme, toggleTheme } from "@/lib/theme"
-import { fetchConSesion } from "@/lib/auth"
+import { fetchConSesion, getUser } from "@/lib/auth"
 import { Tooltip } from "@/components/ui/tooltip"
 
 type SearchResult = { label: string; lat: number; lon: number }
+
+/** Iniciales para el avatar: «Sebastián Caballero» → «SC», «dario» → «DA». */
+function iniciales(nombre: string): string {
+  const palabras = nombre.trim().split(/\s+/).filter(Boolean)
+  if (palabras.length >= 2) return (palabras[0][0] + palabras[1][0]).toUpperCase()
+  return nombre.trim().slice(0, 2).toUpperCase()
+}
 
 export function DashboardHeader({
   title = "Mapa de Red · Despliegue de Fibra",
@@ -29,6 +36,9 @@ export function DashboardHeader({
   // El tema real lo aplica el script del layout antes del primer pintado; aquí
   // solo se sincroniza el icono después de montar, para no romper la hidratación.
   const [isDark, setIsDark] = useState(false)
+  // Quién está conectado. Vive en el navegador (lo guarda el login), así que
+  // se lee después de montar, igual que el tema.
+  const [nombreUsuario, setNombreUsuario] = useState<string | null>(null)
 
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -43,6 +53,9 @@ export function DashboardHeader({
     // navegador, así que no hay forma de saberlo antes de montar.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDark(getCurrentTheme() === "dark")
+    const usuario = getUser() as { nombre?: unknown; usuario?: unknown } | null
+    const nombre = typeof usuario?.nombre === "string" ? usuario.nombre : typeof usuario?.usuario === "string" ? usuario.usuario : null
+    setNombreUsuario(nombre && nombre.trim() ? nombre.trim() : null)
   }, [])
 
   // Busca mientras se escribe, con retardo para no consultar en cada tecla.
@@ -180,6 +193,21 @@ export function DashboardHeader({
             {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
         </Tooltip>
+
+        {nombreUsuario && (
+          <div className="hidden items-center gap-2 border-l border-border pl-3 sm:flex" title={`Conectado como ${nombreUsuario}`}>
+            <span
+              aria-hidden="true"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold tracking-wide text-primary-foreground shadow-sm"
+            >
+              {iniciales(nombreUsuario)}
+            </span>
+            <span className="hidden max-w-[10rem] flex-col leading-tight lg:flex">
+              <span className="truncate text-sm font-semibold text-foreground">{nombreUsuario}</span>
+              <span className="text-[11px] text-muted-foreground">Sesión activa</span>
+            </span>
+          </div>
+        )}
 
         <button
           type="button"

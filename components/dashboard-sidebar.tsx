@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Eye, EyeOff, Ruler, ChevronLeft, ChevronRight, Layers, Crosshair, FilterX } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { GismartMark } from "@/components/gismart-mark"
+import { GismartLogo } from "@/components/gismart-mark"
 import { CabeceraSymbol, FiberSymbol, MufaSymbol, ZonaSymbol } from "@/components/map-symbols"
 import { Tooltip } from "@/components/ui/tooltip"
 
@@ -161,14 +161,11 @@ function SidebarExpandedContent({
     <div className="flex h-full w-64 flex-col animate-gismart-fade-in">
       {/* Header */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
-        <div className="flex items-center gap-2.5">
-          <GismartMark className="size-9 shrink-0 rounded-lg shadow-sm" />
-          <div className="leading-tight">
-            <p className="text-[15px] font-bold tracking-tight text-foreground">GiSmart</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              SIG · Red FTTH
-            </p>
-          </div>
+        <div className="flex flex-col gap-1">
+          <GismartLogo tamanoMarca="h-7" tamanoNombre="text-lg" />
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            SIG · Red FTTH
+          </p>
         </div>
         <Tooltip label="Contraer panel">
           <button
@@ -183,8 +180,8 @@ function SidebarExpandedContent({
 
       {/* Capas */}
       <div className="flex-1 overflow-y-auto p-3">
-        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
-          <Layers className="size-4 text-primary" />
+        <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          <Layers className="size-3.5 text-primary" />
           Capas de red
         </div>
 
@@ -370,19 +367,20 @@ function SidebarExpandedContent({
           })}
         </div>
 
-        {/* Stats */}
-        <div className="mt-3 rounded-lg bg-secondary px-3 py-2.5">
-          <div className="flex items-center gap-2 text-xs text-secondary-foreground">
+        {/* Fibra total: el dato que resume la red, así que se lee grande. */}
+        <div className="mt-4 rounded-xl bg-gradient-to-br from-primary/12 to-primary/5 px-3.5 py-3 ring-1 ring-primary/15">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <Ruler className="size-3.5 text-primary" />
-            <span>Fibra total</span>
-            {loading ? (
-              <span className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" aria-label="Calculando" />
-            ) : (
-              <span className="ml-auto font-bold tabular-nums text-primary">
-                {totalKm.toFixed(2)} km
-              </span>
-            )}
+            Fibra total
           </div>
+          {loading ? (
+            <span className="mt-1.5 block h-7 w-28 animate-pulse rounded bg-muted" aria-label="Calculando" />
+          ) : (
+            <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-foreground">
+              {totalKm.toFixed(2)}
+              <span className="ml-1 text-sm font-semibold text-muted-foreground">km</span>
+            </p>
+          )}
 
           {/* Con un filtro puesto, «Fibra total» sigue siendo la red entera y
               no lo que se ve. Esta línea aparece solo cuando difieren, para
@@ -402,8 +400,9 @@ function SidebarExpandedContent({
       </div>
 
       {/* Footer info */}
-      <div className="border-t border-border px-4 py-3 text-[10px] text-muted-foreground">
+      <div className="border-t border-border px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">
         <p>Sistema de Información Geográfica</p>
+        <p className="font-semibold text-foreground/70">G&amp;G Technology SAS</p>
       </div>
     </div>
   )

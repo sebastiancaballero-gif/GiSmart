@@ -78,9 +78,23 @@ export default function DashboardPage() {
       onEditGeometry: () => setTool("edit"),
       onConnectivity: () => setTool("conectividad"),
       onSentido: () => setTool("sentido"),
+      onCable: () => setTool("cable"),
     }),
     [],
   )
+
+  // Botón del ribbon que corresponde a la herramienta activa, para que se vea
+  // encendido mientras se usa.
+  const botonesActivos = useMemo(() => {
+    const porHerramienta: Partial<Record<MapTool, string[]>> = {
+      conectividad: ["Conectividad fina"],
+      sentido: ["Entradas y salidas"],
+      cable: ["Cable"],
+      "measure-length": ["Mediciones"],
+      "measure-area": ["Mediciones"],
+    }
+    return porHerramienta[tool] ?? []
+  }, [tool])
 
   const handleCenterChange = useCallback((next: { lon: number; lat: number }) => {
     // Se redondea a ~100 m: evita relanzar la consulta por microdesplazamientos
@@ -143,7 +157,7 @@ export default function DashboardPage() {
     <AuthGuard>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
         <DashboardHeader subtitle={location} onNavigate={handleNavigate} />
-        <DashboardRibbon actions={ribbonActions} />
+        <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
         <div className="flex flex-1 overflow-hidden">
           <DashboardSidebar
             layers={layers}

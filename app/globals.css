@@ -82,74 +82,78 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/*
+ * Tema oscuro: los mismos azules de la marca que el claro, muy apagados. Antes
+ * era un gris neutro sin matiz y la aplicación parecía otra al cambiar de tema.
+ */
 .dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --background: oklch(0.165 0.02 255);
+  --foreground: oklch(0.965 0.008 250);
+  --card: oklch(0.215 0.025 255);
+  --card-foreground: oklch(0.965 0.008 250);
+  --popover: oklch(0.215 0.025 255);
+  --popover-foreground: oklch(0.965 0.008 250);
   --primary: oklch(0.65 0.185 250);
   --primary-foreground: oklch(0.99 0.01 240);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.27 0.03 255);
+  --secondary-foreground: oklch(0.965 0.008 250);
+  --muted: oklch(0.26 0.025 255);
+  --muted-foreground: oklch(0.72 0.03 250);
+  --accent: oklch(0.285 0.035 255);
+  --accent-foreground: oklch(0.965 0.008 250);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(0.85 0.04 250 / 12%);
+  --input: oklch(0.85 0.04 250 / 16%);
   --ring: oklch(0.65 0.185 250);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: oklch(0.215 0.025 255);
+  --sidebar-foreground: oklch(0.965 0.008 250);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-accent: oklch(0.285 0.035 255);
+  --sidebar-accent-foreground: oklch(0.965 0.008 250);
+  --sidebar-border: oklch(0.85 0.04 250 / 12%);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
+    --background: oklch(0.165 0.02 255);
+    --foreground: oklch(0.965 0.008 250);
+    --card: oklch(0.215 0.025 255);
+    --card-foreground: oklch(0.965 0.008 250);
+    --popover: oklch(0.215 0.025 255);
+    --popover-foreground: oklch(0.965 0.008 250);
     --primary: oklch(0.65 0.185 250);
     --primary-foreground: oklch(0.99 0.01 240);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.27 0.03 255);
+    --secondary-foreground: oklch(0.965 0.008 250);
+    --muted: oklch(0.26 0.025 255);
+    --muted-foreground: oklch(0.72 0.03 250);
+    --accent: oklch(0.285 0.035 255);
+    --accent-foreground: oklch(0.965 0.008 250);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    --border: oklch(0.85 0.04 250 / 12%);
+    --input: oklch(0.85 0.04 250 / 16%);
     --ring: oklch(0.65 0.185 250);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar: oklch(0.215 0.025 255);
+    --sidebar-foreground: oklch(0.965 0.008 250);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-accent: oklch(0.285 0.035 255);
+    --sidebar-accent-foreground: oklch(0.965 0.008 250);
+    --sidebar-border: oklch(0.85 0.04 250 / 12%);
     --sidebar-ring: oklch(0.556 0 0);
   }
 }
@@ -187,6 +191,83 @@
 
 .animate-gismart-fade-in {
   animation: gismart-fade-in 0.18s ease-out;
+}
+
+/*
+ * Nombre del logo («GiSmart»): el degradado de la marca, del turquesa al azul.
+ * En el tema oscuro se aclara para que se lea sobre la tarjeta; la variante
+ * `-claro` es para fondos que siempre son oscuros.
+ */
+.gismart-nombre,
+.gismart-nombre-claro {
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gismart-nombre {
+  background-image: linear-gradient(90deg, #1f9bc6, #2c6fa5);
+}
+
+.gismart-nombre-claro,
+.dark .gismart-nombre {
+  background-image: linear-gradient(90deg, #5cc8e6, #74aee6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .gismart-nombre {
+    background-image: linear-gradient(90deg, #5cc8e6, #74aee6);
+  }
+}
+
+/*
+ * Pulso del login: un destello que recorre la red desde la cabecera hacia las
+ * mufas, como la señal. El hueco del trazo es más largo que el recorrido, así
+ * que solo se ve un destello a la vez.
+ */
+.gismart-pulso-red {
+  stroke-dasharray: 18 520;
+  animation: gismart-pulso-red 3.2s linear infinite;
+}
+
+@keyframes gismart-pulso-red {
+  from {
+    stroke-dashoffset: 538;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/*
+ * Entrada del login: cada bloque sube y aparece, uno tras otro. El orden lo
+ * marca `--retraso` en cada elemento. `both` los deja ocultos hasta su turno.
+ */
+.gismart-entrada {
+  animation: gismart-subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--retraso, 0ms);
+}
+
+@keyframes gismart-subir {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gismart-pulso-red {
+    animation: none;
+    opacity: 0;
+  }
+
+  .gismart-entrada {
+    animation: none;
+  }
 }
 
 /*

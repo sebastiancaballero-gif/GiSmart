@@ -5,7 +5,7 @@ import { normalizarCablesDeMufa } from "@/lib/map/cables-de-mufa"
 
 /**
  * Cables de entrada y salida de una cubierta, según la función
- * `geo_fiber.fn_obtener_conectividad_cables` de Carlos.
+ * `geo_fiber.fn_generar_conectividad_cables` de Carlos.
  *
  * Va por el servidor, como la conectividad fina: la clave con la que se
  * consulta no sale nunca de aquí. Al navegador solo le llegan el UUID, la
@@ -38,7 +38,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
       db: { schema: "geo_fiber" },
     })
-    const { data, error } = await supabase.rpc("fn_obtener_conectividad_cables", { p_uuid_cubierta: id })
+    // Antes se llamaba `fn_obtener_conectividad_cables`; Carlos la renombró el
+    // 23 de septiembre de 2026, con el mismo argumento y la misma respuesta.
+    const { data, error } = await supabase.rpc("fn_generar_conectividad_cables", { p_uuid_cubierta: id })
 
     if (error) {
       console.error(`[cables ${id}] ${error.code} ${error.message}`)

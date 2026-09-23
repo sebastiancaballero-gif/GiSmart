@@ -15,11 +15,12 @@ import {
   AlertCircle,
   CheckCircle2,
   ShieldAlert,
+  Loader2,
 } from "lucide-react"
 import { saveSession } from "@/lib/auth"
 import { getCurrentTheme, toggleTheme } from "@/lib/theme"
 import { ConnectingModal } from "@/components/connecting-modal"
-import { GismartMark } from "@/components/gismart-mark"
+import { GismartLogo } from "@/components/gismart-mark"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -37,6 +38,9 @@ export function GiSmartLogin() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [connected, setConnected] = useState(false)
+  // Nombre que devuelve el servidor al entrar, para saludar en la ventana de
+  // conexión en vez de un «Conexión establecida» impersonal.
+  const [nombreBienvenida, setNombreBienvenida] = useState<string | null>(null)
   const [capsLock, setCapsLock] = useState(false)
   const [isDark, setIsDark] = useState(false)
   const [sesionCaducada, setSesionCaducada] = useState(false)
@@ -129,6 +133,7 @@ export function GiSmartLogin() {
 
       const { token, user } = await res.json()
       saveSession(token, user, data.recordar)
+      setNombreBienvenida(typeof user?.nombre === "string" ? user.nombre : null)
       setConnected(true)
       setTimeout(() => router.push("/dashboard"), 700)
     } catch {
@@ -146,25 +151,25 @@ export function GiSmartLogin() {
   return (
     // `relative z-10`: los fondos decorativos de la página van posicionados y,
     // sin esto, se pintarían por encima del formulario aunque estén antes.
-    <div className="relative z-10 w-full max-w-sm animate-gismart-fade-in">
+    <div className="gismart-entrada relative z-10 w-full max-w-[400px]">
       {/* La tarjeta va sobre el fondo con trama, así que lleva algo más de
           elevación y un filo de marca arriba para despegarse de él. */}
       <div className="overflow-hidden rounded-2xl bg-card shadow-[0_20px_50px_-12px_rgb(15_23_42/0.25)] ring-1 ring-border">
         <div
           aria-hidden="true"
-          className="h-1.5 bg-gradient-to-r from-[#2563eb] via-[#0ea5e9] to-[#2563eb]"
+          className="h-1.5 bg-gradient-to-r from-[#2a9bc4] via-[#6fc5df] to-[#2f6d9e]"
         />
 
         <div className="px-7 pb-7 pt-6">
           {/* Encabezado sobrio: la marca identifica sin acaparar la pantalla. */}
           <div className="mb-7 flex items-start justify-between gap-3">
             <div>
-              <GismartMark className="size-11 rounded-xl shadow-sm" />
-              <h1 className="mt-4 text-lg font-bold tracking-tight text-foreground">
-                Iniciar sesión
+              <GismartLogo tamanoMarca="h-10" tamanoNombre="text-[26px]" />
+              <h1 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+                Bienvenido
               </h1>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Accede al sistema de red de fibra
+                Ingresa tus credenciales para continuar
               </p>
             </div>
             <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="left">
@@ -183,10 +188,15 @@ export function GiSmartLogin() {
             {/* Usuario */}
             <div className="mb-4">
               <Label htmlFor="usuario" className="mb-1.5">
-                <User className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 Usuario
               </Label>
+              {/* El icono va dentro del campo: en la etiqueta competía con el
+                  texto, y así el campo se reconoce de un vistazo. */}
               <div className="relative">
+                <User
+                  className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="usuario"
                   type="text"
@@ -197,7 +207,7 @@ export function GiSmartLogin() {
                   placeholder="Ingresa tu usuario"
                   aria-invalid={!!errors.usuario}
                   aria-describedby={errors.usuario ? "usuario-error" : undefined}
-                  className="pr-10"
+                  className="pl-10 pr-10"
                   // Estas reglas solo evitan un viaje al servidor que ya se
                   // sabe que va a fallar: son las mismas que aplica la ruta, ni
                   // una más. Antes había además un patrón que solo aceptaba
@@ -227,10 +237,13 @@ export function GiSmartLogin() {
             {/* Contraseña */}
             <div className="mb-4">
               <Label htmlFor="contrasena" className="mb-1.5">
-                <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 Contraseña
               </Label>
               <div className="relative">
+                <Lock
+                  className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="contrasena"
                   type={showPassword ? "text" : "password"}
@@ -240,7 +253,7 @@ export function GiSmartLogin() {
                   aria-describedby={errors.contrasena ? "contrasena-error" : undefined}
                   onKeyUp={handleCaps}
                   onKeyDown={handleCaps}
-                  className="pr-16"
+                  className="pl-10 pr-16"
                   // Sin mínimo de longitud: esto es entrar, no crear una cuenta.
                   // El mínimo de 6 que había aquí dejaba fuera a quien tuviera
                   // una contraseña más corta —la columna original era
@@ -334,9 +347,15 @@ export function GiSmartLogin() {
                   : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-70"
               }`}
             >
+              {isSubmitting && !bloqueada && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {bloqueada ? `Espera ${segundosRestantes} s` : isSubmitting ? "Conectando..." : "Conectar"}
-              {!bloqueada && <ArrowRight className="size-4" />}
+              {!bloqueada && !isSubmitting && <ArrowRight className="size-4" aria-hidden="true" />}
             </button>
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+              <Lock className="size-3" aria-hidden="true" />
+              Acceso exclusivo para personal autorizado
+            </p>
             {/* Aquí había un botón «Limpiar formulario». En un formulario de
                 dos campos no aporta nada —se borran solos seleccionando— y
                 colocado justo debajo le restaba peso a «Conectar», que es la
@@ -345,14 +364,15 @@ export function GiSmartLogin() {
         </div>
       </div>
 
-      <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
+      {/* En pantallas anchas la columna de la izquierda ya dice quién es. */}
+      <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground lg:hidden">
         Sistema de Información Geográfica
         <br />
         <span className="font-medium text-foreground/70">G&amp;G Technology SAS</span>
       </p>
 
       {/* Modal de carga durante la autenticación */}
-      <ConnectingModal open={connecting} usuario={usuarioValue} done={connected} />
+      <ConnectingModal open={connecting} usuario={usuarioValue} done={connected} nombre={nombreBienvenida ?? undefined} />
     </div>
   )
 }

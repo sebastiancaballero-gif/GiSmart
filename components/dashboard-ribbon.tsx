@@ -18,9 +18,18 @@ export type RibbonActions = {
   onConnectivity?: () => void
   /** Pinta los cables de entrada y salida de una mufa (Consultas → Red). */
   onSentido?: () => void
+  /** Consulta de un cable (Consultas → Red). */
+  onCable?: () => void
 }
 
-export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
+export function DashboardRibbon({
+  actions,
+  activos = [],
+}: {
+  actions?: RibbonActions
+  /** Botones cuya herramienta está activa en el mapa: se ven encendidos. */
+  activos?: string[]
+} = {}) {
   const [activeTab, setActiveTab] = useState("inicio")
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
@@ -118,6 +127,9 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
       case "Entradas y salidas":
         actions?.onSentido?.()
         return
+      case "Cable":
+        actions?.onCable?.()
+        return
       case "Mover vértice":
       case "Editar atributos":
         actions?.onEditGeometry?.()
@@ -197,29 +209,40 @@ export function DashboardRibbon({ actions }: { actions?: RibbonActions } = {}) {
                   const Icon = isExtension && isFullscreen ? Minimize : item.icon
                   const isPrimary = item.variant === "primary" || (isExtension && isFullscreen)
                   const isDestructive = item.variant === "destructive"
+                  // Encendido mientras su herramienta está activa: antes solo lo
+                  // decía la barra de estado, abajo del mapa.
+                  const isActivo = activos.includes(item.label)
 
                   return (
-                    <Tooltip key={ii} label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label} side="bottom">
+                    <Tooltip
+                      key={ii}
+                      label={isExtension && isFullscreen ? "Salir de pantalla completa" : (item.tooltip ?? item.label)}
+                      side="bottom"
+                    >
                     <button
                       onClick={() => handleItemClick(item)}
                       disabled={item.disabled}
                       aria-label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
-                      aria-pressed={isExtension ? isFullscreen : undefined}
+                      aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
                       className={`
                         group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
                         focus-visible:ring-2 focus-visible:ring-ring/50
-                        ${isPrimary
+                        ${isActivo
+                          ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40 hover:bg-primary/20"
+                          : isPrimary
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : isDestructive
                             ? "text-destructive hover:bg-destructive/10"
                             : "text-foreground hover:bg-accent"
                         }
                         ${item.disabled ? "opacity-40 cursor-not-allowed" : ""}
-                        min-w-[60px]
+                        min-w-[64px]
                       `}
                     >
                       <Icon className="size-[18px] shrink-0" />
-                      <span className="max-w-[60px] truncate text-[10px] font-medium leading-tight">
+                      {/* Hasta dos líneas: con una sola, «Conectividad fina» o
+                          «Entradas y salidas» salían cortadas con puntos suspensivos. */}
+                      <span className="line-clamp-2 max-w-[68px] text-center text-[10px] font-medium leading-[1.15]">
                         {item.label}
                       </span>
                     </button>
