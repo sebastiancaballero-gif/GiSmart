@@ -27,7 +27,7 @@ export function MufaSchemaDialog({ open, onOpenChange, mufaName, schema }: Props
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `esquema-${mufaName || "mufa"}.json`
+    a.download = `esquema-${mufaName || "cubierta"}.json`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -41,7 +41,7 @@ export function MufaSchemaDialog({ open, onOpenChange, mufaName, schema }: Props
           </span>
           <div>
             <DialogTitle>Esquema de empalme — {mufaName}</DialogTitle>
-            <DialogDescription>Cables, buffers, hilos y bandejas de fusión de esta mufa.</DialogDescription>
+            <DialogDescription>Cables, buffers, hilos y bandejas de fusión de esta cubierta.</DialogDescription>
           </div>
         </div>
 

@@ -368,6 +368,12 @@ for (const [texto, status, cuerpo, esperado] of entradas) {
 }
 const motivo = clasificarRespuesta(200, soloEntradas).motivo
 comprobar("el motivo se puede leer tal cual", motivo === "no hay ningún cable de salida", JSON.stringify(motivo))
+comprobar(
+  "un error de la base llega con su detalle, para mostrarlo en el aviso",
+  clasificarRespuesta(502, { message: "falla", detalle: "42703: x" }).detalle === "42703: x" &&
+    clasificarRespuesta(500, null).mensaje.includes("HTTP 500") &&
+    clasificarRespuesta(200, [1]).detalle === "se esperaba un objeto JSON y llegó una lista",
+)
 
 // --- 6. todas las mufas ------------------------------------------------------
 console.log("\n6) LAS 185 MUFAS, UNA POR UNA, POR LA RUTA\n")
@@ -494,9 +500,14 @@ comprobar(
   "un error de la ruta llega como error con su mensaje",
   clasificarRespuestaCables(502, { message: "falla" }).mensaje === "falla",
 )
+comprobar(
+  "el error de la base llega con su detalle, para mostrarlo en el aviso",
+  clasificarRespuestaCables(502, { message: "falla", detalle: "42703: x" }).detalle === "42703: x" &&
+    clasificarRespuestaCables(500, null).mensaje.includes("HTTP 500"),
+)
 
 // --- 8. extremos de un cable -------------------------------------------------
-console.log("\n8) EXTREMOS DE UN CABLE (FUNCIÓN fn_obtener_extremos_cable)\n")
+console.log("\n8) EXTREMOS DE UN CABLE (FUNCIÓN fn_json_extremos_cable)\n")
 
 const { GET: GETextremos } = await import("../app/api/cables/[id]/extremos/route.ts")
 const { normalizarExtremos, clasificarRespuestaExtremos } = await import("../lib/map/extremos-cable.ts")
@@ -530,50 +541,39 @@ comprobar("id inválido: 400", (await pedirExtremos("no-es-un-uuid")).status ===
 
 // La lectura de la respuesta, con las formas que puede tener.
 {
+  // Lo que devuelve la función: PADRE es la entrada del cable e HIJO la salida.
   const geojson = normalizarExtremos({
     type: "FeatureCollection",
     features: [
       {
         type: "Feature",
-        geometry: { type: "Point", coordinates: [-76.1, 4.53] },
-        properties: { id_elemento: "m1", tipo_elemento: "CUB2", nombre: "1/2", extremo: "ORIGEN", color_resalte: "#123456" },
+        geometry: { type: "Point", coordinates: [-76.087, 4.5327] },
+        properties: { nombre: "3/4", tipo_rol: "PADRE", id_elemento: "m1", color_resalte: "#00FF00", tipo_elemento: "CUB2" },
       },
-      { type: "Feature", geometry: null, properties: { id_elemento: "m2", extremo: "DESTINO" } },
+      { type: "Feature", geometry: null, properties: { nombre: "5/6", tipo_rol: "HIJO", id_elemento: "m2", color_resalte: "#FF8C00" } },
     ],
   })
   comprobar(
-    "GeoJSON: origen y destino, con nombre, tipo, color y punto",
+    "PADRE es la entrada e HIJO la salida, con nombre, tipo, color y punto",
     geojson.length === 2 &&
-      geojson[0].rol === "origen" &&
-      geojson[0].nombre === "1/2" &&
+      geojson[0].rol === "entrada" &&
+      geojson[0].nombre === "3/4" &&
       geojson[0].tipo === "CUB2" &&
-      geojson[0].color === "#123456" &&
-      geojson[0].geometria?.coordinates[0] === -76.1 &&
-      geojson[1].rol === "destino" &&
+      geojson[0].color === "#00FF00" &&
+      geojson[0].geometria?.coordinates[0] === -76.087 &&
+      geojson[1].rol === "salida" &&
+      geojson[1].color === "#FF8C00" &&
       geojson[1].geometria === null,
   )
 
   const filas = normalizarExtremos([
-    { id_elem: "m1", tip_elem: "CUB1", posicion: "INICIO" },
-    { id_elem: "m2", tip_elem: "CUB2", posicion: "FIN" },
-  ])
-  comprobar("lista de filas: INICIO y FIN se leen como origen y destino", filas.map((e) => e.rol).join(",") === "origen,destino")
-
-  // El vocabulario de la función de cables de la mufa: la punta SALIENTE es de
-  // donde sale el cable y la ENTRANTE a donde llega.
-  const comoLaMufa = normalizarExtremos([
-    { id_elemento: "m1", tipo_direccion: "SALIENTE", color_resalte: "#FF8C00" },
-    { id_elemento: "m2", tipo_direccion: "ENTRANTE", color_resalte: "#00FF00" },
+    { id_elemento: "m1", tipo_rol: "padre" },
+    { id_elemento: "m2", tipo_rol: "Hijo" },
+    { id_elemento: "m3", tipo_rol: "OTRO" },
   ])
   comprobar(
-    "SALIENTE y ENTRANTE: la salida y la entrada del cable, con su color",
-    comoLaMufa.map((e) => `${e.rol}:${e.color}`).join(",") === "origen:#FF8C00,destino:#00FF00",
-  )
-
-  const objeto = normalizarExtremos({ origen: { id: "m1" }, destino: { id: "m2", etiqueta: "3/4" } })
-  comprobar(
-    "objeto con origen y destino",
-    objeto.length === 2 && objeto[0].rol === "origen" && objeto[1].nombre === "3/4",
+    "en una lista de filas también, sin importar mayúsculas; un rol desconocido queda sin rol",
+    filas.map((e) => String(e.rol)).join(",") === "entrada,salida,null",
   )
 
   const envuelto = normalizarExtremos({ extremos: [{ id: "m1" }, { id: "m2" }] })
@@ -597,50 +597,47 @@ comprobar("id inválido: 400", (await pedirExtremos("no-es-un-uuid")).status ===
     clasificarRespuestaExtremos(200, { extremos: [{ id: "m1" }] }).estado === "ok" &&
       clasificarRespuestaExtremos(502, { message: "falla" }).mensaje === "falla",
   )
+  comprobar(
+    "el error de la base llega con su detalle, para mostrarlo en el aviso",
+    clasificarRespuestaExtremos(502, { message: "falla", detalle: "42703: column cub.nombre does not exist" }).detalle ===
+      "42703: column cub.nombre does not exist" && clasificarRespuestaExtremos(500, null).mensaje.includes("HTTP 500"),
+  )
 }
 
-// --- 9. el cable en dos colores ----------------------------------------------
-console.log("\n9) EL BOTÓN «CABLE»: NARANJA DONDE SALE, VERDE DONDE ENTRA\n")
+// --- 9. el botón «Cable» -----------------------------------------------------
+console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n")
 
-const { partirPorLaMitad, orientarDesde } = await import("../lib/map/partir-linea.ts")
-const largo = (coords) => coords.slice(1).reduce((total, c, i) => total + Math.hypot(c[0] - coords[i][0], c[1] - coords[i][1]), 0)
-{
-  const [a, b] = partirPorLaMitad([[0, 0], [10, 0]])
-  comprobar("una recta se parte en su punto medio", JSON.stringify(a) === "[[0,0],[5,0]]" && JSON.stringify(b) === "[[5,0],[10,0]]")
-
-  const quebrada = [[0, 0], [4, 0], [4, 3], [10, 3]]
-  const [m1, m2] = partirPorLaMitad(quebrada)
-  comprobar(
-    "una línea quebrada se parte en dos mitades del mismo largo",
-    Math.abs(largo(m1) - largo(m2)) < 1e-9 && JSON.stringify(m1.at(-1)) === JSON.stringify(m2[0]),
-    `${largo(m1).toFixed(2)} y ${largo(m2).toFixed(2)}`,
-  )
-
-  comprobar(
-    "la mitad de salida empieza en la punta más cercana a la mufa de donde sale",
-    JSON.stringify(orientarDesde([[0, 0], [10, 0]], [9, 1])) === "[[10,0],[0,0]]" &&
-      JSON.stringify(orientarDesde([[0, 0], [10, 0]], [1, 1])) === "[[0,0],[10,0]]",
-  )
-  comprobar("una línea de un solo punto no revienta", partirPorLaMitad([[3, 3]]).length === 2)
-}
-
-// Con la base: un cable real, preguntado en sus dos puntas, tiene que salir
-// de una y entrar a la otra. Si no, es de los datos, no del código.
+// Con la base: el botón solo usa fn_json_extremos_cable. Para un cable real
+// tiene que decir cuál punta es la entrada (PADRE) y cuál la salida (HIJO), y
+// esas puntas tienen que ser las del cable en la capa. Si la función falla, es
+// de la base.
 {
   const [cableReal] = await (
     await fetch(`${process.env.SUPABASE_URL}/rest/v1/cable_fibra?select=id,codigo,id_elem_from,id_elem_to&codigo=eq.2103824`, {
       headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": "geo_fiber" },
     })
   ).json()
-  const puntas = [cableReal?.id_elem_from, cableReal?.id_elem_to].filter(Boolean)
-  const sentidos = await Promise.all(
-    puntas.map(async (idMufa) => ((await pedirCables(idMufa)).cuerpo?.cables ?? []).find((c) => c.id === cableReal.id)?.sentido ?? "ausente"),
-  )
-  if (sentidos.includes("salida") && sentidos.includes("entrada")) {
-    comprobar("el cable 2103824 sale de una punta y entra a la otra", true, sentidos.join(" / "))
-  } else {
+  const r = cableReal ? await pedirExtremos(cableReal.id) : { status: 0, cuerpo: null }
+  if (r.status !== 200) {
     sinDatos++
-    console.log(`   PENDIENTE  el cable 2103824 no sale de una punta y entra a la otra (${sentidos.join(" / ") || "sin puntas"}): es de los datos`)
+    console.log(`   PENDIENTE  el cable 2103824 no se puede consultar: ${r.cuerpo?.detalle ?? r.cuerpo?.message ?? "no está en la base"}`)
+  } else {
+    const extremos = r.cuerpo.extremos
+    const entrada = extremos.find((e) => e.rol === "entrada")
+    const salida = extremos.find((e) => e.rol === "salida")
+    comprobar(
+      "el cable 2103824 dice cuál punta es la entrada y cuál la salida",
+      !!entrada && !!salida,
+      extremos.map((e) => `${e.rol ?? "sin rol"} ${e.nombre ?? e.id ?? "?"}`).join(" / "),
+    )
+    comprobar(
+      "sus dos puntas son las del cable en la capa",
+      !!entrada &&
+        !!salida &&
+        new Set([entrada.id, salida.id]).size === 2 &&
+        [entrada.id, salida.id].every((idPunta) => idPunta === cableReal.id_elem_from || idPunta === cableReal.id_elem_to),
+      `entrada ${entrada?.id ?? "?"} · salida ${salida?.id ?? "?"}`,
+    )
   }
 }
 

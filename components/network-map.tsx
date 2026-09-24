@@ -55,8 +55,8 @@ import {
   marcadorStyle,
   sentidoStyle,
 } from "@/lib/map/symbology"
-import { orientarDesde, partirPorLaMitad, type Coordenada } from "@/lib/map/partir-linea"
 import { obtenerCablesDeMufa } from "@/lib/map/cables-de-mufa"
+import { obtenerExtremosDeCable, type ExtremoDeCable, type RolDeExtremo } from "@/lib/map/extremos-cable"
 import {
   CABECERA_COLOR,
   CABECERA_FIELD_LABELS,
@@ -80,7 +80,7 @@ import {
   NOMBRE_VISIBLE,
   type FeatureType,
 } from "@/lib/map/symbology"
-import { loadRealCabeceras, loadRealFiberCables, loadRealMufas } from "@/lib/map/loaders"
+import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
 import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
@@ -216,9 +216,9 @@ function MapaDeRed({
   const [nameDraft, setNameDraft] = useState("")
   const [schemaOpen, setSchemaOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
-  const [fiberLoadError, setFiberLoadError] = useState<string | null>(null)
-  const [mufaLoadError, setMufaLoadError] = useState<string | null>(null)
-  const [cabeceraLoadError, setCabeceraLoadError] = useState<string | null>(null)
+  const [fiberLoadError, setFiberLoadError] = useState<ErrorDeCapa | null>(null)
+  const [mufaLoadError, setMufaLoadError] = useState<ErrorDeCapa | null>(null)
+  const [cabeceraLoadError, setCabeceraLoadError] = useState<ErrorDeCapa | null>(null)
   const [baseMapError, setBaseMapError] = useState(false)
   const [connectivityOpen, setConnectivityOpen] = useState(false)
   const [connectivitySchema, setConnectivitySchema] = useState<MufaCampoJSON | null>(null)
@@ -238,6 +238,8 @@ function MapaDeRed({
   // Sin tono es «info»: el resultado de una consulta o una indicación.
   const [avisoConsulta, setAvisoConsulta] = useState<{
     texto: string
+    /** Segunda línea: qué función se llamó y qué respondió, cuando algo falla. */
+    detalle?: string
     cargando?: boolean
     tono?: "info" | "aviso" | "error"
   } | null>(null)
@@ -332,7 +334,11 @@ function MapaDeRed({
           tono: "aviso",
         })
       } else {
-        setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
+        setAvisoConsulta({
+          texto: `${nombre}: ${resultado.mensaje}`,
+          detalle: `get_json_conectividad_cubierta${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+          tono: "error",
+        })
       }
     },
     [pedirConectividad],
@@ -896,16 +902,16 @@ function MapaDeRed({
     }
 
     if (tool === "cable") {
-      // Consulta de cable (ribbon: Consultas → Red → «Cable»). Lo mismo que
-      // «Entradas y salidas», pero desde el cable: se pinta en naranja la mitad
-      // junto a la mufa de donde sale y en verde la mitad junto a la mufa a la
-      // que entra, y sus puntas se marcan «Salida» y «Entrada».
+      // Consulta de cable (ribbon: Consultas → Red → «Cable»). El cable pulsado
+      // se pinta de rojo y sus dos puntas se marcan: «Entrada» en la mufa padre
+      // y «Salida» en la mufa hija, con los colores de la leyenda. Se probó a
+      // pintar el cable en dos colores y el equipo lo encontró enredado: el
+      // color va solo en las mufas.
       //
-      // Un cable es salida de una mufa y entrada de otra, así que el sentido se
-      // pregunta en sus dos puntas a la misma función de «Entradas y salidas»
-      // (`fn_generar_conectividad_cables`). La función propia del cable,
-      // `fn_obtener_extremos_cable`, falla todavía en la base; su ruta queda
-      // lista (app/api/cables/[id]/extremos) para cuando la arreglen.
+      // Cuál es la entrada y cuál la salida lo dice solo la función propia del
+      // cable, `fn_json_extremos_cable` (ruta app/api/cables/[id]/extremos).
+      // Si falla, el cable queda en rojo y el aviso muestra el error; no se le
+      // pregunta a ninguna otra función.
       //
       // Si se pulsan dos cables seguidos, solo cuenta el último; y nada de lo
       // que llegue después de cambiar de herramienta.
@@ -916,11 +922,69 @@ function MapaDeRed({
       const elementoDelMapa = (idElemento: string) => {
         for (const fuente of [nodeSource, cabeceraSource]) {
           const encontrado = fuente.getFeatures().find((f) => f.get("id") === idElemento)
-          if (encontrado) return { feature: encontrado, esMufa: fuente === nodeSource }
+          if (encontrado) return encontrado
         }
         return null
       }
       const nombreDe = (f: Feature<Geometry>) => (f.get(NOMBRE_VISIBLE) as string | undefined) ?? "un elemento sin nombre"
+
+      /**
+       * Marca las puntas con lo que devolvió `fn_json_extremos_cable` y deja
+       * el aviso. Si la respuesta no alcanza para marcar las dos puntas, no se
+       * da por buena: el aviso sale en ámbar y dice qué llegó, para saber que
+       * algo falta y no creer que todo salió bien.
+       */
+      const marcarConExtremos = (extremos: ExtremoDeCable[], datos: string) => {
+        const recibido =
+          extremos.length === 0
+            ? "fn_json_extremos_cable no devolvió ninguna punta"
+            : `fn_json_extremos_cable devolvió: ${extremos
+                .map((e) => `${e.nombre ?? e.id ?? "sin id"} (${e.rol ?? "no dice si es entrada o salida"})`)
+                .join(", ")}`
+
+        const marcadas: { rol: RolDeExtremo; nombre: string }[] = []
+        for (const extremo of extremos) {
+          if (!extremo.rol) continue
+          const enMapa = extremo.id ? elementoDelMapa(extremo.id) : null
+          const geometria =
+            enMapa?.getGeometry() ??
+            (extremo.geometria ? new Point(fromLonLat(extremo.geometria.coordinates)) : null)
+          if (!geometria) continue
+          // El color de la función coincide con la leyenda (PADRE, la entrada,
+          // en verde; HIJO, la salida, en naranja); si no manda uno, el de la
+          // leyenda.
+          const color = extremo.color ?? SENTIDO_COLORS[extremo.rol]
+          extremosSource.addFeature(new Feature({ geometry: geometria, rol: extremo.rol, color }))
+          marcadas.push({
+            rol: extremo.rol,
+            nombre: extremo.nombre ?? (enMapa ? nombreDe(enMapa) : (extremo.tipo ?? "un elemento sin nombre")),
+          })
+        }
+
+        const entrada = marcadas.find((m) => m.rol === "entrada")
+        const salida = marcadas.find((m) => m.rol === "salida")
+        if (entrada && salida) {
+          setAvisoConsulta({ texto: `${datos}: entrada en ${entrada.nombre} y salida en ${salida.nombre}.` })
+          return
+        }
+        if (entrada || salida) {
+          const parte = entrada ? `entrada en ${entrada.nombre}` : `salida en ${(salida as NonNullable<typeof salida>).nombre}`
+          const falta = entrada ? "la salida" : "la entrada"
+          setAvisoConsulta({
+            texto: `${datos}: ${parte}, pero no se pudo saber ${falta}.`,
+            detalle: recibido,
+            tono: "aviso",
+          })
+          return
+        }
+        const motivo =
+          extremos.length === 0
+            ? "la función no devolvió las puntas de este cable"
+            : extremos.some((e) => e.rol)
+              ? "las puntas que devolvió la función no están en el mapa"
+              : "la función no dice cuál punta es la entrada y cuál la salida"
+        setAvisoConsulta({ texto: `${datos}: ${motivo}.`, detalle: recibido, tono: "aviso" })
+      }
 
       const claveMover = map.on("pointermove", (evt) => {
         if (evt.dragging || !containerRef.current) return
@@ -938,8 +1002,9 @@ function MapaDeRed({
           return
         }
 
-        // Mientras llega la respuesta, el cable va en rojo para que se vea cuál
-        // se pulsó. Va en la capa de resaltes, debajo de las mufas.
+        // El cable se pinta de rojo enseguida, para que se vea cuál se pulsó.
+        // Va en la capa de resaltes, debajo de las mufas: así las marcas de sus
+        // puntas quedan a la vista.
         const geometriaCable = cable.getGeometry()
         if (geometriaCable) {
           sentidoSource.addFeature(new Feature({ geometry: geometriaCable, color: CABLE_CONSULTADO_COLOR }))
@@ -952,102 +1017,20 @@ function MapaDeRed({
           return
         }
 
-        // Sus dos puntas, según la capa de cables.
-        const puntas = [cable.get("id_elem_from"), cable.get("id_elem_to")]
-          .filter((valor): valor is string => typeof valor === "string")
-          .map((idElemento) => ({ idElemento, ...elementoDelMapa(idElemento) }))
-          .filter((punta): punta is { idElemento: string; feature: Feature<Geometry>; esMufa: boolean } => !!punta.feature)
-        const mufas = puntas.filter((punta) => punta.esMufa)
-        if (mufas.length === 0) {
-          setAvisoConsulta({ texto: `${datos}: no tiene sus puntas registradas en la base.`, tono: "aviso" })
-          return
-        }
-
-        setAvisoConsulta({ texto: `Consultando el sentido de ${datos}…`, cargando: true })
-        void Promise.all(mufas.map((punta) => obtenerCablesDeMufa(punta.idElemento).then((resultado) => ({ punta, resultado })))).then(
-          (respuestas) => {
-            // Mientras llegaba se pulsó otro cable o se cambió de herramienta.
-            if (!activa || turno !== consultas) return
-            for (const { resultado } of respuestas) {
-              if (resultado.estado === "error") {
-                setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
-                return
-              }
-            }
-
-            // Cómo ve cada mufa a este cable: si le sale o le entra.
-            const vistas = respuestas.map(({ punta, resultado }) => ({
-              punta,
-              cable: resultado.estado === "ok" ? resultado.cables.find((c) => c.id === id) : undefined,
-            }))
-            let salida = vistas.find((v) => v.cable?.sentido === "salida")
-            let entrada = vistas.find((v) => v.cable?.sentido === "entrada")
-            if (!salida && !entrada) {
-              setAvisoConsulta({ texto: `${datos}: la base no devolvió este cable en ninguna de sus puntas.`, tono: "aviso" })
-              return
-            }
-            if (vistas.length === 2 && vistas[0].cable?.sentido === vistas[1].cable?.sentido) {
-              const sentido = vistas[0].cable?.sentido === "salida" ? "salida" : "entrada"
-              setAvisoConsulta({ texto: `${datos}: la base lo marca como ${sentido} en las dos puntas.`, tono: "aviso" })
-              return
-            }
-            // Si solo se supo en una punta (la otra es la cabecera o no está en
-            // el mapa), la otra punta es la contraria.
-            const otra = (usada: (typeof puntas)[number]) => puntas.find((pt) => pt.idElemento !== usada.idElemento)
-            if (salida && !entrada) {
-              const punta = otra(salida.punta)
-              if (punta) entrada = { punta, cable: undefined }
-            }
-            if (entrada && !salida) {
-              const punta = otra(entrada.punta)
-              if (punta) salida = { punta, cable: undefined }
-            }
-
-            const colorSalida = salida?.cable?.color ?? SENTIDO_COLORS.salida
-            const colorEntrada = entrada?.cable?.color ?? SENTIDO_COLORS.entrada
-
-            // Dos mitades: la de salida arranca en la punta de donde sale.
-            const geometria = cable.getGeometry()
-            const coordenadas: Coordenada[] =
-              geometria instanceof LineString
-                ? geometria.getCoordinates()
-                : geometria?.getType() === "MultiLineString"
-                  ? (geometria as unknown as { getCoordinates(): Coordenada[][] }).getCoordinates().flat()
-                  : []
-            const puntoDe = (f: Feature<Geometry>) => {
-              const g = f.getGeometry()
-              return g instanceof Point ? g.getCoordinates() : null
-            }
-            const desde = salida ? puntoDe(salida.punta.feature) : null
-            const hasta = entrada ? puntoDe(entrada.punta.feature) : null
-            if (coordenadas.length >= 2 && (desde || hasta)) {
-              const orientadas = desde
-                ? orientarDesde(coordenadas, desde)
-                : [...orientarDesde(coordenadas, hasta as Coordenada)].reverse()
-              const [mitadSalida, mitadEntrada] = partirPorLaMitad(orientadas)
-              sentidoSource.clear()
-              sentidoSource.addFeature(new Feature({ geometry: new LineString(mitadSalida), color: colorSalida }))
-              sentidoSource.addFeature(new Feature({ geometry: new LineString(mitadEntrada), color: colorEntrada }))
-            }
-
-            // Las puntas, marcadas sobre la mufa (o la cabecera).
-            for (const [vista, rol, color] of [
-              [salida, "origen", colorSalida],
-              [entrada, "destino", colorEntrada],
-            ] as const) {
-              const g = vista?.punta.feature.getGeometry()
-              if (g) extremosSource.addFeature(new Feature({ geometry: g, rol, color }))
-            }
-
-            const recorrido =
-              salida && entrada
-                ? `sale de ${nombreDe(salida.punta.feature)} y entra a ${nombreDe(entrada.punta.feature)}`
-                : salida
-                  ? `sale de ${nombreDe(salida.punta.feature)}`
-                  : `entra a ${nombreDe((entrada as NonNullable<typeof entrada>).punta.feature)}`
-            setAvisoConsulta({ texto: `${datos}: ${recorrido}.` })
-          },
-        )
+        setAvisoConsulta({ texto: `Consultando los extremos de ${datos}…`, cargando: true })
+        void obtenerExtremosDeCable(id).then((resultado) => {
+          // Mientras llegaba se pulsó otro cable o se cambió de herramienta.
+          if (!activa || turno !== consultas) return
+          if (resultado.estado === "error") {
+            setAvisoConsulta({
+              texto: `${datos}: ${resultado.mensaje}`,
+              detalle: `fn_json_extremos_cable${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+              tono: "error",
+            })
+            return
+          }
+          marcarConExtremos(resultado.extremos, datos)
+        })
       })
 
       return () => {
@@ -1094,7 +1077,7 @@ function MapaDeRed({
         }
         setConsultada(cubierta)
 
-        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "La mufa"
+        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "La cubierta"
         const id = cubierta.get("id")
         if (typeof id !== "string") {
           setAvisoConsulta({
@@ -1109,7 +1092,11 @@ function MapaDeRed({
           // Mientras llegaba se pulsó otra mufa o se cambió de herramienta.
           if (!activa || turno !== consultas) return
           if (resultado.estado === "error") {
-            setAvisoConsulta({ texto: resultado.mensaje, tono: "error" })
+            setAvisoConsulta({
+              texto: `${nombre}: ${resultado.mensaje}`,
+              detalle: `fn_json_conectividad_cubierta${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+              tono: "error",
+            })
             return
           }
           if (resultado.cables.length === 0) {
@@ -1173,7 +1160,7 @@ function MapaDeRed({
         if (!cubierta) return
         setConsultada(cubierta)
 
-        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "la mufa"
+        const nombre = (cubierta.get(NOMBRE_VISIBLE) as string | undefined) ?? "la cubierta"
         const id = cubierta.get("id")
         if (typeof id !== "string") {
           setAvisoConsulta({
@@ -1226,7 +1213,7 @@ function MapaDeRed({
 
     if (tool === "node" || tool === "fiber" || tool === "zone") {
       const cfg = {
-        node: { source: nodeSource, type: "Point" as const, prefix: "Mufa" },
+        node: { source: nodeSource, type: "Point" as const, prefix: "Cubierta" },
         fiber: { source: fiberSource, type: "LineString" as const, prefix: "Fibra" },
         zone: { source: zoneSource, type: "Polygon" as const, prefix: "Zona" },
       }[tool]
@@ -1241,7 +1228,7 @@ function MapaDeRed({
           const start = (e.feature.getGeometry() as LineString).getFirstCoordinate()
           if (!isNearNode(start, nodeSource)) {
             draw.abortDrawing()
-            setFiberNotice("Debes iniciar el trazado sobre una mufa.")
+            setFiberNotice("Debes iniciar el trazado sobre una cubierta.")
             if (fiberNoticeTimeoutRef.current) clearTimeout(fiberNoticeTimeoutRef.current)
             fiberNoticeTimeoutRef.current = setTimeout(() => setFiberNotice(FIBER_HINT), 2800)
           }
@@ -1252,7 +1239,7 @@ function MapaDeRed({
         if (tool === "fiber") {
           const end = (e.feature.getGeometry() as LineString).getLastCoordinate()
           if (!isNearNode(end, nodeSource)) {
-            setFiberNotice("Debes terminar el trazado sobre una mufa. Inténtalo de nuevo.")
+            setFiberNotice("Debes terminar el trazado sobre una cubierta. Inténtalo de nuevo.")
             if (fiberNoticeTimeoutRef.current) clearTimeout(fiberNoticeTimeoutRef.current)
             fiberNoticeTimeoutRef.current = setTimeout(() => setFiberNotice(FIBER_HINT), 2800)
             return
@@ -1488,7 +1475,7 @@ function MapaDeRed({
   const tools: { id: MapTool; label: string; icon: typeof Hand; color?: string; separator?: boolean }[] = [
     { id: "pan", label: "Mover mapa", icon: Hand },
     { id: "edit", label: "Editar elementos", icon: Pencil },
-    { id: "node", label: "Dibujar mufa", icon: Box, color: LAYER_COLORS.node },
+    { id: "node", label: "Dibujar cubierta", icon: Box, color: LAYER_COLORS.node },
     { id: "fiber", label: "Trazar fibra", icon: Spline, color: LAYER_COLORS.fiber },
     { id: "zone", label: "Zona de cobertura", icon: Hexagon, color: LAYER_COLORS.zone },
     { id: "delete", label: "Eliminar geometría", icon: Trash2 },
@@ -1574,7 +1561,7 @@ function MapaDeRed({
     if (estadoConexiones === "sin-consultar") {
       return "Sin conectividad consultada. Usa el botón «Conectividad fina» (menú Consultas)."
     }
-    if (estadoConexiones === "no-en-base") return "Esta mufa se dibujó en el mapa y no existe en la base."
+    if (estadoConexiones === "no-en-base") return "Esta cubierta se dibujó en el mapa y no existe en la base."
     switch (consultaSeleccionada?.estado) {
       case "sin-conectividad":
         return "La base todavía no tiene cables registrados para esta cubierta."
@@ -1608,12 +1595,11 @@ function MapaDeRed({
     if (esquemaSeleccionado) setSchemaOpen(true)
   }
 
-  // Nombres de las capas que no pudieron cargar, para un único aviso.
-  const capasSinDatos = [
-    mufaLoadError ? "Mufas" : null,
-    fiberLoadError ? "Tendido de fibra" : null,
-    cabeceraLoadError ? "Cabeceras" : null,
-  ].filter((capa): capa is string => capa !== null)
+  // Las capas que no pudieron cargar, para un único aviso con el porqué de cada una.
+  const capasSinDatos: { capa: string; error: ErrorDeCapa }[] = []
+  if (mufaLoadError) capasSinDatos.push({ capa: "Cubiertas", error: mufaLoadError })
+  if (fiberLoadError) capasSinDatos.push({ capa: "Tendido de fibra", error: fiberLoadError })
+  if (cabeceraLoadError) capasSinDatos.push({ capa: "Cabeceras", error: cabeceraLoadError })
 
   function descartarAvisosDeCarga() {
     setMufaLoadError(null)
@@ -1697,9 +1683,14 @@ function MapaDeRed({
           <MapNotice tono="aviso" onCerrar={descartarAvisosDeCarga}>
             <span>
               Sin datos disponibles:{" "}
-              <span className="font-semibold">{capasSinDatos.join(", ")}</span>. El resto del
-              mapa funciona normalmente.
+              <span className="font-semibold">{capasSinDatos.map(({ capa }) => capa).join(", ")}</span>. El
+              resto del mapa funciona normalmente.
             </span>
+            {capasSinDatos.map(({ capa, error }) => (
+              <span key={capa} className="mt-1 block break-words font-mono text-[11px] font-normal text-muted-foreground">
+                {capa}: {error.detalle ?? error.mensaje}
+              </span>
+            ))}
           </MapNotice>
         )}
 
@@ -1722,6 +1713,11 @@ function MapaDeRed({
             onCerrar={avisoConsulta.cargando ? undefined : () => setAvisoConsulta(null)}
           >
             <span>{avisoConsulta.texto}</span>
+            {avisoConsulta.detalle && (
+              <span className="mt-1 block break-words font-mono text-[11px] font-normal text-muted-foreground">
+                {avisoConsulta.detalle}
+              </span>
+            )}
           </MapNotice>
         )}
 
@@ -1948,7 +1944,7 @@ function MapaDeRed({
         <MufaSchemaDialog
           open={schemaOpen}
           onOpenChange={setSchemaOpen}
-          mufaName={nameDraft || "Mufa"}
+          mufaName={nameDraft || "Cubierta"}
           // Solo se abre después de traer la conectividad de la base, así que
           // aquí ya está; ya no hay esquema de ejemplo como respaldo.
           schema={esquemaSeleccionado}
@@ -1959,7 +1955,7 @@ function MapaDeRed({
         <InfoTableDialog
           open={infoOpen}
           onOpenChange={setInfoOpen}
-          title={`Información de la cubierta — ${nameDraft || "Mufa"}`}
+          title={`Información de la cubierta — ${nameDraft || "Cubierta"}`}
           description="Datos de geo_fiber.cubierta_empalme."
           fieldLabels={MUFA_FIELD_LABELS}
           data={selected.feature.getProperties()}
@@ -1992,9 +1988,9 @@ function MapaDeRed({
       <ConfirmDialog
         open={mufaPendiente !== null}
         icono={Box}
-        titulo="¿Agregar esta mufa?"
+        titulo="¿Agregar esta cubierta?"
         descripcion={`Se colocará «${nombreEnPregunta}» en el punto que marcaste. Queda solo en el mapa: todavía no se guarda en la base de datos.`}
-        textoConfirmar="Agregar mufa"
+        textoConfirmar="Agregar cubierta"
         onConfirmar={confirmarMufa}
         onCancelar={cancelarMufa}
       />
@@ -2008,7 +2004,7 @@ function MapaDeRed({
           setConnectivityOpen(false)
           setIntentoDibujo((n) => n + 1)
           setAvisoConsulta({
-            texto: "No se pudo dibujar la conectividad de esta mufa: el JSON no tiene la forma que espera el esquemático.",
+            texto: "No se pudo dibujar la conectividad de esta cubierta: el JSON no tiene la forma que espera el esquemático.",
             tono: "error",
           })
         }}

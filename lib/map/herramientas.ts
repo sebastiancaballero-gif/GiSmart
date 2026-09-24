@@ -29,8 +29,8 @@ export type MapTool =
    */
   | "sentido"
   /**
-   * Consulta de un cable: lo pinta en dos colores, naranja del lado de donde
-   * sale y verde del lado al que entra. Se activa desde el ribbon
+   * Consulta de un cable: lo pinta de rojo y marca sus dos mufas, la de
+   * entrada (padre) y la de salida (hija). Se activa desde el ribbon
    * (Consultas → Red) y no tiene atajo.
    */
   | "cable"
@@ -45,13 +45,13 @@ export type MapTool =
  */
 export const TOOL_HINTS: Partial<Record<MapTool, string>> = {
   fiber: FIBER_HINT,
-  node: "Click para agregar una mufa. Lo dibujado no se guarda en la base todavía.",
+  node: "Click para agregar una cubierta. Lo dibujado no se guarda en la base todavía.",
   zone: "Click para dibujar la zona y doble click para terminar. No se guarda en la base todavía.",
   edit: "Click para consultar o corregir. Los cambios no se guardan en la base todavía.",
   delete: "Click sobre un elemento para quitarlo del mapa. No se borra de la base de datos.",
   conectividad: "Click sobre una cubierta de empalme para ver su conectividad. Otros elementos se ignoran.",
-  sentido: "Click sobre una mufa: sus cables de entrada y de salida quedan resaltados con los colores de la leyenda. Click sobre un cable para identificarlo. Click fuera para quitar la marca.",
-  cable: "Click sobre un cable: se pinta en naranja del lado de donde sale y en verde del lado al que entra. Click fuera para quitarlo.",
+  sentido: "Click sobre una cubierta: sus cables de entrada y de salida quedan resaltados con los colores de la leyenda. Click sobre un cable para identificarlo. Click fuera para quitar la marca.",
+  cable: "Click sobre un cable: se pinta de rojo y se marcan sus dos cubiertas, la de entrada y la de salida. Click fuera para quitarlo.",
 }
 
 /** Orden de la barra de herramientas; define también los atajos 1..8. */

@@ -76,8 +76,15 @@ export function DashboardHeader({
       setSearching(true)
       try {
         const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(term)}`)
-        const data = await res.json()
+        const data = await res.json().catch(() => null)
         if (cancelled) return
+        // Antes un fallo del servicio se leía como «Sin resultados.».
+        if (!res.ok) {
+          setResults([])
+          setSearchError(`No se pudo buscar: ${data?.message ?? `el servidor respondió ${res.status}`}`)
+          setOpenResults(true)
+          return
+        }
         const found = (data?.results ?? []) as SearchResult[]
         setResults(found)
         setSearchError(found.length === 0 ? "Sin resultados." : null)

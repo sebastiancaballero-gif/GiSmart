@@ -28,7 +28,7 @@ export type FeatureType = "node" | "fiber" | "zone" | "cabecera"
 export const NOMBRE_VISIBLE = "nombre_visible"
 
 export const TYPE_LABELS: Record<FeatureType, string> = {
-  node: "Mufa",
+  node: "Cubierta",
   fiber: "Fibra",
   zone: "Zona",
   cabecera: "Cabecera central",
@@ -198,7 +198,7 @@ export const MUFA_LABEL_MAX_RESOLUTION = 2.5
 export const FIBER_LABEL_MAX_RESOLUTION = 5
 
 export const FIBER_HINT =
-  "Click sobre una mufa para iniciar el trazado y sobre otra para terminarlo. Esc cancela. No se guarda en la base todavía."
+  "Click sobre una cubierta para iniciar el trazado y sobre otra para terminarlo. Esc cancela. No se guarda en la base todavía."
 
 // La fibra siempre debe unir dos mufas: exige que el punto quede exactamente
 // sobre una (el Snap hacia nodeSource hace que esto sea fácil de lograr).
@@ -263,7 +263,7 @@ function simbolosCacheados(clave: string, crear: () => Style[]): Style[] {
 }
 
 export function nodeStyle(feature: Feature<Geometry>, resolution: number) {
-  const label = (feature.get(NOMBRE_VISIBLE) as string) ?? "Mufa"
+  const label = (feature.get(NOMBRE_VISIBLE) as string) ?? "Cubierta"
   const funcionCub = feature.get("funcion_cub") as string | undefined
   const color = colorForFuncionCub(funcionCub)
   const { escala, zIndex } = jerarquiaDeMufa(funcionCub)
@@ -615,15 +615,14 @@ export function marcadorStyle(feature: Feature<Geometry>) {
 }
 
 /**
- * Puntas de un cable, para el botón «Cable» (Consultas → Red). Mismo criterio
- * que «Entradas y salidas», visto desde el cable: «Salida» es la punta de
- * donde sale y «Entrada» la punta a la que llega, con los mismos colores.
- * Llevan un anillo y la palabra escrita, para no depender solo del color. Si
- * la función de la base manda un color, se usa ese.
+ * Puntas de un cable, para el botón «Cable» (Consultas → Red): «Entrada» en la
+ * mufa padre y «Salida» en la hija, con los colores de la leyenda (entrada
+ * verde, salida naranja). Llevan un anillo y la palabra escrita, para no
+ * depender solo del color. Si la función de la base manda un color, se usa ese.
  */
 export const EXTREMO_COLORS = {
-  origen: SENTIDO_COLORS.salida,
-  destino: SENTIDO_COLORS.entrada,
+  entrada: SENTIDO_COLORS.entrada,
+  salida: SENTIDO_COLORS.salida,
   otro: "#475569",
 } as const
 
@@ -633,9 +632,9 @@ export const CABLE_CONSULTADO_COLOR = "#dc2626"
 const estilosExtremo = new Map<string, Style[]>()
 
 export function extremoStyle(feature: Feature<Geometry>) {
-  const rol = feature.get("rol") as "origen" | "destino" | null
+  const rol = feature.get("rol") as "entrada" | "salida" | null
   const color = (feature.get("color") as string | null | undefined) ?? EXTREMO_COLORS[rol ?? "otro"]
-  const etiqueta = rol === "origen" ? "Salida" : rol === "destino" ? "Entrada" : "Extremo"
+  const etiqueta = rol === "entrada" ? "Entrada" : rol === "salida" ? "Salida" : "Extremo"
   const clave = `${color}|${etiqueta}`
   let estilo = estilosExtremo.get(clave)
   if (!estilo) {

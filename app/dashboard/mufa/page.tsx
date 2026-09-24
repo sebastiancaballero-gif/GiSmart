@@ -19,7 +19,7 @@ const MufaSchematic = dynamic(
       <div className="flex size-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <Loader2 className="size-6 animate-spin text-primary" />
-          <p className="text-sm">Cargando esquema de la mufa...</p>
+          <p className="text-sm">Cargando esquema de la cubierta...</p>
         </div>
       </div>
     ),
@@ -42,7 +42,7 @@ export default function MufaPage() {
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
         <DashboardHeader
           title="Manejo Esquemático · Conectividad Interna"
-          subtitle={`MUFA-${datos.mufa_id} · ${datos.tipo} · ${datos.estado}`}
+          subtitle={`CUBIERTA-${datos.mufa_id} · ${datos.tipo} · ${datos.estado}`}
           backHref="/dashboard"
         />
         <main className="flex-1 overflow-hidden animate-gismart-fade-in">

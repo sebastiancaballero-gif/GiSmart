@@ -4,7 +4,13 @@ import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, SENTIDO_COLORS } from "@/lib/map/symbology"
+import {
+  CABLE_CONSULTADO_COLOR,
+  EXTREMO_COLORS,
+  FUNCION_CUB_COLORS,
+  FUNCION_CUB_DEFAULT_COLOR,
+  SENTIDO_COLORS,
+} from "@/lib/map/symbology"
 import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
 
 /**
@@ -68,7 +74,7 @@ export function MapLegend({ sentido = false, extremos = false }: { sentido?: boo
           {sentido && (
             <>
               <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Cables de la mufa
+                Cables de la cubierta
               </span>
               <span className="flex items-center gap-2">
                 <FiberSymbol color={SENTIDO_COLORS.entrada} width={4} size={14} />
@@ -90,15 +96,24 @@ export function MapLegend({ sentido = false, extremos = false }: { sentido?: boo
                 Cable consultado
               </span>
               <span className="flex items-center gap-2">
-                <FiberSymbol color={SENTIDO_COLORS.salida} width={4} size={14} />
-                Tramo de salida
+                <FiberSymbol color={CABLE_CONSULTADO_COLOR} width={4} size={14} />
+                Cable
               </span>
               <span className="flex items-center gap-2">
-                <FiberSymbol color={SENTIDO_COLORS.entrada} width={4} size={14} />
-                Tramo de entrada
+                <span
+                  className="size-3.5 shrink-0 rounded-full border-[3px]"
+                  style={{ borderColor: EXTREMO_COLORS.entrada }}
+                  aria-hidden="true"
+                />
+                Entrada (cubierta padre)
               </span>
-              <span className="text-[10px] leading-tight text-muted-foreground">
-                Naranja del lado de donde sale, verde del lado al que entra
+              <span className="flex items-center gap-2">
+                <span
+                  className="size-3.5 shrink-0 rounded-full border-[3px]"
+                  style={{ borderColor: EXTREMO_COLORS.salida }}
+                  aria-hidden="true"
+                />
+                Salida (cubierta hija)
               </span>
             </>
           )}

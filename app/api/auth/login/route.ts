@@ -184,6 +184,8 @@ export async function POST(req: NextRequest) {
           error.code === "42501"
             ? "El servidor no tiene permiso para leer los usuarios. Avisa al administrador de la base."
             : "No se pudo conectar con la base de datos. Intenta de nuevo.",
+        // Solo en desarrollo: en producción esto se ve antes de iniciar sesión.
+        ...(process.env.NODE_ENV === "production" ? {} : { detalle: `usuario_app → ${error.code}: ${error.message}` }),
         field: null,
       },
       { status: 502 },

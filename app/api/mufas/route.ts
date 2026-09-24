@@ -10,6 +10,6 @@ export async function GET(request: Request) {
     schema: "geo_fiber",
     view: "cubierta_empalme_geojson",
     table: "cubierta_empalme",
-    entidad: "las mufas",
+    entidad: "las cubiertas",
   })
 }

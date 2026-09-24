@@ -36,6 +36,8 @@ export function GiSmartLogin() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  /** Lo técnico del error del servidor (solo llega en desarrollo). */
+  const [detalleServidor, setDetalleServidor] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [connected, setConnected] = useState(false)
   // Nombre que devuelve el servidor al entrar, para saludar en la ventana de
@@ -109,6 +111,7 @@ export function GiSmartLogin() {
 
   async function onSubmit(data: FormValues) {
     setServerError(null)
+    setDetalleServidor(null)
     setConnecting(true)
     try {
       const res = await fetch("/api/auth/login", {
@@ -126,7 +129,8 @@ export function GiSmartLogin() {
         if (body.field === "usuario" || body.field === "contrasena") {
           setError(body.field, { type: "server", message: body.message })
         } else {
-          setServerError(body.message ?? "No se pudo conectar con el servidor.")
+          setServerError(body.message ?? `No se pudo conectar con el servidor (HTTP ${res.status}).`)
+          setDetalleServidor(typeof body.detalle === "string" ? body.detalle : null)
         }
         return
       }
@@ -330,6 +334,9 @@ export function GiSmartLogin() {
                   {bloqueada
                     ? `Demasiados intentos fallidos. Podrás reintentar en ${segundosRestantes} s.`
                     : serverError}
+                  {!bloqueada && detalleServidor && (
+                    <span className="mt-1 block break-words font-mono text-[11px] opacity-80">{detalleServidor}</span>
+                  )}
                 </span>
               </div>
             )}

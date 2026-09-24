@@ -259,6 +259,22 @@
   }
 }
 
+/* Ondas que salen de la marca en la ventana de conexión del login. */
+.gismart-onda {
+  animation: gismart-onda 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes gismart-onda {
+  from {
+    opacity: 0.7;
+    transform: scale(0.75);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gismart-pulso-red {
     animation: none;
@@ -267,6 +283,11 @@
 
   .gismart-entrada {
     animation: none;
+  }
+
+  .gismart-onda {
+    animation: none;
+    opacity: 0;
   }
 }
 

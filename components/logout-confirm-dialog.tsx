@@ -21,7 +21,7 @@ export function LogoutConfirmDialog({ open, onOpenChange }: Props) {
           <div>
             <DialogTitle>¿Cerrar sesión?</DialogTitle>
             <DialogDescription>
-              Vas a salir del sistema. Las mufas, la fibra y las zonas que hayas dibujado y no estén guardadas se perderán.
+              Vas a salir del sistema. Las cubiertas, la fibra y las zonas que hayas dibujado y no estén guardadas se perderán.
             </DialogDescription>
           </div>
         </div>
