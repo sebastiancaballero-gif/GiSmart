@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic"
 import { Loader2, X } from "lucide-react"
 
+import type { ModoConectividad } from "@/lib/map/conectividad"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 
@@ -27,9 +28,16 @@ type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   schema: MufaCampoJSON | null
+  /**
+   * Para qué se abre el esquema. Va aparte del JSON a propósito: la función de
+   * la base genera la conectividad sin saber para qué se va a usar (ver
+   * `lib/map/conectividad.ts`). Hoy sólo se dibuja, así que ambos modos se ven
+   * igual; queda declarado para que el mapa no tenga que forzar el tipo.
+   */
+  modo?: ModoConectividad
 }
 
-export function MufaConnectivityModal({ open, onOpenChange, schema }: Props) {
+export function MufaConnectivityModal({ open, onOpenChange, schema, modo = "consulta" }: Props) {
   if (!schema) return null
 
   return (
@@ -48,7 +56,7 @@ export function MufaConnectivityModal({ open, onOpenChange, schema }: Props) {
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            <MufaSchematic datos={schema} />
+            <MufaSchematic datos={schema} modo={modo} />
           </div>
         </div>
       </DialogContent>

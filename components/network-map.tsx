@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback, memo, type ComponentProps, type ComponentType } from "react"
+import { useEffect, useRef, useState, useCallback, memo } from "react"
 import "ol/ol.css"
 import Map from "ol/Map"
 import View from "ol/View"
@@ -98,7 +98,6 @@ import {
   obtenerConectividad,
   resultadoAGuardar,
   type EstadoConectividad,
-  type ModoConectividad,
 } from "@/lib/map/conectividad"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
@@ -136,16 +135,6 @@ type SelectedFeature = {
   feature: Feature<Geometry>
   type: FeatureType
 }
-
-/**
- * El modal de conectividad es de Dario y todavía no declara `modo` entre sus
- * props. Se le pasa igual, con el tipo ampliado, para que el dato ya viaje con
- * cada apertura; cuando Dario lo declare, esto sobra y se usa
- * `MufaConnectivityModal` directamente. Su archivo no se toca desde aquí.
- */
-const ModalConectividad = MufaConnectivityModal as ComponentType<
-  ComponentProps<typeof MufaConnectivityModal> & { modo: ModoConectividad }
->
 
 function MapaDeRed({
   // Centro/zoom iniciales sobre La Unión, Valle del Cauca, donde está la red
@@ -2015,7 +2004,7 @@ function MapaDeRed({
       >
         {/* Ver conexiones es solo lectura: se le indica a Dario con `modo`,
             nunca dentro del JSON (ver lib/map/conectividad.ts). */}
-        <ModalConectividad
+        <MufaConnectivityModal
           open={connectivityOpen}
           onOpenChange={setConnectivityOpen}
           schema={connectivitySchema}

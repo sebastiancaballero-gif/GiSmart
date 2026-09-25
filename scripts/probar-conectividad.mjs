@@ -341,6 +341,8 @@ console.log("\n5) LA CLASIFICACIÓN AGUANTA CUALQUIER RESPUESTA\n")
 
 const soloEntradas = JSON.parse(JSON.stringify(MUFA_EJEMPLO))
 soloEntradas.cables = soloEntradas.cables.map((c) => ({ ...c, sentido: "Entrada" }))
+const soloSalidas = JSON.parse(JSON.stringify(MUFA_EJEMPLO))
+soloSalidas.cables = soloSalidas.cables.map((c) => ({ ...c, sentido: "Salida" }))
 const entradas = [
   ["404", 404, null, "sin-conectividad"],
   ["502 con mensaje", 502, { message: "falla la base" }, "error"],
@@ -354,7 +356,12 @@ const entradas = [
   ["200 con cables que no son lista", 200, { cables: "x" }, "sin-conectividad"],
   ["200 con un cable vacío", 200, { cables: [{}] }, "no-dibujable"],
   ["200 con un cable nulo", 200, { cables: [null] }, "no-dibujable"],
-  ["200 solo con cables de entrada", 200, soloEntradas, "no-dibujable"],
+  // Una cubierta de un solo sentido se dibuja: la terminal de segundo nivel
+  // solo recibe su cable de entrada, y el esquemático dejó de exigir los dos
+  // lados (24 de septiembre de 2026). Antes se esperaba «no-dibujable» y eso
+  // dejaba 56 de las 184 cubiertas con cables sin poder abrirse.
+  ["200 solo con cables de entrada", 200, soloEntradas, "disponible"],
+  ["200 solo con cables de salida", 200, soloSalidas, "disponible"],
   ["200 con una mufa completa", 200, MUFA_EJEMPLO, "disponible"],
 ]
 for (const [texto, status, cuerpo, esperado] of entradas) {
@@ -366,8 +373,8 @@ for (const [texto, status, cuerpo, esperado] of entradas) {
   }
   comprobar(`${texto.padEnd(34)} → ${esperado}`, r.estado === esperado, r.estado === esperado ? "" : `dio ${r.estado}`)
 }
-const motivo = clasificarRespuesta(200, soloEntradas).motivo
-comprobar("el motivo se puede leer tal cual", motivo === "no hay ningún cable de salida", JSON.stringify(motivo))
+const motivo = clasificarRespuesta(200, { cables: [{}] }).motivo
+comprobar("el motivo se puede leer tal cual", motivo === "hay un cable sin `cable_id`", JSON.stringify(motivo))
 
 // --- 6. todas las mufas ------------------------------------------------------
 console.log("\n6) LAS 185 MUFAS, UNA POR UNA, POR LA RUTA\n")
