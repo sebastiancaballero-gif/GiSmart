@@ -89,9 +89,13 @@ export async function serveGeoJsonView({
       }))
 
     return NextResponse.json({ type: "FeatureCollection", features })
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { message: `No se pudo conectar con Supabase para cargar ${entidad}.`, features: [] },
+      {
+        message: `No se pudo conectar con Supabase para cargar ${entidad}.`,
+        ...(process.env.NODE_ENV === "production" ? {} : { detalle: e instanceof Error ? e.message : String(e) }),
+        features: [],
+      },
       { status: 502 },
     )
   }
@@ -149,6 +153,7 @@ async function servirDesdeTabla({
         message:
           `Falta la vista ${schema}.${view} y tampoco se puede leer la tabla ${schema}.${table}. ` +
           `Revisa docs/base-de-datos.md para recrearla.`,
+        ...(process.env.NODE_ENV === "production" ? {} : { detalle: `${schema}.${table} → HTTP ${res.status}: ${detalle.slice(0, 300)}` }),
         features: [],
       },
       { status: 502 },
@@ -167,7 +172,7 @@ function fallo({
   schema: string
   relacion: string
   entidad: string
-  error: { message: string }
+  error: { code?: string; message: string }
 }) {
   // El detalle técnico de PostgREST viene en inglés y no le dice nada a quien
   // usa el visor: se registra en el servidor y al cliente va un mensaje
@@ -178,7 +183,7 @@ function fallo({
   return NextResponse.json(
     {
       message: `No hay datos disponibles de ${entidad} en este momento.`,
-      ...(process.env.NODE_ENV === "production" ? {} : { detalle: error.message }),
+      ...(process.env.NODE_ENV === "production" ? {} : { detalle: `${schema}.${relacion} → ${error.code ? `${error.code}: ` : ""}${error.message}` }),
       features: [],
     },
     { status: 502 },

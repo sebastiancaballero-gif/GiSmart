@@ -44,8 +44,11 @@ export type EstadoConectividad =
    * que dibujar.
    */
   | { estado: "sin-conectividad"; esquema: MufaCampoJSON | null }
-  /** No se pudo preguntar: red, permisos o la función no respondió. */
-  | { estado: "error"; mensaje: string }
+  /**
+   * No se pudo preguntar: red, permisos o la función no respondió. `detalle`
+   * es el error tal como lo dio la base (solo fuera de producción).
+   */
+  | { estado: "error"; mensaje: string; detalle?: string }
 
 /**
  * ¿Este JSON tiene conectividad que dibujar?
@@ -104,15 +107,20 @@ export function clasificarRespuesta(status: number, cuerpo: unknown): EstadoCone
   if (status === 404) return { estado: "sin-conectividad", esquema: null }
 
   if (status < 200 || status >= 300) {
-    const mensaje = (cuerpo as { message?: unknown } | null)?.message
+    const { message: mensaje, detalle } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown }
     return {
       estado: "error",
-      mensaje: typeof mensaje === "string" ? mensaje : "No se pudo obtener la conectividad de esta mufa.",
+      mensaje: typeof mensaje === "string" ? mensaje : `No se pudo obtener la conectividad de esta cubierta (HTTP ${status}).`,
+      ...(typeof detalle === "string" ? { detalle } : {}),
     }
   }
 
   if (!cuerpo || typeof cuerpo !== "object" || Array.isArray(cuerpo)) {
-    return { estado: "error", mensaje: "La base respondió algo que no es la conectividad de una mufa." }
+    return {
+      estado: "error",
+      mensaje: "La base respondió algo que no es la conectividad de una cubierta.",
+      detalle: `se esperaba un objeto JSON y llegó ${Array.isArray(cuerpo) ? "una lista" : cuerpo === null ? "null" : typeof cuerpo}`,
+    }
   }
 
   const esquema = cuerpo as MufaCampoJSON

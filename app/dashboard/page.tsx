@@ -114,11 +114,18 @@ export default function DashboardPage() {
     const timeout = setTimeout(async () => {
       try {
         const res = await fetchConSesion(`/api/reverse-geocode?lon=${center.lon}&lat=${center.lat}`)
-        if (!res.ok || cancelled) return
-        const data = await res.json()
+        if (cancelled) return
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          // Se conserva la última ubicación conocida; un aviso en pantalla por
+          // cada movimiento del mapa sería ruido, así que queda en la consola.
+          if (res.status !== 404) console.warn(`[ubicación] ${data?.message ?? `HTTP ${res.status}`}`)
+          return
+        }
         if (!cancelled && data?.label) setLocation(data.label as string)
-      } catch {
+      } catch (e) {
         // Si falla, se conserva la última ubicación conocida.
+        console.warn("[ubicación] no se pudo consultar:", e)
       }
     }, 700)
 
@@ -148,7 +155,7 @@ export default function DashboardPage() {
 
   const layers = [
     { id: "cabeceras", label: "Cabeceras", color: LAYER_COLORS.cabecera, count: counts.cabeceras, visible: visible.cabeceras, symbol: "cabecera" as const },
-    { id: "nodes", label: "Mufas", color: LAYER_COLORS.node, count: counts.nodes, visible: visible.nodes, items: breakdown.nodes, activeItems: filters.nodes, symbol: "mufa" as const },
+    { id: "nodes", label: "Cubiertas", color: LAYER_COLORS.node, count: counts.nodes, visible: visible.nodes, items: breakdown.nodes, activeItems: filters.nodes, symbol: "mufa" as const },
     { id: "fibers", label: "Tendido de fibra", color: LAYER_COLORS.fiber, count: counts.fibers, visible: visible.fibers, items: breakdown.fibers, activeItems: filters.fibers, symbol: "fibra" as const },
     { id: "zones", label: "Zonas", color: LAYER_COLORS.zone, count: counts.zones, visible: visible.zones, symbol: "zona" as const },
   ]

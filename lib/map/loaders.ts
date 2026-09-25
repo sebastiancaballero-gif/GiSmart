@@ -19,8 +19,15 @@ import { NOMBRE_VISIBLE } from "@/lib/map/symbology"
  * resolvían después de la limpieza y los datos se sumaban por duplicado
  * (por ejemplo, 370 mufas en vez de 185).
  *
- * Devuelven un mensaje de error si algo falla, o `null` si todo salió bien.
+ * Devuelven el error si algo falla, o `null` si todo salió bien.
  */
+
+/**
+ * Por qué no cargó una capa. `detalle` es lo técnico: la vista o tabla y lo que
+ * respondió la base (solo fuera de producción), o el fallo del navegador.
+ */
+export type ErrorDeCapa = { mensaje: string; detalle?: string }
+
 async function cargarCapa({
   url,
   source,
@@ -36,12 +43,19 @@ async function cargarCapa({
   nombreDe: (f: Feature<Geometry>) => string
   errorHttp: string
   errorRed: string
-}): Promise<string | null> {
+}): Promise<ErrorDeCapa | null> {
   try {
     const res = await fetchConSesion(url)
-    const data = await res.json()
+    // Una respuesta de error puede no ser JSON (una página 500): sin este
+    // `catch` caía como si fuera un fallo de conexión.
+    const data = await res.json().catch(() => null)
     if (isCancelled()) return null
-    if (!res.ok) return (data?.message as string) ?? errorHttp
+    if (!res.ok) {
+      return {
+        mensaje: typeof data?.message === "string" ? data.message : `${errorHttp} (HTTP ${res.status})`,
+        detalle: typeof data?.detalle === "string" ? data.detalle : `${url} → HTTP ${res.status}`,
+      }
+    }
 
     const features = new GeoJSON().readFeatures(data, {
       dataProjection: "EPSG:4326",
@@ -59,7 +73,7 @@ async function cargarCapa({
     // capa entera). Sin registrarlo no había forma de distinguir un caso del
     // otro desde la consola del navegador.
     console.error(`[${url}] no se pudo cargar la capa:`, e)
-    return errorRed
+    return { mensaje: errorRed, detalle: `${url} → ${e instanceof Error ? e.message : String(e)}` }
   }
 }
 
@@ -72,13 +86,13 @@ export function loadRealMufas(source: VectorSource, isCancelled: () => boolean) 
     // Desde que la tabla se recreó, `id` es un UUID: como respaldo del nombre
     // se usa el código anterior, `id_legacy`, que sí es legible.
     nombreDe: (f) =>
-      (f.get("etiqueta") as string | null) || `Mufa ${f.get("id_legacy") ?? f.get("id")}`,
+      (f.get("etiqueta") as string | null) || `Cubierta ${f.get("id_legacy") ?? f.get("id")}`,
     // Ya no se siembra ningún esquema de ejemplo. Antes las 185 mufas cargaban
     // el mismo JSON inventado y «Ver conexiones» enseñaba el mismo diagrama
     // para todas. La conectividad real se pide a la base al elegir la mufa
     // (ver lib/map/conectividad.ts).
-    errorHttp: "No se pudieron cargar las mufas reales.",
-    errorRed: "No se pudo conectar con Supabase para cargar las mufas.",
+    errorHttp: "No se pudieron cargar las cubiertas reales.",
+    errorRed: "No se pudo conectar con Supabase para cargar las cubiertas.",
   })
 }
 

@@ -4,7 +4,7 @@ import { exigirSesion } from "@/lib/auth-server"
 import { normalizarExtremos } from "@/lib/map/extremos-cable"
 
 /**
- * Extremos de un cable, según la función `geo_fiber.fn_obtener_extremos_cable`
+ * Extremos de un cable, según la función `geo_fiber.fn_json_extremos_cable`
  * del equipo de backend.
  *
  * Va por el servidor, como las otras consultas: la clave con la que se
@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
       db: { schema: "geo_fiber" },
     })
-    const { data, error } = await supabase.rpc("fn_obtener_extremos_cable", { p_uuid_cable: id })
+    const { data, error } = await supabase.rpc("fn_json_extremos_cable", { p_uuid_cable: id })
 
     if (error) {
       console.error(`[extremos ${id}] ${error.code} ${error.message}`)
@@ -48,9 +48,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     return NextResponse.json({ extremos: normalizarExtremos(data) })
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { message: "No se pudo conectar con Supabase para leer los extremos del cable." },
+      {
+        message: "No se pudo conectar con Supabase para leer los extremos del cable.",
+        ...(process.env.NODE_ENV === "production" ? {} : { detalle: e instanceof Error ? e.message : String(e) }),
+      },
       { status: 502 },
     )
   }
@@ -63,8 +66,8 @@ function mensajeDeError(codigo: string | undefined): string {
       return "La base no permite ejecutar la función de extremos: falta un permiso sobre el esquema geo_fiber."
     case "PGRST202":
       return "La función de extremos del cable no existe en la base o cambió de nombre o de parámetros."
-    // Así falla hoy: la función busca geo_fiber.cabecera_central, que está en
-    // geo_infra. Se arregla en la función, no aquí.
+    // Así falló un tiempo: la función leía `cub.nombre`, columna que no
+    // existe. Se arregla en la función, no aquí.
     case "42703":
     case "42P01":
       return "La función de extremos del cable usa una columna o tabla que no existe. Hay que corregirla en la base."

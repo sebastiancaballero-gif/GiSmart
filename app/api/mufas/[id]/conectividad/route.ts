@@ -26,7 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   if (!UUID.test(id)) {
-    return NextResponse.json({ message: "El identificador de la mufa no es válido." }, { status: 400 })
+    return NextResponse.json({ message: "El identificador de la cubierta no es válido." }, { status: 400 })
   }
 
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
@@ -55,15 +55,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // tiene nada registrado todavía. No es un fallo: es un dato que falta.
     if (data === null || typeof data !== "object") {
       return NextResponse.json(
-        { message: "Esta mufa todavía no tiene conectividad registrada en la base." },
+        { message: "Esta cubierta todavía no tiene conectividad registrada en la base." },
         { status: 404 },
       )
     }
 
     return NextResponse.json(data)
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { message: "No se pudo conectar con Supabase para leer la conectividad." },
+      {
+        message: "No se pudo conectar con Supabase para leer la conectividad.",
+        ...(process.env.NODE_ENV === "production" ? {} : { detalle: e instanceof Error ? e.message : String(e) }),
+      },
       { status: 502 },
     )
   }
@@ -85,6 +88,6 @@ function mensajeDeError(codigo: string | undefined): string {
     case "42P01":
       return "La función de conectividad de la base usa una columna o tabla que ya no existe. Hay que actualizarla."
     default:
-      return "No se pudo obtener la conectividad de esta mufa."
+      return "No se pudo obtener la conectividad de esta cubierta."
   }
 }

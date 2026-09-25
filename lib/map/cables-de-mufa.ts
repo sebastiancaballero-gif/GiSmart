@@ -5,7 +5,7 @@ import { fetchConSesion } from "@/lib/auth"
  * salidas» (ribbon: Consultas → Red).
  *
  * Mismo reparto que la conectividad fina: GISmart manda el UUID de la
- * cubierta, la función `geo_fiber.fn_generar_conectividad_cables` de Carlos
+ * cubierta, la función `geo_fiber.fn_json_conectividad_cubierta` de Carlos
  * decide qué cable entra, cuál sale y de qué color se pinta, y el mapa solo lo
  * dibuja. Aurelio pidió usarla ya, aunque el sentido que calcula todavía no
  * esté bien.
@@ -27,7 +27,10 @@ export type CableDeMufa = {
   color: string | null
 }
 
-export type ResultadoCables = { estado: "ok"; cables: CableDeMufa[] } | { estado: "error"; mensaje: string }
+export type ResultadoCables =
+  | { estado: "ok"; cables: CableDeMufa[] }
+  /** `detalle`: el error tal como lo dio la base (solo fuera de producción). */
+  | { estado: "error"; mensaje: string; detalle?: string }
 
 /** Cuánto se espera a la base antes de darse por vencido. */
 export const ESPERA_MAXIMA_CABLES_MS = 20_000
@@ -76,10 +79,11 @@ export function normalizarCablesDeMufa(datos: unknown): CableDeMufa[] {
 /** Clasifica lo que responde `GET /api/mufas/{id}/cables`. */
 export function clasificarRespuestaCables(status: number, cuerpo: unknown): ResultadoCables {
   if (status < 200 || status >= 300) {
-    const mensaje = (cuerpo as { message?: unknown } | null)?.message
+    const { message: mensaje, detalle } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown }
     return {
       estado: "error",
-      mensaje: typeof mensaje === "string" ? mensaje : "No se pudieron obtener los cables de esta mufa.",
+      mensaje: typeof mensaje === "string" ? mensaje : `No se pudieron obtener los cables de esta cubierta (HTTP ${status}).`,
+      ...(typeof detalle === "string" ? { detalle } : {}),
     }
   }
   return { estado: "ok", cables: normalizarCablesDeMufa(cuerpo) }
@@ -108,6 +112,6 @@ export async function obtenerCablesDeMufa(
         mensaje: `La base no respondió en ${esperaMaxima / 1000} segundos. Vuelve a intentarlo en un momento.`,
       }
     }
-    return { estado: "error", mensaje: "Error de red al pedir los cables de la mufa. Revisa la conexión." }
+    return { estado: "error", mensaje: "Error de red al pedir los cables de la cubierta. Revisa la conexión." }
   }
 }

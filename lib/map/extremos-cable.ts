@@ -4,17 +4,21 @@ import { fetchConSesion } from "@/lib/auth"
  * Extremos de un cable, para el botón «Cable» (ribbon: Consultas → Red).
  *
  * Mismo reparto que las otras consultas: GISmart manda el UUID del cable, la
- * función `geo_fiber.fn_obtener_extremos_cable` del equipo de backend dice qué
+ * función `geo_fiber.fn_json_extremos_cable` del equipo de backend dice qué
  * elementos hay en sus dos puntas, y el mapa solo lo marca.
  *
- * Cuando se escribió esto la función todavía fallaba en la base (buscaba la
- * tabla de cabeceras en el esquema equivocado), así que no se conocía su
- * respuesta. La lectura acepta las formas más probables —GeoJSON como la
- * función de cables de la mufa, una lista de filas o un objeto con `origen` y
- * `destino`— y descarta lo que no entiende en vez de romper.
+ * Lo que devuelve: un GeoJSON con un punto por punta y, en cada una,
+ * `id_elemento`, `nombre`, `tipo_elemento`, `color_resalte` y `tipo_rol`.
+ * Según la definición del equipo, la punta PADRE es la entrada del cable y la
+ * HIJO su salida. (PADRE es la mufa de su `id_elem_from` e HIJO la de su
+ * `id_elem_to`, en los 180 cables que tienen sus dos puntas.)
+ *
+ * Si la respuesta viene en una lista de filas en vez de GeoJSON también se lee,
+ * y lo que no se entiende se descarta en vez de romper.
  */
 
-export type RolDeExtremo = "origen" | "destino"
+/** «Entrada» es la punta PADRE del cable y «Salida» la HIJO. */
+export type RolDeExtremo = "entrada" | "salida"
 
 /** Geometría de punto en GeoJSON (longitud, latitud), si la función la manda. */
 export type PuntoGeoJSON = { type: "Point"; coordinates: [number, number] }
@@ -31,7 +35,10 @@ export type ExtremoDeCable = {
   geometria: PuntoGeoJSON | null
 }
 
-export type ResultadoExtremos = { estado: "ok"; extremos: ExtremoDeCable[] } | { estado: "error"; mensaje: string }
+export type ResultadoExtremos =
+  | { estado: "ok"; extremos: ExtremoDeCable[] }
+  /** `detalle`: el error tal como lo dio la base (solo fuera de producción). */
+  | { estado: "error"; mensaje: string; detalle?: string }
 
 export const ESPERA_MAXIMA_EXTREMOS_MS = 20_000
 
@@ -42,16 +49,15 @@ function texto(valor: unknown): string | null {
 }
 
 /**
- * Punta del cable según lo que diga la función. Acepta origen/destino y
- * también el vocabulario de la función de cables de la mufa: en la punta
- * «SALIENTE» el cable sale de la cubierta (es su origen) y en la «ENTRANTE»
- * llega a ella (es su destino).
+ * Punta del cable según lo que diga la función en `tipo_rol`: PADRE es la
+ * entrada e HIJO la salida. Si algún día manda directamente ENTRADA o SALIDA,
+ * se toman tal cual.
  */
 function leerRol(valor: unknown): RolDeExtremo | null {
   const t = texto(valor)?.toUpperCase()
   if (!t) return null
-  if (/^(ORIG|INI|FROM|DESDE|SALI)/.test(t) || t === "A") return "origen"
-  if (/^(DEST|FIN|TO$|HASTA|ENTRA)/.test(t) || t === "B") return "destino"
+  if (t === "PADRE" || t.startsWith("ENTRADA")) return "entrada"
+  if (t.startsWith("HIJ") || t.startsWith("SALIDA")) return "salida"
   return null
 }
 
@@ -62,7 +68,7 @@ function leerPunto(valor: unknown): PuntoGeoJSON | null {
   return typeof x === "number" && typeof y === "number" ? { type: "Point", coordinates: [x, y] } : null
 }
 
-function leerExtremo(fila: Record<string, unknown>, rolPorClave: RolDeExtremo | null, geometria: unknown): ExtremoDeCable | null {
+function leerExtremo(fila: Record<string, unknown>, geometria: unknown): ExtremoDeCable | null {
   const id = texto(fila.id_elemento ?? fila.id_elem ?? fila.id_extremo ?? fila.uuid_elemento ?? fila.id)
   const nombre = texto(fila.nombre ?? fila.etiqueta ?? fila.nombre_elemento)
   const punto = leerPunto(geometria ?? fila.geom ?? fila.geometry ?? fila.geometria)
@@ -70,9 +76,7 @@ function leerExtremo(fila: Record<string, unknown>, rolPorClave: RolDeExtremo | 
   if (!id && !nombre && !punto) return null
   const color = fila.color_resalte ?? fila.color
   return {
-    rol:
-      rolPorClave ??
-      leerRol(fila.extremo ?? fila.tipo_extremo ?? fila.tipo_direccion ?? fila.rol ?? fila.lado ?? fila.posicion ?? fila.direccion),
+    rol: leerRol(fila.tipo_rol ?? fila.rol),
     id,
     tipo: texto(fila.tipo_elemento ?? fila.tip_elem ?? fila.tipo),
     nombre,
@@ -86,9 +90,9 @@ export function normalizarExtremos(datos: unknown): ExtremoDeCable[] {
   if (!datos || typeof datos !== "object") return []
   const objeto = datos as Record<string, unknown>
   const extremos: ExtremoDeCable[] = []
-  const agregar = (fila: unknown, rol: RolDeExtremo | null = null, geometria: unknown = undefined) => {
+  const agregar = (fila: unknown, geometria: unknown = undefined) => {
     if (!fila || typeof fila !== "object") return
-    const extremo = leerExtremo(fila as Record<string, unknown>, rol, geometria)
+    const extremo = leerExtremo(fila as Record<string, unknown>, geometria)
     if (extremo) extremos.push(extremo)
   }
 
@@ -96,13 +100,10 @@ export function normalizarExtremos(datos: unknown): ExtremoDeCable[] {
     datos.forEach((fila) => agregar(fila))
   } else if (Array.isArray(objeto.features)) {
     for (const f of objeto.features as { properties?: unknown; geometry?: unknown }[]) {
-      agregar(f?.properties, null, f?.geometry)
+      agregar(f?.properties, f?.geometry)
     }
   } else if (Array.isArray(objeto.extremos)) {
     objeto.extremos.forEach((fila) => agregar(fila))
-  } else if (objeto.origen || objeto.destino) {
-    agregar(objeto.origen, "origen")
-    agregar(objeto.destino, "destino")
   }
   return extremos
 }
@@ -110,10 +111,11 @@ export function normalizarExtremos(datos: unknown): ExtremoDeCable[] {
 /** Clasifica lo que responde `GET /api/cables/{id}/extremos`. */
 export function clasificarRespuestaExtremos(status: number, cuerpo: unknown): ResultadoExtremos {
   if (status < 200 || status >= 300) {
-    const mensaje = (cuerpo as { message?: unknown } | null)?.message
+    const { message: mensaje, detalle } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown }
     return {
       estado: "error",
-      mensaje: typeof mensaje === "string" ? mensaje : "No se pudieron obtener los extremos de este cable.",
+      mensaje: typeof mensaje === "string" ? mensaje : `No se pudieron obtener los extremos de este cable (HTTP ${status}).`,
+      ...(typeof detalle === "string" ? { detalle } : {}),
     }
   }
   return { estado: "ok", extremos: normalizarExtremos((cuerpo as { extremos?: unknown } | null)?.extremos ?? cuerpo) }
