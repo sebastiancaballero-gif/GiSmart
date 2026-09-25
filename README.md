@@ -434,6 +434,34 @@ La guía para publicarlo en el servidor Windows de la empresa (Node + NSSM como 
 IIS como reverse proxy) está en
 [`docs/despliegue-windows.md`](docs/despliegue-windows.md).
 
+### Cloudflare Pages no sirve para este proyecto
+
+Se evaluó el 25 de septiembre de 2026 y **no es viable**. Queda escrito porque la idea
+parece razonable —es gratis y esto es Next.js— y la pregunta va a volver.
+
+La única ruta de Pages que Cloudflare sigue documentando para Next.js es la **exportación
+estática**, y aquí no aplica: las nueve rutas de `app/api/` verifican sesión y consultan
+Supabase, así que sin servidor no queda aplicación. La ruta dinámica era
+`@cloudflare/next-on-pages`, marcada como descontinuada en npm («use the OpenNext adapter
+instead») y con tope en Next 15.5.2, cuando el proyecto va por 16. Encima es
+exclusivamente runtime *edge*, que rechaza los módulos de Node: `exigirSesion` importa
+`node:crypto` y por ahí pasan las nueve rutas, de modo que declarar
+`export const runtime = 'edge'` **las rompe todas**, no unas pocas.
+
+Ese detalle es el que decide. En *edge* no existe `scrypt` —WebCrypto solo trae PBKDF2—,
+así que habría que rehacer `lib/password.ts` e **invalidar todos los hashes guardados** en
+`usuario_app`: nadie podría entrar hasta restablecer su clave.
+
+Si algún día se quiere Cloudflare, el destino es **Workers**, no Pages, con
+`@opennextjs/cloudflare`. Ahí corre el runtime de Node y `node:crypto` está soportado por
+completo, `scrypt` incluido, así que la autenticación funciona sin tocarla y no hace falta
+declarar `edge` en ninguna parte. Pide subir Next a 16.3.3 o superior (el adaptador no
+soporta 16.0–16.3.2), un `wrangler.jsonc` con la bandera `nodejs_compat` y un
+`open-next.config.ts`. Habría que revisar entonces las cabeceras de seguridad de
+`next.config.mjs`, que existen porque detrás de IIS no hay plataforma que las ponga.
+Cloudflare recomienda hoy `vinext`, que sí acepta Next 16 sin actualizar, pero está en
+`1.0.0-beta.12`.
+
 ---
 
 ## Estructura del proyecto
