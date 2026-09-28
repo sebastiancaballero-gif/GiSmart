@@ -14,6 +14,12 @@ import { Tooltip } from "@/components/ui/tooltip"
 export type TonoDeMensaje = "info" | "aviso" | "error"
 export type Mensaje = { texto: string; tono: TonoDeMensaje; detalle?: string }
 
+/**
+ * Lo que el tablero puede hacer con una ventana: abrirla desde el ribbon. Lo
+ * demás (qué cable, qué nodo, si está abierta) lo lleva la propia ventana.
+ */
+export type ManejadorDeVentana = { abrir: () => void }
+
 /** Franja de color, icono, título y una línea que resume lo que se está viendo. */
 export function EncabezadoVentana({ icono: Icono, titulo, descripcion }: { icono: LucideIcon; titulo: string; descripcion: string }) {
   return (

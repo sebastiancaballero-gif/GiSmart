@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useImperativeHandle, useMemo, useState, type Ref } from "react"
 import {
   ArrowLeft,
   Calculator,
@@ -28,8 +28,11 @@ import {
   EstadoVacio,
   Opciones,
   Rotulo,
+  type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
+import type { AccesoAlMapa } from "@/components/network-map"
+import type { ElementoBuscable } from "@/lib/map/busqueda"
 
 /**
  * «Consulta de redes por nodo de fibra óptica» (ribbon: Red de fibra →
@@ -49,6 +52,11 @@ import {
 
 /** Un nodo de fibra (SDS) que se puede consultar: hoy, las cabeceras del mapa. */
 export type NodoDeFibra = { clave: string; nombre: string; detalle: string }
+
+/** Los nodos de fibra del índice del mapa: por ahora, las cabeceras cargadas. */
+export function nodosDeFibra(indice: ElementoBuscable[]): NodoDeFibra[] {
+  return indice.filter((e) => e.tipo === "cabecera").map((e) => ({ clave: e.clave, nombre: e.nombre, detalle: e.detalle }))
+}
 
 type PestanaId = "salientes" | "entrantes" | "primer-nivel" | "nivel-2"
 
@@ -112,7 +120,21 @@ type Fila = { id: string; valores: (string | number | null)[] }
 
 const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
 
-export function RedesNodoDialog({
+/** La ventana con su estado. El tablero solo la abre (ver `ManejadorDeVentana`). */
+export function RedesNodoDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
+  const [abierta, setAbierta] = useState(false)
+  useImperativeHandle(ref, () => ({ abrir: () => setAbierta(true) }), [])
+  const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
+
+  // «Ubicar en el mapa»: se cierra la ventana y el mapa se centra en el nodo.
+  function ubicarNodo(clave: string) {
+    if (mapa.ubicar(clave)) setAbierta(false)
+  }
+
+  return <VentanaRedesNodo open={abierta} onOpenChange={setAbierta} nodos={nodos} onUbicarNodo={ubicarNodo} />
+}
+
+function VentanaRedesNodo({
   open,
   onOpenChange,
   nodos,

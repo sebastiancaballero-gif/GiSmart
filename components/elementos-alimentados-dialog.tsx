@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useImperativeHandle, useMemo, useState, type Ref } from "react"
 import {
   ArrowLeft,
   ArrowRight,
@@ -24,9 +24,11 @@ import {
   Grupo,
   Opciones,
   Rotulo,
+  type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
-import type { NodoDeFibra } from "@/components/redes-nodo-dialog"
+import { nodosDeFibra, type NodoDeFibra } from "@/components/redes-nodo-dialog"
+import type { AccesoAlMapa } from "@/components/network-map"
 import { normalizar } from "@/lib/map/busqueda"
 
 /**
@@ -62,7 +64,60 @@ function Fila({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   )
 }
 
-export function ElementosAlimentadosDialog({
+/**
+ * La ventana con su estado. El nodo y la cubierta de nivel 1 elegidos se
+ * conservan aunque la ventana se cierre: el nodo también se elige con un click
+ * en el mapa, con la ventana cerrada. El tablero solo la abre (ver
+ * `ManejadorDeVentana`).
+ */
+export function ElementosAlimentadosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
+  const [abierta, setAbierta] = useState(false)
+  const [claveNodo, setClaveNodo] = useState<string | null>(null)
+  const [claveNivel1, setClaveNivel1] = useState<string | null>(null)
+  useImperativeHandle(ref, () => ({ abrir: () => setAbierta(true) }), [])
+
+  const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
+  const nivel1 = useMemo<CubiertaNivel1[]>(
+    () =>
+      mapa.indice
+        .filter((e) => e.tipo === "node" && e.categoria === "Primer nivel")
+        .map((e) => ({ clave: e.clave, nombre: e.nombre })),
+    [mapa.indice],
+  )
+
+  // El pin de la ventana: se cierra, se elige la cabecera con un click en el
+  // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había.
+  async function elegirNodoEnMapa() {
+    setAbierta(false)
+    const elegido =
+      (await mapa.api.current?.elegirElemento("cabecera", "Haz click sobre el nodo (cabecera) que quieres consultar.")) ??
+      null
+    if (elegido) setClaveNodo(elegido.clave)
+    setAbierta(true)
+  }
+
+  // «Ubicar»: se cierra la ventana y el mapa se centra en el elemento.
+  function ubicar(clave: string) {
+    if (mapa.ubicar(clave)) setAbierta(false)
+  }
+
+  return (
+    <VentanaElementosAlimentados
+      open={abierta}
+      onOpenChange={setAbierta}
+      nodos={nodos}
+      nivel1={nivel1}
+      claveNodo={claveNodo}
+      onCambiarNodo={setClaveNodo}
+      claveNivel1={claveNivel1}
+      onCambiarNivel1={setClaveNivel1}
+      onUbicar={ubicar}
+      onElegirNodoEnMapa={elegirNodoEnMapa}
+    />
+  )
+}
+
+function VentanaElementosAlimentados({
   open,
   onOpenChange,
   nodos,

@@ -4,10 +4,11 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { DashboardRibbon } from "@/components/dashboard-ribbon"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
-import { NetworkMap, type CableElegido, type MapaApi } from "@/components/network-map"
+import { NetworkMap, type AccesoAlMapa, type MapaApi } from "@/components/network-map"
 import { GestionHilosDialog } from "@/components/gestion-hilos-dialog"
-import { RedesNodoDialog, type NodoDeFibra } from "@/components/redes-nodo-dialog"
-import { ElementosAlimentadosDialog, type CubiertaNivel1 } from "@/components/elementos-alimentados-dialog"
+import { RedesNodoDialog } from "@/components/redes-nodo-dialog"
+import { ElementosAlimentadosDialog } from "@/components/elementos-alimentados-dialog"
+import type { ManejadorDeVentana } from "@/components/ventana-sig"
 import { AuthGuard } from "@/components/auth-guard"
 import type { MapTool } from "@/lib/map/herramientas"
 import type { ElementoBuscable } from "@/lib/map/busqueda"
@@ -71,68 +72,12 @@ export default function DashboardPage() {
   const mapaApiRef = useRef<MapaApi | null>(null)
   const [pedirFocoBusqueda, setPedirFocoBusqueda] = useState(0)
 
-  // «Gestión de hilos» (Red de fibra → Hilos). Si hay un cable seleccionado en
-  // el mapa se abre con ese; si no, se elige con el botón de selección.
-  const [hilosAbierto, setHilosAbierto] = useState(false)
-  const [cableHilos, setCableHilos] = useState<CableElegido | null>(null)
-
-  const abrirHilos = useCallback(() => {
-    const seleccionado = mapaApiRef.current?.cableSeleccionado()
-    if (seleccionado) setCableHilos(seleccionado)
-    setHilosAbierto(true)
-  }, [])
-
-  // El botón de selección de la ventana: se cierra, se elige el cable en el
-  // mapa y se vuelve a abrir con él. Con Esc se vuelve con el que había.
-  const elegirCableParaHilos = useCallback(async () => {
-    setHilosAbierto(false)
-    setTool("pan")
-    const cable = (await mapaApiRef.current?.elegirCable()) ?? null
-    if (cable) setCableHilos(cable)
-    setHilosAbierto(true)
-  }, [])
-
-  // «Consulta de redes por nodo» (Red de fibra → Redes/Nodo). Los nodos de
-  // fibra son, por ahora, las cabeceras cargadas en el mapa.
-  const [redesAbierto, setRedesAbierto] = useState(false)
-  const nodosDeFibra = useMemo<NodoDeFibra[]>(
-    () =>
-      indice
-        .filter((e) => e.tipo === "cabecera")
-        .map((e) => ({ clave: e.clave, nombre: e.nombre, detalle: e.detalle })),
-    [indice],
-  )
-
-  // «Ubicar en el mapa»: se cierra la ventana y el mapa se centra en el nodo.
-  const ubicarNodo = useCallback((clave: string) => {
-    setRedesAbierto(false)
-    setVisible((prev) => ({ ...prev, cabeceras: true }))
-    mapaApiRef.current?.enfocarElemento(clave)
-  }, [])
-
-  // «Elementos alimentados por fibra óptica» (Red de fibra → GPON). El nodo y
-  // la cubierta de nivel 1 elegidos viven aquí porque se pueden elegir con un
-  // click en el mapa, con la ventana cerrada.
-  const [gponAbierto, setGponAbierto] = useState(false)
-  const [claveNodoGpon, setClaveNodoGpon] = useState<string | null>(null)
-  const [claveNivel1Gpon, setClaveNivel1Gpon] = useState<string | null>(null)
-  const cubiertasNivel1 = useMemo<CubiertaNivel1[]>(
-    () =>
-      indice
-        .filter((e) => e.tipo === "node" && e.categoria === "Primer nivel")
-        .map((e) => ({ clave: e.clave, nombre: e.nombre })),
-    [indice],
-  )
-
-  // El pin de la ventana: se cierra, se elige la cabecera con un click en el
-  // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había.
-  const elegirNodoGponEnMapa = useCallback(async () => {
-    setGponAbierto(false)
-    setTool("pan")
-    const elegido = (await mapaApiRef.current?.elegirElemento("cabecera", "Haz click sobre el nodo (cabecera) que quieres consultar.")) ?? null
-    if (elegido) setClaveNodoGpon(elegido.clave)
-    setGponAbierto(true)
-  }, [])
+  // Ventanas de Red de fibra (Hilos, Redes/Nodo, GPON). Cada una lleva su
+  // propio estado; el tablero solo las abre desde el ribbon y les da acceso al
+  // mapa (`accesoAlMapa`, más abajo). Una ventana nueva es un ref más aquí.
+  const hilosRef = useRef<ManejadorDeVentana>(null)
+  const redesRef = useRef<ManejadorDeVentana>(null)
+  const gponRef = useRef<ManejadorDeVentana>(null)
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
   // estaba oculta se muestra: si no, se enfocaría algo que no se ve.
@@ -142,14 +87,19 @@ export default function DashboardPage() {
     mapaApiRef.current?.enfocarElemento(elemento.clave)
   }, [])
 
-  const ubicarDesdeGpon = useCallback(
+  // Las ventanas llevan el mapa a un elemento igual que el buscador.
+  const ubicarElemento = useCallback(
     (clave: string) => {
       const elemento = indice.find((e) => e.clave === clave)
-      if (!elemento) return
-      setGponAbierto(false)
+      if (!elemento) return false
       handleElegirElemento(elemento)
+      return true
     },
     [indice, handleElegirElemento],
+  )
+  const accesoAlMapa = useMemo<AccesoAlMapa>(
+    () => ({ indice, api: mapaApiRef, ubicar: ubicarElemento }),
+    [indice, ubicarElemento],
   )
 
   const claveDeCapa = (layerId: string): "nodes" | "fibers" | null =>
@@ -230,9 +180,9 @@ export default function DashboardPage() {
       onSentido: () => setTool("sentido"),
       onCable: () => setTool("cable"),
       onBuscar: () => setPedirFocoBusqueda((n) => n + 1),
-      onHilos: abrirHilos,
-      onRedesNodo: () => setRedesAbierto(true),
-      onGpon: () => setGponAbierto(true),
+      onHilos: () => hilosRef.current?.abrir(),
+      onRedesNodo: () => redesRef.current?.abrir(),
+      onGpon: () => gponRef.current?.abrir(),
       onActivarCapa: () => {
         if (capaActiva) {
           cambiarCapaActiva(null)
@@ -243,7 +193,7 @@ export default function DashboardPage() {
         return "Elige en «Capas de red» la capa que vas a activar."
       },
     }),
-    [capaActiva, cambiarCapaActiva, abrirHilos],
+    [capaActiva, cambiarCapaActiva],
   )
 
   // Botón del ribbon que corresponde a la herramienta activa, para que se vea
@@ -366,30 +316,9 @@ export default function DashboardPage() {
               onIndiceChange={setIndice}
               apiRef={mapaApiRef}
             />
-            <GestionHilosDialog
-              open={hilosAbierto}
-              onOpenChange={setHilosAbierto}
-              cable={cableHilos}
-              onElegirCable={elegirCableParaHilos}
-            />
-            <RedesNodoDialog
-              open={redesAbierto}
-              onOpenChange={setRedesAbierto}
-              nodos={nodosDeFibra}
-              onUbicarNodo={ubicarNodo}
-            />
-            <ElementosAlimentadosDialog
-              open={gponAbierto}
-              onOpenChange={setGponAbierto}
-              nodos={nodosDeFibra}
-              nivel1={cubiertasNivel1}
-              claveNodo={claveNodoGpon}
-              onCambiarNodo={setClaveNodoGpon}
-              claveNivel1={claveNivel1Gpon}
-              onCambiarNivel1={setClaveNivel1Gpon}
-              onUbicar={ubicarDesdeGpon}
-              onElegirNodoEnMapa={elegirNodoGponEnMapa}
-            />
+            <GestionHilosDialog ref={hilosRef} mapa={accesoAlMapa} />
+            <RedesNodoDialog ref={redesRef} mapa={accesoAlMapa} />
+            <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
           </main>
         </div>
       </div>

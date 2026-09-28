@@ -105,7 +105,8 @@ export type MapaApi = {
   cableSeleccionado: () => CableElegido | null
   /**
    * Espera a que se haga click sobre un cable y lo devuelve; `null` si se
-   * cancela con Esc. Mientras tanto el mapa lo dice en un aviso.
+   * cancela con Esc. Mientras tanto el mapa lo dice en un aviso y vuelve a
+   * «Mover mapa», para que ninguna herramienta se quede con el click.
    */
   elegirCable: () => Promise<CableElegido | null>
   /**
@@ -113,6 +114,23 @@ export type MapaApi = {
    * del buscador) y su nombre. El aviso dice para qué se elige.
    */
   elegirElemento: (tipo: "cabecera" | "node", aviso: string) => Promise<{ clave: string; nombre: string } | null>
+}
+
+/**
+ * Lo que una ventana del tablero (hilos, GPON, redes por nodo) recibe del
+ * mapa. Con esto cada ventana maneja su propio estado y el tablero solo la
+ * abre.
+ */
+export type AccesoAlMapa = {
+  /** Lo cargado en el mapa: el mismo índice que usa el buscador. */
+  indice: ElementoBuscable[]
+  /** Las acciones del mapa; `current` es `null` mientras el mapa no está montado. */
+  api: { current: MapaApi | null }
+  /**
+   * Lleva el mapa a un elemento del índice como el buscador: muestra su capa
+   * si estaba oculta, lo centra y abre su ficha. `false` si ya no está.
+   */
+  ubicar: (clave: string) => boolean
 }
 
 type NetworkMapProps = {
@@ -665,6 +683,8 @@ function MapaDeRed({
           return
         }
         cancelarEleccionRef.current?.()
+        // Ninguna herramienta debe quedarse con el click que elige.
+        setTool("pan")
 
         const elementoEn = (pixel: number[]) =>
           (map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
@@ -698,7 +718,7 @@ function MapaDeRed({
         }
         cancelarEleccionRef.current = () => terminar(null)
       }),
-    [],
+    [setTool],
   )
 
   const elegirCable = useCallback(

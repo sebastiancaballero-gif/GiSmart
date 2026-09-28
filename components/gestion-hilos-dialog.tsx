@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react"
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,10 +29,11 @@ import {
   EncabezadoVentana,
   EstadoVacio,
   Hueso,
+  type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
 import { Tooltip } from "@/components/ui/tooltip"
-import type { CableElegido } from "@/components/network-map"
+import type { AccesoAlMapa, CableElegido } from "@/components/network-map"
 import { colorParaMostrar, obtenerHilosDeCable, type HiloDeCable, type ResultadoHilos } from "@/lib/map/hilos-cable"
 
 /**
@@ -207,7 +208,40 @@ const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponibl
 
 type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
 
-export function GestionHilosDialog({
+/**
+ * La ventana con su estado: abierta o no y el cable elegido. Si hay un cable
+ * seleccionado en el mapa se abre con ese; si no, se elige con el botón de
+ * selección. El tablero solo la abre (ver `ManejadorDeVentana`).
+ */
+export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
+  const [abierta, setAbierta] = useState(false)
+  const [cable, setCable] = useState<CableElegido | null>(null)
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      abrir: () => {
+        const seleccionado = mapa.api.current?.cableSeleccionado()
+        if (seleccionado) setCable(seleccionado)
+        setAbierta(true)
+      },
+    }),
+    [mapa.api],
+  )
+
+  // El botón de selección: se cierra, se elige el cable en el mapa y se vuelve
+  // a abrir con él. Con Esc se vuelve con el que había.
+  async function elegirCable() {
+    setAbierta(false)
+    const elegido = (await mapa.api.current?.elegirCable()) ?? null
+    if (elegido) setCable(elegido)
+    setAbierta(true)
+  }
+
+  return <VentanaHilos open={abierta} onOpenChange={setAbierta} cable={cable} onElegirCable={elegirCable} />
+}
+
+function VentanaHilos({
   open,
   onOpenChange,
   cable,
