@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, EyeOff, Ruler, ChevronLeft, ChevronRight, Layers, Crosshair, FilterX } from "lucide-react"
+import { Eye, EyeOff, Ruler, ChevronLeft, ChevronRight, Layers, Crosshair, FilterX, Pencil } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { GismartLogo } from "@/components/gismart-mark"
 import { CabeceraSymbol, FiberSymbol, MufaSymbol, ZonaSymbol } from "@/components/map-symbols"
@@ -64,6 +64,12 @@ type DashboardSidebarProps = {
   onToggleCollapse?: () => void
   /** Mientras los endpoints responden se muestran marcadores en vez de ceros. */
   loading?: boolean
+  /** Capa activa para editar, mover o crear (ver lib/map/capa-activa.ts). */
+  capaActiva?: string | null
+  /** Activa la capa pulsada, o la desactiva si ya lo estaba. */
+  onSelectCapa?: (layerId: string) => void
+  /** Al cambiar, la lista de capas parpadea para que se note dónde elegir. */
+  pedirCapa?: number
 }
 
 export function DashboardSidebar({
@@ -77,6 +83,9 @@ export function DashboardSidebar({
   collapsed = false,
   onToggleCollapse,
   loading = false,
+  capaActiva = null,
+  onSelectCapa,
+  pedirCapa = 0,
 }: DashboardSidebarProps) {
   return (
     <aside
@@ -101,7 +110,7 @@ export function DashboardSidebar({
                 onClick={() => onToggleLayer(l.id)}
                 aria-label={l.label}
                 aria-pressed={l.visible}
-                className={`mb-1.5 rounded-lg p-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${l.visible ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}
+                className={`mb-1.5 rounded-lg p-1.5 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${l.visible ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"} ${capaActiva === l.id ? "ring-2 ring-primary/60" : ""}`}
               >
                 <SimboloDeCapa symbol={l.symbol} color={l.color} size={18} />
               </button>
@@ -119,6 +128,9 @@ export function DashboardSidebar({
           enPantalla={enPantalla}
           onToggleCollapse={onToggleCollapse}
           loading={loading}
+          capaActiva={capaActiva}
+          onSelectCapa={onSelectCapa}
+          pedirCapa={pedirCapa}
         />
       )}
     </aside>
@@ -135,6 +147,9 @@ function SidebarExpandedContent({
   enPantalla,
   onToggleCollapse,
   loading,
+  capaActiva,
+  onSelectCapa,
+  pedirCapa,
 }: {
   layers: LayerDef[]
   onToggleLayer: (id: string) => void
@@ -145,8 +160,12 @@ function SidebarExpandedContent({
   enPantalla?: { fibers: number; km: number }
   onToggleCollapse?: () => void
   loading: boolean
+  capaActiva: string | null
+  onSelectCapa?: (layerId: string) => void
+  pedirCapa: number
 }) {
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
+  const capaActivaDef = layers.find((l) => l.id === capaActiva)
 
   function toggleExpandida(id: string) {
     setExpandidas((prev) => {
@@ -180,16 +199,32 @@ function SidebarExpandedContent({
 
       {/* Capas */}
       <div className="flex-1 overflow-y-auto p-3">
-        <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
           <Layers className="size-3.5 text-primary" />
           Capas de red
         </div>
+        {/* Qué capa está activa, o cómo activar una. Editar, mover y crear
+            solo trabajan sobre la capa activa. */}
+        <p className="mb-2 flex items-start gap-1.5 px-1 text-[11px] leading-snug text-muted-foreground">
+          <Pencil className="mt-px size-3 shrink-0" aria-hidden="true" />
+          {capaActivaDef ? (
+            <span>
+              Capa activa: <span className="font-semibold text-primary">{capaActivaDef.label}</span>. Púlsala
+              otra vez para desactivarla.
+            </span>
+          ) : (
+            <span>Pulsa una capa para activarla y poder editar, mover o crear en ella.</span>
+          )}
+        </p>
 
-        <div className="space-y-1">
+        {/* La `key` rehace la lista cuando se pide elegir capa desde el ribbon,
+            y así la animación vuelve a empezar. */}
+        <div key={pedirCapa} className={`space-y-1 rounded-xl ${pedirCapa ? "gismart-llamar" : ""}`}>
           {layers.map((layer) => {
             // Solo tiene sentido desplegar si hay más de una categoría.
             const desglosable = !loading && (layer.items?.length ?? 0) > 1
             const abierta = expandidas.has(layer.id)
+            const activa = capaActiva === layer.id
 
             // Cuántos elementos deja ver el filtro. Se calcula aquí sumando las
             // categorías marcadas, sin pedirle nada al mapa.
@@ -206,28 +241,42 @@ function SidebarExpandedContent({
                     icono del ojo, y con cuatro capas costaba ver cuál estaba
                     fuera del mapa. */}
                 <div
-                  className={`flex items-center gap-1.5 rounded-lg pl-1 pr-2.5 py-2 transition hover:bg-accent ${
-                    layer.visible ? "" : "opacity-45"
-                  }`}
+                  className={`flex items-center gap-1 rounded-lg py-1.5 pl-0.5 pr-2.5 transition ${
+                    activa ? "bg-primary/12 ring-1 ring-primary/40" : "hover:bg-accent"
+                  } ${layer.visible ? "" : "opacity-45"}`}
                 >
-                  <Tooltip label={desglosable ? (abierta ? "Ocultar desglose" : "Ver desglose") : undefined}>
-                  <button
-                    type="button"
-                    onClick={() => desglosable && toggleExpandida(layer.id)}
-                    disabled={!desglosable}
-                    aria-expanded={desglosable ? abierta : undefined}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default"
+                  {/* La flecha despliega el desglose; el nombre activa la capa. */}
+                  {desglosable ? (
+                    <Tooltip label={abierta ? "Ocultar desglose" : "Ver desglose"}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandida(layer.id)}
+                        aria-expanded={abierta}
+                        aria-label={`${abierta ? "Ocultar" : "Ver"} desglose de ${layer.label}`}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <ChevronRight className={`size-3.5 transition-transform ${abierta ? "rotate-90" : ""}`} />
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <span className="size-[1.125rem] shrink-0" aria-hidden="true" />
+                  )}
+                  <Tooltip
+                    label={activa ? `Desactivar ${layer.label}` : `Activar ${layer.label} para editar, mover o crear en ella`}
                   >
-                    <ChevronRight
-                      className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${
-                        abierta ? "rotate-90" : ""
-                      } ${desglosable ? "" : "invisible"}`}
-                    />
-                    <SimboloDeCapa symbol={layer.symbol} color={layer.color} />
-                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                      {layer.label}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectCapa?.(layer.id)}
+                      aria-pressed={activa}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      <SimboloDeCapa symbol={layer.symbol} color={layer.color} />
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${activa ? "font-semibold text-primary" : "text-foreground"}`}
+                      >
+                        {layer.label}
+                      </span>
+                    </button>
                   </Tooltip>
 
                   {loading ? (

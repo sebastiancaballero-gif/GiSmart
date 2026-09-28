@@ -11,9 +11,23 @@ export type RibbonActions = {
   onFitToData?: () => void
   onIdentify?: () => void
   onMeasure?: () => void
-  onDraw?: () => void
-  onDelete?: () => void
+  /** Devuelven por qué no se pudo, si falta activar la capa. */
+  onDraw?: () => string | void
+  onDelete?: () => string | void
   onEditGeometry?: () => void
+  /**
+   * «Activar capa»: activa o desactiva la capa sobre la que se edita. Devuelve
+   * lo que hay que decirle al usuario.
+   */
+  onActivarCapa?: () => string | void
+  /** «Búsqueda»: lleva al buscador de arriba. */
+  onBuscar?: () => void
+  /** «Hilos» (Red de fibra): abre la gestión de hilos del cable. */
+  onHilos?: () => void
+  /** «Redes/Nodo» (Red de fibra): abre la consulta de redes por nodo. */
+  onRedesNodo?: () => void
+  /** «GPON» (Red de fibra): abre «Elementos alimentados por fibra óptica». */
+  onGpon?: () => void
   /** Consulta de conectividad de una cubierta (Consultas → Red). */
   onConnectivity?: () => void
   /** Pinta los cables de entrada y salida de una mufa (Consultas → Red). */
@@ -104,6 +118,24 @@ export function DashboardRibbon({
       case "Acercar ext.":
         actions?.onFitToData?.()
         return
+      case "GPON":
+        actions?.onGpon?.()
+        return
+      case "Redes/Nodo":
+        actions?.onRedesNodo?.()
+        return
+      case "Hilos":
+        actions?.onHilos?.()
+        return
+      case "Búsqueda":
+        actions?.onBuscar?.()
+        setAviso("Escribe el nombre de una cubierta, un cable o una dirección.")
+        return
+      case "Activar capa": {
+        const mensaje = actions?.onActivarCapa?.()
+        if (mensaje) setAviso(mensaje)
+        return
+      }
       case "Identificar":
       case "Atributos":
         actions?.onIdentify?.()
@@ -112,13 +144,17 @@ export function DashboardRibbon({
       case "Mediciones":
         actions?.onMeasure?.()
         return
-      case "Crear":
+      case "Crear": {
         if (activeTab !== "edicion") break
-        actions?.onDraw?.()
+        const mensaje = actions?.onDraw?.()
+        if (mensaje) setAviso(mensaje)
         return
-      case "Borrar":
-        actions?.onDelete?.()
+      }
+      case "Borrar": {
+        const mensaje = actions?.onDelete?.()
+        if (mensaje) setAviso(mensaje)
         return
+      }
       // Flujo acordado con Aurelio: cambia el cursor, el usuario elige un
       // elemento y, si es una cubierta, se abre su conectividad en consulta.
       case "Conectividad fina":

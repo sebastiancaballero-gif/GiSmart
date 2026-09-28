@@ -5,10 +5,10 @@ import "ol/ol.css"
 import Map from "ol/Map"
 import View from "ol/View"
 import TileLayer from "ol/layer/Tile"
-import OSM from "ol/source/OSM"
 import VectorLayer from "ol/layer/Vector"
 import VectorSource from "ol/source/Vector"
 import Feature from "ol/Feature"
+import Collection from "ol/Collection"
 import LineString from "ol/geom/LineString"
 import Point from "ol/geom/Point"
 import Polygon from "ol/geom/Polygon"
@@ -27,6 +27,7 @@ import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry } from "ol/geom"
 import { createEmpty, extend, isEmpty } from "ol/extent"
 import { unByKey } from "ol/Observable"
+import { getUid } from "ol/util"
 import {
   Hand,
   Box,
@@ -43,6 +44,7 @@ import {
   Loader2,
   Building2,
   Crosshair,
+  Keyboard,
 } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import {
@@ -83,7 +85,16 @@ import {
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
+import { fuenteDelMapaBase } from "@/lib/map/mapa-base"
 import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
+import type { ElementoBuscable } from "@/lib/map/busqueda"
+import {
+  CAPA_DE_TIPO,
+  HERRAMIENTAS_DE_EDICION,
+  NOMBRE_DE_CAPA,
+  motivoHerramientaBloqueada,
+  type CapaEditable,
+} from "@/lib/map/capa-activa"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import { InfoTableDialog } from "@/components/info-table-dialog"
@@ -93,6 +104,7 @@ import { MapNotice, MapNoticeStack } from "@/components/map-notices"
 import { MapStatusBar } from "@/components/map-status-bar"
 import { LimiteDeError } from "@/components/limite-de-error"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { AyudaAtajos } from "@/components/ayuda-atajos"
 import {
   crearConsultor,
   obtenerConectividad,
@@ -102,6 +114,37 @@ import {
 } from "@/lib/map/conectividad"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
+
+/** Un cable del mapa, con lo que muestra «Gestión de hilos». */
+export type CableElegido = {
+  /** UUID en la base; `null` si se dibujó en el mapa y no existe allí. */
+  id: string | null
+  codigo: string
+  /** Cantidad de hilos según la capa de cables. */
+  hilos: number | null
+  /** Largo medido sobre el mapa, en metros. */
+  largoM: number
+  origen: string | null
+  destino: string | null
+}
+
+/** Lo que el tablero le puede pedir al mapa desde fuera (el buscador, los hilos). */
+export type MapaApi = {
+  /** Centra el mapa en el elemento y lo selecciona. `false` si ya no está. */
+  enfocarElemento: (clave: string) => boolean
+  /** El cable seleccionado en el mapa, si lo hay. */
+  cableSeleccionado: () => CableElegido | null
+  /**
+   * Espera a que se haga click sobre un cable y lo devuelve; `null` si se
+   * cancela con Esc. Mientras tanto el mapa lo dice en un aviso.
+   */
+  elegirCable: () => Promise<CableElegido | null>
+  /**
+   * Lo mismo con una cabecera o una cubierta: devuelve su clave (la del índice
+   * del buscador) y su nombre. El aviso dice para qué se elige.
+   */
+  elegirElemento: (tipo: "cabecera" | "node", aviso: string) => Promise<{ clave: string; nombre: string } | null>
+}
 
 type NetworkMapProps = {
   center?: [number, number]
@@ -130,6 +173,15 @@ type NetworkMapProps = {
    * Una lista vacía significa "sin filtro": se muestran todas.
    */
   filters?: { nodes: string[]; fibers: string[] }
+  /**
+   * Capa activa: la que se activa antes de editar, mover o crear (ver
+   * lib/map/capa-activa.ts). Sin capa activa el mapa solo se consulta.
+   */
+  capaActiva?: CapaEditable | null
+  /** Índice de lo cargado, para buscar elementos por nombre (ver lib/map/busqueda.ts). */
+  onIndiceChange?: (indice: ElementoBuscable[]) => void
+  /** El mapa deja aquí sus acciones para quien las necesite (el buscador). */
+  apiRef?: { current: MapaApi | null }
 }
 
 type SelectedFeature = {
@@ -164,6 +216,9 @@ function MapaDeRed({
   onToolChange,
   onLoadingChange,
   filters,
+  capaActiva = null,
+  onIndiceChange,
+  apiRef,
 }: NetworkMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
@@ -182,7 +237,8 @@ function MapaDeRed({
   const [marcadorSource] = useState(() => new VectorSource())
   // Puntas del cable consultado con el botón «Cable».
   const [extremosSource] = useState(() => new VectorSource())
-  const [baseMapSource] = useState(() => new OSM())
+  // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
+  const [baseMapSource] = useState(fuenteDelMapaBase)
 
   const nodeLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const fiberLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -198,6 +254,9 @@ function MapaDeRed({
   const editSelectRef = useRef<Select | null>(null)
   const editModifyRef = useRef<Modify | null>(null)
   const fiberSnapRef = useRef<Snap | null>(null)
+  // Lo que «Editar elementos» deja arrastrar: lo seleccionado, solo si es de la
+  // capa activa (ver el efecto que lo rehace).
+  const [modificables] = useState(() => new Collection<Feature<Geometry>>())
   const fiberNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const measureOverlaysRef = useRef<Overlay[]>([])
 
@@ -216,6 +275,8 @@ function MapaDeRed({
   const [nameDraft, setNameDraft] = useState("")
   const [schemaOpen, setSchemaOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  // Ventana con los atajos de teclado (botón al pie de la barra o la tecla «?»).
+  const [ayudaAbierta, setAyudaAbierta] = useState(false)
   const [fiberLoadError, setFiberLoadError] = useState<ErrorDeCapa | null>(null)
   const [mufaLoadError, setMufaLoadError] = useState<ErrorDeCapa | null>(null)
   const [cabeceraLoadError, setCabeceraLoadError] = useState<ErrorDeCapa | null>(null)
@@ -260,6 +321,19 @@ function MapaDeRed({
   // borrara, el texto quedaría vacío durante la animación de cierre.
   const [nombreEnPregunta, setNombreEnPregunta] = useState("")
   const [fiberNotice, setFiberNotice] = useState<string | null>(null)
+  // Mientras se elige un cable para «Gestión de hilos».
+  const [avisoEleccion, setAvisoEleccion] = useState<string | null>(null)
+  const cancelarEleccionRef = useRef<(() => void) | null>(null)
+  // Por qué no se pudo usar una herramienta de edición: le falta la capa
+  // activa. Se guarda la herramienta para ocultar el aviso en cuanto se active
+  // la capa que pedía.
+  const [avisoBloqueo, setAvisoBloqueo] = useState<{ texto: string; herramienta: MapTool } | null>(null)
+  const avisoBloqueoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const avisarBloqueo = useCallback((herramienta: MapTool, texto: string) => {
+    setAvisoBloqueo({ texto, herramienta })
+    if (avisoBloqueoTimeoutRef.current) clearTimeout(avisoBloqueoTimeoutRef.current)
+    avisoBloqueoTimeoutRef.current = setTimeout(() => setAvisoBloqueo(null), 5000)
+  }, [])
   const [loadingData, setLoadingData] = useState(true)
   // La cortina de bienvenida solo cubre el arranque; las recargas posteriores
   // usan el aviso discreto para no tapar el mapa que el usuario está mirando.
@@ -273,6 +347,8 @@ function MapaDeRed({
   const onCenterChangeRef = useRef(onCenterChange)
   const onToolChangeRef = useRef(onToolChange)
   const onLoadingChangeRef = useRef(onLoadingChange)
+  const capaActivaRef = useRef(capaActiva)
+  const onIndiceChangeRef = useRef(onIndiceChange)
 
   // El filtro se lee desde el estilo, que OpenLayers ejecuta en cada dibujado.
   // Guardarlo en una ref evita tener que reconstruir las capas al cambiarlo.
@@ -287,6 +363,8 @@ function MapaDeRed({
     onCenterChangeRef.current = onCenterChange
     onToolChangeRef.current = onToolChange
     onLoadingChangeRef.current = onLoadingChange
+    capaActivaRef.current = capaActiva
+    onIndiceChangeRef.current = onIndiceChange
   })
 
   /**
@@ -367,6 +445,14 @@ function MapaDeRed({
   // ribbon, la mufa que se está consultando; con las demás, el elemento
   // seleccionado, sea mufa, cabecera, cable o zona. La marca usa la misma
   // geometría que el elemento, así que lo sigue si se mueve al editarlo.
+  // Lo seleccionado se puede arrastrar solo si es de la capa activa: al cambiar
+  // de capa o de selección se rehace la lista de lo que «Editar elementos»
+  // deja mover.
+  useEffect(() => {
+    modificables.clear()
+    if (selected && CAPA_DE_TIPO[selected.type] === capaActiva) modificables.push(selected.feature)
+  }, [selected, capaActiva, modificables])
+
   const enConsulta = tool === "conectividad" || tool === "sentido"
   const marcado = enConsulta ? consultada : (selected?.feature ?? null)
   useEffect(() => {
@@ -395,6 +481,26 @@ function MapaDeRed({
     setInternalTool(next)
     onToolChangeRef.current?.(next)
   }, [])
+
+  /** La capa de OpenLayers de cada capa editable. */
+  const capaDeMapa = useCallback((capa: CapaEditable | null) => {
+    if (capa === "nodes") return nodeLayer.current
+    if (capa === "fibers") return fiberLayer.current
+    if (capa === "zones") return zoneLayer.current
+    if (capa === "cabeceras") return cabeceraLayer.current
+    return null
+  }, [])
+
+  // Qué herramienta se puede usar con qué capa lo decide quien la pide: la
+  // barra y los atajos de aquí, y el ribbon y el panel de capas en el tablero
+  // (app/dashboard/page.tsx), que al cambiar de capa vuelven a «Mover mapa» si
+  // la herramienta en uso deja de servir.
+  useEffect(
+    () => () => {
+      if (avisoBloqueoTimeoutRef.current) clearTimeout(avisoBloqueoTimeoutRef.current)
+    },
+    [],
+  )
 
   /**
    * A qué capa de datos pertenece un elemento. Devuelve `null` si no pertenece
@@ -459,6 +565,46 @@ function MapaDeRed({
         })),
       },
     })
+
+    // Índice para el buscador: nombre, una línea de contexto y los otros
+    // textos por los que alguien podría buscarlo (código, UUID…).
+    if (onIndiceChangeRef.current) {
+      const textos = (f: Feature<Geometry>, campos: string[]) =>
+        campos.map((c) => f.get(c)).filter((v): v is string => typeof v === "string" && v.trim() !== "")
+      const entrada = (
+        f: Feature<Geometry>,
+        tipo: ElementoBuscable["tipo"],
+        detalle: string,
+        alias: string[],
+        categoria?: string,
+      ) => ({
+        clave: getUid(f),
+        tipo,
+        nombre: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? "").trim(),
+        detalle,
+        alias,
+        ...(categoria ? { categoria } : {}),
+      })
+      const indice: ElementoBuscable[] = [
+        ...nodeFeatures.map((f) =>
+          entrada(f, "node", `Cubierta · ${categoriaDeMufa(f)}`, textos(f, ["etiqueta", "id_legacy", "id"]), categoriaDeMufa(f)),
+        ),
+        ...fiberFeatures.map((f) => {
+          const hilos = f.get("cant_hilo")
+          return entrada(
+            f,
+            "fiber",
+            typeof hilos === "number" && hilos > 0 ? `Cable · ${hilos} hilos` : "Cable",
+            textos(f, ["codigo", "nombre", "id"]),
+          )
+        }),
+        ...cabeceraSource
+          .getFeatures()
+          .map((f) => entrada(f, "cabecera", "Cabecera central", textos(f, ["codigo", "etiqueta", "nombre", "id"]))),
+        ...zoneSource.getFeatures().map((f) => entrada(f, "zone", "Zona", [])),
+      ].filter((e) => e.nombre !== "")
+      onIndiceChangeRef.current(indice)
+    }
   }, [nodeSource, fiberSource, zoneSource, cabeceraSource])
 
   /**
@@ -490,6 +636,138 @@ function MapaDeRed({
     if (!view || !extent || !extent.every((v) => Number.isFinite(v))) return
     view.fit(extent, { padding: [80, 80, 80, 80], maxZoom, duration: 400 })
   }, [])
+
+  /**
+   * Centra el mapa en un elemento y lo selecciona (abre su ficha). Lo usa el
+   * buscador de arriba con la clave que le dio el índice.
+   */
+  const enfocarElemento = useCallback(
+    (clave: string) => {
+      for (const fuente of [nodeSource, fiberSource, cabeceraSource, zoneSource]) {
+        const feature = fuente.getFeatures().find((f) => getUid(f) === clave)
+        if (!feature) continue
+        const tipo = tipoDeFeature(feature)
+        const geometria = feature.getGeometry()
+        if (!tipo || !geometria) return false
+        const view = mapRef.current?.getView()
+        if (geometria instanceof Point) {
+          view?.animate({ center: geometria.getCoordinates(), zoom: Math.max(view.getZoom() ?? 0, 18.5), duration: 450 })
+        } else {
+          encuadrarEn(geometria.getExtent(), 18.5)
+        }
+        editSelectRef.current?.getFeatures().clear()
+        setSelected({ feature, type: tipo })
+        setNameDraft((feature.get(NOMBRE_VISIBLE) as string) ?? "")
+        return true
+      }
+      return false
+    },
+    [nodeSource, fiberSource, cabeceraSource, zoneSource, tipoDeFeature, encuadrarEn],
+  )
+
+  /** Lo que «Gestión de hilos» necesita saber de un cable del mapa. */
+  const datosDeCable = useCallback(
+    (f: Feature<Geometry>): CableElegido => {
+      const id = f.get("id")
+      const hilos = f.get("cant_hilo")
+      const desde = f.get("id_elem_from")
+      const hasta = f.get("id_elem_to")
+      return {
+        id: typeof id === "string" ? id : null,
+        codigo: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? (f.get("codigo") as string | undefined) ?? "Cable").trim(),
+        hilos: typeof hilos === "number" && hilos > 0 ? hilos : null,
+        // La longitud medida en campo si la base la tiene; si no, la de la línea del mapa.
+        largoM:
+          typeof f.get("longitud_medida") === "number" && f.get("longitud_medida") > 0
+            ? Math.round(f.get("longitud_medida") * 100) / 100
+            : Math.round(largoEnKm(f.getGeometry()) * 1000),
+        origen: typeof desde === "string" ? nombreDeElemento(desde) : null,
+        destino: typeof hasta === "string" ? nombreDeElemento(hasta) : null,
+      }
+    },
+    [nombreDeElemento],
+  )
+
+  const cableSeleccionado = useCallback(
+    () => (selected?.type === "fiber" ? datosDeCable(selected.feature) : null),
+    [selected, datosDeCable],
+  )
+
+  /**
+   * Espera un click sobre un elemento de una capa y lo devuelve convertido;
+   * `null` si se cancela con Esc o desde el aviso. Mientras tanto el mapa lo
+   * dice en un aviso y el cursor pasa a mano sobre lo que se puede elegir.
+   */
+  const esperarClick = useCallback(
+    <T,>(capa: () => VectorLayer<VectorSource> | null, aviso: string, convertir: (f: Feature<Geometry>) => T) =>
+      new Promise<T | null>((resolve) => {
+        const map = mapRef.current
+        if (!map) {
+          resolve(null)
+          return
+        }
+        cancelarEleccionRef.current?.()
+
+        const elementoEn = (pixel: number[]) =>
+          (map.forEachFeatureAtPixel(pixel, (f) => f as Feature<Geometry>, {
+            layerFilter: (c) => c === capa(),
+            hitTolerance: 6,
+          }) ?? null) as Feature<Geometry> | null
+
+        const cursorAnterior = containerRef.current?.style.cursor ?? ""
+        setAvisoEleccion(aviso)
+
+        const claveMover = map.on("pointermove", (evt) => {
+          if (evt.dragging || !containerRef.current) return
+          containerRef.current.style.cursor = elementoEn(evt.pixel) ? "pointer" : "crosshair"
+        })
+        const claveClick = map.on("singleclick", (evt) => {
+          const elemento = elementoEn(evt.pixel)
+          if (elemento) terminar(convertir(elemento))
+        })
+        const alTeclear = (e: KeyboardEvent) => {
+          if (e.key === "Escape") terminar(null)
+        }
+        window.addEventListener("keydown", alTeclear)
+
+        function terminar(resultado: T | null) {
+          unByKey([claveMover, claveClick])
+          window.removeEventListener("keydown", alTeclear)
+          if (containerRef.current) containerRef.current.style.cursor = cursorAnterior
+          cancelarEleccionRef.current = null
+          setAvisoEleccion(null)
+          resolve(resultado)
+        }
+        cancelarEleccionRef.current = () => terminar(null)
+      }),
+    [],
+  )
+
+  const elegirCable = useCallback(
+    () => esperarClick(() => fiberLayer.current, "Haz click sobre un cable para ver sus hilos. Esc cancela.", datosDeCable),
+    [esperarClick, datosDeCable],
+  )
+
+  const elegirElemento = useCallback(
+    (tipo: "cabecera" | "node", aviso: string) =>
+      esperarClick(
+        () => (tipo === "cabecera" ? cabeceraLayer.current : nodeLayer.current),
+        `${aviso} Esc cancela.`,
+        (f) => ({ clave: getUid(f), nombre: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? "").trim() }),
+      ),
+    [esperarClick],
+  )
+
+  useEffect(() => {
+    if (!apiRef) return
+    apiRef.current = { enfocarElemento, cableSeleccionado, elegirCable, elegirElemento }
+    return () => {
+      apiRef.current = null
+    }
+  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento])
+
+  // Si el mapa se desmonta con una elección a medias, se cancela.
+  useEffect(() => () => cancelarEleccionRef.current?.(), [])
 
   // Extensión combinada de las capas con datos de red.
   const extensionDeRed = useCallback(() => {
@@ -1178,7 +1456,9 @@ function MapaDeRed({
     if (tool === "edit") {
       // En modo "Editar": click para seleccionar un elemento (abre el panel
       // de info) y arrastrar sus vértices para corregir el trazado. "Mover mapa"
-      // queda libre solo para desplazarse, sin interceptar clicks.
+      // queda libre solo para desplazarse, sin interceptar clicks. Se puede
+      // seleccionar cualquier elemento para consultarlo, pero solo se arrastra
+      // lo que es de la capa activa (`modificables`).
       const editSelect = new Select({
         condition: click,
         layers: capasDeDatos,
@@ -1206,7 +1486,7 @@ function MapaDeRed({
       map.addInteraction(editSelect)
       editSelectRef.current = editSelect
 
-      const editModify = new Modify({ features: editSelect.getFeatures() })
+      const editModify = new Modify({ features: modificables })
       map.addInteraction(editModify)
       editModifyRef.current = editModify
     }
@@ -1290,15 +1570,18 @@ function MapaDeRed({
         fill: new Fill({ color: "rgba(239, 68, 68, 0.25)" }),
         stroke: new Stroke({ color: "#ef4444", width: 3 }),
       })
+      // Solo se resalta y se quita lo que es de la capa activa.
+      const deLaCapaActiva = (_f: unknown, capa: unknown) => capa === capaDeMapa(capaActivaRef.current)
       const hover = new Select({
         condition: pointerMove,
         style: hoverStyle,
         layers: capasDeDatos,
+        filter: deLaCapaActiva,
       })
       map.addInteraction(hover)
       deleteHoverRef.current = hover
 
-      const select = new Select({ condition: click, layers: capasDeDatos })
+      const select = new Select({ condition: click, layers: capasDeDatos, filter: deLaCapaActiva })
       select.on("select", (e) => {
         e.selected.forEach((f) => {
           ;[nodeSource, fiberSource, zoneSource, cabeceraSource].forEach((s) => {
@@ -1368,6 +1651,8 @@ function MapaDeRed({
     tipoDeFeature,
     consultarConectividad,
     nombreDeElemento,
+    modificables,
+    capaDeMapa,
   ])
 
   useEffect(() => {
@@ -1464,13 +1749,21 @@ function MapaDeRed({
       // detrás dejaba, por ejemplo, una mufa a medio confirmar.
       if (document.querySelector('[data-slot="dialog-content"]')) return
 
+      if (e.key === "?") {
+        setAyudaAbierta(true)
+        return
+      }
+
       const indice = Number(e.key) - 1
       const herramienta = TOOL_ORDER[indice]
-      if (herramienta) setTool(herramienta)
+      if (!herramienta) return
+      const motivo = motivoHerramientaBloqueada(herramienta, capaActivaRef.current)
+      if (motivo) avisarBloqueo(herramienta, motivo)
+      else setTool(herramienta)
     }
     window.addEventListener("keydown", alPulsarTecla)
     return () => window.removeEventListener("keydown", alPulsarTecla)
-  }, [setTool])
+  }, [setTool, avisarBloqueo])
 
   const tools: { id: MapTool; label: string; icon: typeof Hand; color?: string; separator?: boolean }[] = [
     { id: "pan", label: "Mover mapa", icon: Hand },
@@ -1482,6 +1775,21 @@ function MapaDeRed({
     { id: "measure-length", label: "Medir distancia", icon: Ruler, color: MEASURE_COLOR, separator: true },
     { id: "measure-area", label: "Medir área", icon: Square, color: MEASURE_COLOR },
   ]
+
+  // En la barra de estado: la herramienta y, si cambia el mapa, sobre qué capa.
+  const nombreHerramienta =
+    tools.find((t) => t.id === tool)?.label ??
+    (tool === "conectividad"
+      ? "Consulta de conectividad"
+      : tool === "sentido"
+        ? "Entradas y salidas"
+        : tool === "cable"
+          ? "Consulta de cable"
+          : "")
+  const etiquetaHerramienta =
+    capaActiva && HERRAMIENTAS_DE_EDICION.includes(tool)
+      ? `${nombreHerramienta} · ${NOMBRE_DE_CAPA[capaActiva]}`
+      : nombreHerramienta
 
   function clearMeasurements() {
     measureSource.clear()
@@ -1500,6 +1808,7 @@ function MapaDeRed({
 
 
   function handleNameChange(value: string) {
+    if (!seleccionEditable) return
     setNameDraft(value)
     selected?.feature.set(NOMBRE_VISIBLE, value)
   }
@@ -1512,7 +1821,7 @@ function MapaDeRed({
   }
 
   function handleDeleteSelected() {
-    if (!selected) return
+    if (!selected || !seleccionEditable) return
     const sources: Record<FeatureType, VectorSource> = {
       node: nodeSource,
       fiber: fiberSource,
@@ -1607,6 +1916,10 @@ function MapaDeRed({
     setCabeceraLoadError(null)
   }
 
+  // Lo seleccionado se mueve, se renombra o se quita solo si es de la capa
+  // activa; si no, el panel queda en consulta.
+  const seleccionEditable = selected !== null && CAPA_DE_TIPO[selected.type] === capaActiva
+
   const selectedLength =
     selected?.type === "fiber"
       ? getLength(selected.feature.getGeometry() as LineString) / 1000
@@ -1700,6 +2013,18 @@ function MapaDeRed({
           </MapNotice>
         )}
 
+        {avisoEleccion && (
+          <MapNotice tono="info" onCerrar={() => cancelarEleccionRef.current?.()}>
+            {avisoEleccion}
+          </MapNotice>
+        )}
+
+        {avisoBloqueo && motivoHerramientaBloqueada(avisoBloqueo.herramienta, capaActiva) && (
+          <MapNotice tono="aviso" onCerrar={() => setAvisoBloqueo(null)}>
+            {avisoBloqueo.texto}
+          </MapNotice>
+        )}
+
         {/* Las indicaciones de cada herramienta son ayuda; lo demás que pasa
             por aquí (un trazo de fibra rechazado) es una advertencia. */}
         {fiberNotice && (
@@ -1744,39 +2069,59 @@ function MapaDeRed({
         {tools.map((t) => {
           const Icon = t.icon
           const active = tool === t.id
+          const motivo = motivoHerramientaBloqueada(t.id, capaActiva)
           return (
             <span key={t.id} className="flex flex-col gap-0.5">
               {t.separator && <span className="mx-1 my-1 h-px bg-border" />}
-              <Tooltip label={`${t.label} (${TOOL_ORDER.indexOf(t.id) + 1})`}>
+              <Tooltip
+                label={motivo ? `${t.label}: activa su capa primero` : `${t.label} (${TOOL_ORDER.indexOf(t.id) + 1})`}
+              >
                 <button
                   type="button"
-                  onClick={() => setTool(t.id)}
+                  onClick={() => (motivo ? avisarBloqueo(t.id, motivo) : setTool(t.id))}
+                  aria-disabled={motivo ? true : undefined}
                   aria-label={t.label}
                   aria-keyshortcuts={String(TOOL_ORDER.indexOf(t.id) + 1)}
                   aria-pressed={active}
                   className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
                     active
                       ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-foreground hover:bg-accent"
+                      : motivo
+                        ? "cursor-not-allowed text-muted-foreground/45 hover:bg-accent/60"
+                        : "text-foreground hover:bg-accent"
                   }`}
                 >
                   <Icon
                     className="size-[18px]"
-                    style={!active && t.color ? { color: t.color } : undefined}
+                    style={!active && !motivo && t.color ? { color: t.color } : undefined}
                   />
                 </button>
               </Tooltip>
             </span>
           )
         })}
+        <span className="mx-1 my-1 h-px bg-border" />
+        <Tooltip label="Atajos de teclado (?)">
+          <button
+            type="button"
+            onClick={() => setAyudaAbierta(true)}
+            aria-label="Atajos de teclado"
+            aria-keyshortcuts="?"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Keyboard className="size-[18px]" />
+          </button>
+        </Tooltip>
       </div>
+
+      <AyudaAtajos open={ayudaAbierta} onOpenChange={setAyudaAbierta} />
 
       <MapStatusBar
         lonRef={lonRef}
         latRef={latRef}
         zoomRef={zoomRef}
         zoom={zoom}
-        herramienta={tools.find((t) => t.id === tool)?.label ?? (tool === "conectividad" ? "Consulta de conectividad" : tool === "sentido" ? "Entradas y salidas" : tool === "cable" ? "Consulta de cable" : "")}
+        herramienta={etiquetaHerramienta}
       />
 
       {/* Nombre del elemento bajo el cursor. Las etiquetas del mapa solo salen
@@ -1833,12 +2178,19 @@ function MapaDeRed({
                 type="text"
                 value={nameDraft}
                 onChange={(e) => handleNameChange(e.target.value)}
-                className="w-full rounded-md border border-transparent bg-transparent py-1 pl-1.5 pr-7 text-base font-bold tracking-tight text-foreground outline-none transition hover:border-border focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/25"
+                readOnly={!seleccionEditable}
+                className={
+                  seleccionEditable
+                    ? "w-full rounded-md border border-transparent bg-transparent py-1 pl-1.5 pr-7 text-base font-bold tracking-tight text-foreground outline-none transition hover:border-border focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/25"
+                    : "w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-bold tracking-tight text-foreground outline-none"
+                }
               />
-              <Pencil
-                className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground opacity-60 transition group-hover:opacity-100"
-                aria-hidden="true"
-              />
+              {seleccionEditable && (
+                <Pencil
+                  className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground opacity-60 transition group-hover:opacity-100"
+                  aria-hidden="true"
+                />
+              )}
             </div>
 
             {datosSeleccion.length > 0 && (
@@ -1926,17 +2278,27 @@ function MapaDeRed({
 
           {/* Aparte y discreto: es la única acción que cambia el mapa. Solo
               quita el elemento del mapa; la base de datos no se toca. */}
-          <div className="border-t border-border px-2 py-1.5">
-            <button
-              type="button"
-              onClick={handleDeleteSelected}
-              title="Se quita solo del mapa; no se borra de la base de datos."
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-destructive outline-none transition hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <Trash2 className="size-3.5" />
-              Quitar del mapa
-            </button>
-          </div>
+          {seleccionEditable ? (
+            <div className="border-t border-border px-2 py-1.5">
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                title="Se quita solo del mapa; no se borra de la base de datos."
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-destructive outline-none transition hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Trash2 className="size-3.5" />
+                Quitar del mapa
+              </button>
+            </div>
+          ) : (
+            <p className="flex items-start gap-1.5 border-t border-border px-3.5 py-2 text-[11px] leading-snug text-muted-foreground">
+              <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
+              <span>
+                Solo consulta. Para moverlo, renombrarlo o quitarlo, activa la capa «
+                {NOMBRE_DE_CAPA[CAPA_DE_TIPO[selected.type]]}».
+              </span>
+            </p>
+          )}
         </div>
       )}
 

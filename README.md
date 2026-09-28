@@ -13,7 +13,7 @@ conectividad interna de cada mufa.
 | --- | --- |
 | Framework | Next.js 16 (App Router) + React 19 + TypeScript |
 | Estilos | Tailwind CSS v4 + componentes shadcn sobre `@base-ui/react` |
-| Mapa | OpenLayers 10 (`ol`) sobre teselas de OpenStreetMap |
+| Mapa | OpenLayers 10 (`ol`) sobre teselas de OpenStreetMap (o el proveedor de `NEXT_PUBLIC_TESELAS_URL`) |
 | Esquemas de mufa | JointJS (`@joint/core`) |
 | Base de datos | Supabase (PostgreSQL + PostGIS) |
 | Gestor de paquetes | pnpm |
@@ -90,7 +90,12 @@ pnpm run build   # build de producción
 pnpm start       # sirve el build (puerto 3000)
 pnpm run lint    # eslint
 npx tsc --noEmit # solo verificación de tipos
+pnpm verificar   # tipos + lint + pruebas sin base: lo de correr antes de subir un cambio
 ```
+
+Pruebas sueltas: `pnpm run capa`, `pnpm run busqueda` y `pnpm run sesion` no necesitan la
+base; `pnpm run conectividad` y `pnpm auditar` sí (la auditoría hace intentos de login
+reales y puede dejar una cuenta bloqueada 30 segundos).
 
 ---
 
@@ -198,11 +203,11 @@ Barra vertical a la izquierda del mapa:
 | Herramienta | Descripción |
 | --- | --- |
 | Mover mapa | Solo desplazamiento, no intercepta clicks. |
-| Editar elementos | Click para seleccionar (abre el panel de atributos) y arrastrar vértices para corregir trazados. |
-| Dibujar mufa | Agrega una cubierta nueva. |
-| Trazar fibra | Dibuja un cable. **Obliga a empezar y terminar sobre una mufa** (con snap); si no, cancela el trazo y avisa. `Esc` cancela. |
-| Zona de cobertura | Dibuja un polígono de cobertura. |
-| Eliminar geometría | Resalta en rojo lo que está bajo el cursor y lo borra al hacer click. |
+| Editar elementos | Click para seleccionar cualquier elemento (abre el panel de atributos). Arrastrar vértices, renombrar o quitar solo se puede si el elemento es de la **capa activa**; si no, el panel queda en consulta y dice qué capa activar. |
+| Dibujar cubierta | Agrega una cubierta nueva. Necesita activa la capa «Cubiertas». |
+| Trazar fibra | Dibuja un cable. **Obliga a empezar y terminar sobre una cubierta** (con snap); si no, cancela el trazo y avisa. `Esc` cancela. Necesita activa la capa «Tendido de fibra». |
+| Zona de cobertura | Dibuja un polígono de cobertura. Necesita activa la capa «Zonas». |
+| Eliminar geometría | Resalta en rojo lo que está bajo el cursor y lo borra al hacer click. Solo actúa sobre la capa activa. |
 | Medir distancia | Traza una línea libre y muestra la distancia en vivo (m / km). |
 | Medir área | Dibuja un polígono libre y muestra el área en vivo (m² / ha / km²). |
 | Conectividad fina | Desde el ribbon (Consultas → Red). El cursor pasa a mira y a mano sobre las cubiertas; al pulsar una se pide su conectividad y se abre el esquemático en modo consulta. Otros elementos se ignoran. |
@@ -215,6 +220,28 @@ eso en el panel «Ver conexiones» y «Gestionar esquema» salen en gris hasta c
 Después se activan para esa mufa, y así se vuelve a abrir el esquema sin repetir la
 consulta. Siguen en gris si la consulta no trajo cables. Consultar es solo leer: la
 función arma el JSON en el momento y no guarda nada.
+
+#### Capa activa
+
+Pedido del ingeniero a cargo del proyecto: antes de editar, mover o crear **se activa la
+capa** sobre la que se va a trabajar, como en un SIG de escritorio. Así no se mueve una
+cubierta queriendo corregir un cable que pasa por encima, ni se borra lo que no era.
+
+- Se activa con **«Activar capa»** (Inicio → Capas) o **pulsando la capa** en «Capas de
+  red». Pulsarla otra vez, o «Activar capa» con una capa ya activa, la desactiva. La flecha
+  de la izquierda sigue desplegando el desglose.
+- La capa activa se resalta en el panel, «Activar capa» queda encendido en el ribbon y la
+  barra de estado dice sobre qué capa se trabaja («Editar elementos · Cubiertas»).
+- Dibujar necesita activa su capa; eliminar necesita una capa activa y solo quita de esa.
+  Lo que no se puede usar se ve apagado en la barra y, al pulsarlo, avisa qué capa activar.
+- Activar una capa oculta la muestra; ocultar la capa activa la desactiva.
+- Consultar no necesita capa activa.
+
+Por ahora nada de lo editado se guarda: la base todavía no tiene cómo recibir las
+ediciones. El flujo queda listo para cuando las haya. Las reglas viven en
+`lib/map/capa-activa.ts` y se prueban con `pnpm run capa`.
+
+El botón del teclado, al pie de la barra (o la tecla **?**), muestra todos los atajos.
 
 Las **teclas 1 a 8** activan las herramientas en ese mismo orden. Se ignoran mientras se
 escribe en un campo, para no cambiar de herramienta al teclear un nombre.
@@ -277,6 +304,11 @@ botones son todavía la maqueta heredada. Los que ya ejecutan una acción real s
 | Proyectos → Acercar ext. | Reencuadra sobre la red. |
 | Edición → Crear / Borrar / Mover vértice / Editar atributos | Activan la herramienta correspondiente del mapa. |
 | Varios → Mediciones | Activa la herramienta de medir distancia. |
+| Inicio → Activar capa | Activa o desactiva la capa sobre la que se edita (ver «Capa activa»). |
+| Consultas → Búsqueda | Lleva al buscador de arriba (también Ctrl+K). |
+| Red de fibra → Hilos | Abre «Gestión de hilos» del cable (ver abajo). |
+| Red de fibra → GPON | Abre «Elementos alimentados por fibra óptica» (ver abajo). |
+| Red de fibra → Redes/Nodo | Abre «Consulta de redes por nodo de fibra óptica» (ver abajo). |
 | Usuario → Salir | Cierra sesión (con confirmación). |
 
 Los demás muestran un aviso de que la función no está disponible todavía, en vez de no
@@ -285,6 +317,24 @@ hacer nada al pulsarlos.
 El ribbon **se pliega** pulsando la pestaña activa (como en Office) o con la flecha de la
 derecha, y recuerda la preferencia. Entre cabecera, pestañas y barra se iban casi 190 px
 de alto antes de que empezara el mapa.
+
+### Ventanas de Red de fibra
+
+Siguen las pantallas del SIG anterior, con los nombres que pidió el equipo y sin lo que
+todavía no tiene función en la base. Lo que falta lo dice al pulsarlo («… todavía no está
+disponible: falta la función en la base»). Comparten las piezas de
+`components/ventana-sig.tsx` (campos amarillos, botones, avisos sin datos, barra de
+estado), así que se ven iguales.
+
+| Ventana | Qué hace hoy | Qué espera de la base |
+| --- | --- | --- |
+| **Gestión de hilos** (`gestion-hilos-dialog.tsx`) | Se elige el cable en el mapa (o abre con el seleccionado) y lista sus hilos con `tab_fiber.fn_obtener_hilos_cable_json(p_id_cable)`: número con su color, buffer, colores, tecnología y estado, agrupados por buffer, con filtro por buffer y buscador. Al elegir un hilo muestra su UUID. | Rack, ODF, puertos, equipo, tarjeta, transporte y destino (columnas «pendiente»); simulación de corte y recorridos. |
+| **Elementos alimentados por fibra óptica** (`elementos-alimentados-dialog.tsx`) | Nodo origen: lista de cabeceras, búsqueda por caracteres, elegir el nodo en el mapa y ubicarlo. «Cod. Nivel 1 totales»: las cubiertas de primer nivel del mapa, con flechas y ubicar. | «Cod. Nivel 1 de la cabecera», puertos nivel 2, NAP conectada y recorridos. |
+| **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña (columnas provisionales). |
+
+Las funciones que devuelven filas se leen de forma tolerante: los nombres de campo se
+comparan sin mayúsculas, tildes ni guiones, así que un cambio de nombre en la función
+(«Tecnología», «num_buffer») no rompe la pantalla. Pruebas: `pnpm run hilos`.
 
 ### Panel de capas
 
@@ -302,8 +352,19 @@ panel siempre coinciden con lo que el filtro deja ver.
 
 ### Buscador
 
-El campo de la cabecera busca municipios y zonas contra Nominatim y centra el mapa en el
-resultado elegido. **No resuelve direcciones exactas**: OpenStreetMap no tiene ese nivel de
+El campo de la cabecera busca en dos sitios a la vez:
+
+- **Elementos de la red** (cubiertas, cables, cabeceras y zonas) por nombre, código o el
+  principio del UUID, desde la primera letra y sin preguntar a ningún servidor: el mapa
+  publica un índice de lo que tiene cargado (`lib/map/busqueda.ts`). Al elegir uno, el mapa
+  lo centra y abre su ficha; si su capa estaba oculta, la muestra.
+- **Municipios y zonas** contra Nominatim, desde la tercera letra.
+
+Se abre con **Ctrl+K** desde cualquier parte del tablero o con «Búsqueda» (Consultas →
+Elementos) y se recorre con las flechas y Enter. Las pruebas del orden de los resultados se
+corren con `pnpm run busqueda`.
+
+Nominatim **no resuelve direcciones exactas**: OpenStreetMap no tiene ese nivel de
 detalle para la mayoría de municipios colombianos, por eso el campo habla de «municipio o
 zona» y la búsqueda está limitada a Colombia (`countrycodes=co`).
 
@@ -336,9 +397,22 @@ hilos) construido con JointJS.
 
 ### Protección de los endpoints
 
-**Todas las rutas de `/api` exigen el token**, salvo el propio login. El cliente lo envía
-en la cabecera `Authorization: Bearer …` (ver `fetchConSesion` en `lib/auth.ts`) y el
-servidor **verifica la firma** antes de consultar nada (`lib/auth-server.ts`).
+**Todas las rutas de `/api` exigen la sesión**, salvo el propio login. El token viaja en
+una **cookie `httpOnly`** que pone el servidor al iniciar sesión: el navegador la manda sola
+y el JavaScript de la página no la puede leer, así que un script inyectado (XSS) no se la
+puede llevar. Antes el token vivía en `localStorage`, a su alcance. El servidor **verifica
+la firma** antes de consultar nada (`lib/auth-server.ts`); por cabecera `Authorization:
+Bearer …` también se acepta, para los scripts de prueba.
+
+- La cookie es `SameSite=Strict` (otra web no puede hacer que el navegador la mande, así que
+  no sirve para peticiones falsificadas) y `Secure` cuando la petición llega por HTTPS,
+  también detrás de IIS (`X-Forwarded-Proto`).
+- Con «Recordar usuario» dura las ocho horas del token aunque se cierre el navegador; sin
+  él, se borra al cerrarlo.
+- `GET /api/auth/sesion` dice si hay sesión (lo pregunta el tablero al abrir) y
+  `POST /api/auth/logout` borra la cookie al salir.
+- En el navegador solo queda quién entró y cuándo vence, para la interfaz.
+- Pruebas: `pnpm run sesion`.
 
 Esto no era así: las rutas de datos estaban abiertas, así que cualquiera que alcanzara el
 servidor podía descargar la red completa —mufas con sus direcciones, cables y la
@@ -350,9 +424,9 @@ comprobación rechaza tokens caducados, con firma alterada, firmados con otro se
 los que intentan cambiar el contenido (por ejemplo, subirse el rol a `admin`): el cuerpo
 va dentro de lo que se firma.
 
-> La validación del lado del cliente (`isTokenValid`) solo lee la fecha de expiración
-> para decidir qué pantalla mostrar. **No** es una comprobación de seguridad: la de
-> verdad es la del servidor.
+> Lo que guarda el navegador (el vencimiento) solo sirve para decidir qué pantalla mostrar
+> mientras llega la respuesta del servidor. **No** es una comprobación de seguridad: la de
+> verdad es la del servidor, en cada petición.
 
 La sesión dura ocho horas, más que una jornada con el mapa abierto. Cuando vence, la
 aplicación lo dice y devuelve al login: `fetchConSesion` cierra la sesión ante cualquier
@@ -508,12 +582,12 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   puede dejar esa cuenta bloqueada 30 segundos seguidos. Es el precio de bloquear por
   cuenta en vez de por IP; con la aplicación detrás de IIS, limitar por IP allí es la
   forma natural de completarlo.
-- **El token vive en `localStorage`**: cualquier XSS podría leerlo. Una cookie `httpOnly`
-  sería más segura, pero obliga a cambiar cómo se envía en cada petición.
 - **Teselas de OpenStreetMap**: `tile.openstreetmap.org` es un servicio comunitario y su
   política de uso prohíbe el uso intensivo o comercial. Durante las pruebas llegó a
   cortar el servicio y el mapa se quedó sin fondo. Para producción conviene un servidor
-  de teselas propio o un proveedor con contrato.
+  de teselas propio o un proveedor con contrato; se configura con `NEXT_PUBLIC_TESELAS_URL`
+  (y `_ATRIBUCION`, `_ZOOM_MAXIMO`) sin tocar código. Ver `.env.example` y
+  `lib/map/mapa-base.ts`.
 - **Código sin usar**: `components/network-schematic.tsx`, `lib/schematic/network-graph.ts`,
   `network-mockups.ts` y `legacy-mufa.ts` (~1.480 líneas) no son alcanzables desde
   ninguna página. Están pendientes de confirmar si son trabajo en curso de la pestaña

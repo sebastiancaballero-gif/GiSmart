@@ -275,7 +275,26 @@
   }
 }
 
+/* La lista de capas señala dónde elegir cuando se pulsa «Activar capa». */
+.gismart-llamar {
+  animation: gismart-llamar 1.1s ease-in-out 2;
+}
+
+@keyframes gismart-llamar {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  45% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .gismart-llamar {
+    animation: none;
+  }
+
   .gismart-pulso-red {
     animation: none;
     opacity: 0;

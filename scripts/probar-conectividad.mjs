@@ -621,6 +621,13 @@ console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n"
   if (r.status !== 200) {
     sinDatos++
     console.log(`   PENDIENTE  el cable 2103824 no se puede consultar: ${r.cuerpo?.detalle ?? r.cuerpo?.message ?? "no está en la base"}`)
+  } else if (r.cuerpo.extremos.length === 0 || !cableReal.id_elem_from || !cableReal.id_elem_to) {
+    // Pasa mientras el backend recarga los cables: vuelven sin sus puntas
+    // (id_elem_from / id_elem_to) y la función no tiene qué devolver.
+    sinDatos++
+    console.log(
+      `   PENDIENTE  el cable 2103824 no tiene sus puntas en la base todavía (${r.cuerpo.extremos.length} extremos): es de los datos`,
+    )
   } else {
     const extremos = r.cuerpo.extremos
     const entrada = extremos.find((e) => e.rol === "entrada")

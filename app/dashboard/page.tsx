@@ -1,15 +1,29 @@
 "use client"
 
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { DashboardRibbon } from "@/components/dashboard-ribbon"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
-import { NetworkMap } from "@/components/network-map"
+import { NetworkMap, type CableElegido, type MapaApi } from "@/components/network-map"
+import { GestionHilosDialog } from "@/components/gestion-hilos-dialog"
+import { RedesNodoDialog, type NodoDeFibra } from "@/components/redes-nodo-dialog"
+import { ElementosAlimentadosDialog, type CubiertaNivel1 } from "@/components/elementos-alimentados-dialog"
 import { AuthGuard } from "@/components/auth-guard"
 import type { MapTool } from "@/lib/map/herramientas"
+import type { ElementoBuscable } from "@/lib/map/busqueda"
+import {
+  DIBUJO_DE_CAPA,
+  NOMBRE_DE_CAPA,
+  esCapaEditable,
+  motivoHerramientaBloqueada,
+  type CapaEditable,
+} from "@/lib/map/capa-activa"
 import type { NetworkStats } from "@/lib/map/capas"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { fetchConSesion } from "@/lib/auth"
+
+/** Por debajo de este ancho el panel de capas va plegado. */
+const PANTALLA_ANGOSTA = "(max-width: 1023px)"
 
 export default function DashboardPage() {
   const [visible, setVisible] = useState({ nodes: true, fibers: true, zones: true, cabeceras: true })
@@ -19,7 +33,20 @@ export default function DashboardPage() {
   // panel anunciaba los kilometros de toda la red mientras el mapa mostraba
   // solo una parte.
   const [enPantalla, setEnPantalla] = useState({ nodes: 0, fibers: 0, km: 0 })
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // En pantallas angostas (tablet, portátil pequeño) el panel de capas empieza
+  // plegado y se pliega solo al achicar la ventana: abierto se comía un cuarto
+  // del mapa. Se puede abrir igual con su botón.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(PANTALLA_ANGOSTA).matches,
+  )
+  useEffect(() => {
+    const consulta = window.matchMedia(PANTALLA_ANGOSTA)
+    const alCambiar = (e: MediaQueryListEvent) => {
+      if (e.matches) setSidebarCollapsed(true)
+    }
+    consulta.addEventListener("change", alCambiar)
+    return () => consulta.removeEventListener("change", alCambiar)
+  }, [])
   const [center, setCenter] = useState<{ lon: number; lat: number } | null>(null)
   const [location, setLocation] = useState("Ubicando…")
   const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; nonce: number } | null>(null)
@@ -33,6 +60,97 @@ export default function DashboardPage() {
     nodes: [],
     fibers: [],
   })
+  // Capa activa: editar, mover y crear solo trabajan sobre ella. Se activa con
+  // «Activar capa» o pulsándola en el panel (ver lib/map/capa-activa.ts).
+  const [capaActiva, setCapaActiva] = useState<CapaEditable | null>(null)
+  // Sube para que el panel señale dónde elegir la capa.
+  const [pedirCapa, setPedirCapa] = useState(0)
+  // Buscador de elementos: el mapa publica qué tiene cargado y expone cómo
+  // enfocar uno; el botón «Búsqueda» del ribbon lleva el foco al buscador.
+  const [indice, setIndice] = useState<ElementoBuscable[]>([])
+  const mapaApiRef = useRef<MapaApi | null>(null)
+  const [pedirFocoBusqueda, setPedirFocoBusqueda] = useState(0)
+
+  // «Gestión de hilos» (Red de fibra → Hilos). Si hay un cable seleccionado en
+  // el mapa se abre con ese; si no, se elige con el botón de selección.
+  const [hilosAbierto, setHilosAbierto] = useState(false)
+  const [cableHilos, setCableHilos] = useState<CableElegido | null>(null)
+
+  const abrirHilos = useCallback(() => {
+    const seleccionado = mapaApiRef.current?.cableSeleccionado()
+    if (seleccionado) setCableHilos(seleccionado)
+    setHilosAbierto(true)
+  }, [])
+
+  // El botón de selección de la ventana: se cierra, se elige el cable en el
+  // mapa y se vuelve a abrir con él. Con Esc se vuelve con el que había.
+  const elegirCableParaHilos = useCallback(async () => {
+    setHilosAbierto(false)
+    setTool("pan")
+    const cable = (await mapaApiRef.current?.elegirCable()) ?? null
+    if (cable) setCableHilos(cable)
+    setHilosAbierto(true)
+  }, [])
+
+  // «Consulta de redes por nodo» (Red de fibra → Redes/Nodo). Los nodos de
+  // fibra son, por ahora, las cabeceras cargadas en el mapa.
+  const [redesAbierto, setRedesAbierto] = useState(false)
+  const nodosDeFibra = useMemo<NodoDeFibra[]>(
+    () =>
+      indice
+        .filter((e) => e.tipo === "cabecera")
+        .map((e) => ({ clave: e.clave, nombre: e.nombre, detalle: e.detalle })),
+    [indice],
+  )
+
+  // «Ubicar en el mapa»: se cierra la ventana y el mapa se centra en el nodo.
+  const ubicarNodo = useCallback((clave: string) => {
+    setRedesAbierto(false)
+    setVisible((prev) => ({ ...prev, cabeceras: true }))
+    mapaApiRef.current?.enfocarElemento(clave)
+  }, [])
+
+  // «Elementos alimentados por fibra óptica» (Red de fibra → GPON). El nodo y
+  // la cubierta de nivel 1 elegidos viven aquí porque se pueden elegir con un
+  // click en el mapa, con la ventana cerrada.
+  const [gponAbierto, setGponAbierto] = useState(false)
+  const [claveNodoGpon, setClaveNodoGpon] = useState<string | null>(null)
+  const [claveNivel1Gpon, setClaveNivel1Gpon] = useState<string | null>(null)
+  const cubiertasNivel1 = useMemo<CubiertaNivel1[]>(
+    () =>
+      indice
+        .filter((e) => e.tipo === "node" && e.categoria === "Primer nivel")
+        .map((e) => ({ clave: e.clave, nombre: e.nombre })),
+    [indice],
+  )
+
+  // El pin de la ventana: se cierra, se elige la cabecera con un click en el
+  // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había.
+  const elegirNodoGponEnMapa = useCallback(async () => {
+    setGponAbierto(false)
+    setTool("pan")
+    const elegido = (await mapaApiRef.current?.elegirElemento("cabecera", "Haz click sobre el nodo (cabecera) que quieres consultar.")) ?? null
+    if (elegido) setClaveNodoGpon(elegido.clave)
+    setGponAbierto(true)
+  }, [])
+
+  // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
+  // estaba oculta se muestra: si no, se enfocaría algo que no se ve.
+  const handleElegirElemento = useCallback((elemento: ElementoBuscable) => {
+    const capa = ({ node: "nodes", fiber: "fibers", cabecera: "cabeceras", zone: "zones" } as const)[elemento.tipo]
+    setVisible((prev) => ({ ...prev, [capa]: true }))
+    mapaApiRef.current?.enfocarElemento(elemento.clave)
+  }, [])
+
+  const ubicarDesdeGpon = useCallback(
+    (clave: string) => {
+      const elemento = indice.find((e) => e.clave === clave)
+      if (!elemento) return
+      setGponAbierto(false)
+      handleElegirElemento(elemento)
+    },
+    [indice, handleElegirElemento],
+  )
 
   const claveDeCapa = (layerId: string): "nodes" | "fibers" | null =>
     layerId === "nodes" ? "nodes" : layerId === "fibers" ? "fibers" : null
@@ -63,6 +181,28 @@ export default function DashboardPage() {
     setFilters((prev) => ({ ...prev, [clave]: [] }))
   }, [])
 
+  // Cambia la capa activa. Si la herramienta en uso deja de servir con la
+  // nueva (dibujar cubiertas con «Zonas» activa, eliminar sin capa), vuelve a
+  // «Mover mapa».
+  const cambiarCapaActiva = useCallback(
+    (nueva: CapaEditable | null) => {
+      setCapaActiva(nueva)
+      if (motivoHerramientaBloqueada(tool, nueva)) setTool("pan")
+    },
+    [tool],
+  )
+
+  // Pulsar una capa la activa (y la muestra, si estaba oculta: no se puede
+  // editar lo que no se ve); pulsarla otra vez la desactiva.
+  const handleSelectCapa = useCallback(
+    (id: string) => {
+      if (!esCapaEditable(id)) return
+      cambiarCapaActiva(capaActiva === id ? null : id)
+      setVisible((prev) => ({ ...prev, [id]: true }))
+    },
+    [capaActiva, cambiarCapaActiva],
+  )
+
   const handleNavigate = useCallback((target: { lon: number; lat: number }) => {
     setFlyTo({ ...target, nonce: Date.now() })
   }, [])
@@ -73,14 +213,37 @@ export default function DashboardPage() {
       onFitToData: () => setFitTo({ capa: "todo", nonce: Date.now() }),
       onIdentify: () => setTool("edit"),
       onMeasure: () => setTool("measure-length"),
-      onDraw: () => setTool("node"),
-      onDelete: () => setTool("delete"),
+      // «Crear» dibuja en la capa activa; sin ella, el mapa dice qué activar.
+      onDraw: () => {
+        const herramienta = (capaActiva && DIBUJO_DE_CAPA[capaActiva]) || "node"
+        const motivo = motivoHerramientaBloqueada(herramienta, capaActiva)
+        if (motivo) return motivo
+        setTool(herramienta)
+      },
+      onDelete: () => {
+        const motivo = motivoHerramientaBloqueada("delete", capaActiva)
+        if (motivo) return motivo
+        setTool("delete")
+      },
       onEditGeometry: () => setTool("edit"),
       onConnectivity: () => setTool("conectividad"),
       onSentido: () => setTool("sentido"),
       onCable: () => setTool("cable"),
+      onBuscar: () => setPedirFocoBusqueda((n) => n + 1),
+      onHilos: abrirHilos,
+      onRedesNodo: () => setRedesAbierto(true),
+      onGpon: () => setGponAbierto(true),
+      onActivarCapa: () => {
+        if (capaActiva) {
+          cambiarCapaActiva(null)
+          return `Capa «${NOMBRE_DE_CAPA[capaActiva]}» desactivada. El mapa queda solo para consultar.`
+        }
+        setSidebarCollapsed(false)
+        setPedirCapa((n) => n + 1)
+        return "Elige en «Capas de red» la capa que vas a activar."
+      },
     }),
-    [],
+    [capaActiva, cambiarCapaActiva, abrirHilos],
   )
 
   // Botón del ribbon que corresponde a la herramienta activa, para que se vea
@@ -93,8 +256,9 @@ export default function DashboardPage() {
       "measure-length": ["Mediciones"],
       "measure-area": ["Mediciones"],
     }
-    return porHerramienta[tool] ?? []
-  }, [tool])
+    const botones = porHerramienta[tool] ?? []
+    return capaActiva ? [...botones, "Activar capa"] : botones
+  }, [tool, capaActiva])
 
   const handleCenterChange = useCallback((next: { lon: number; lat: number }) => {
     // Se redondea a ~100 m: evita relanzar la consulta por microdesplazamientos
@@ -135,16 +299,15 @@ export default function DashboardPage() {
     }
   }, [center])
 
-  const handleToggleLayer = useCallback((id: string) => {
-    setVisible((prev) => {
-      const next = { ...prev }
-      if (id === "nodes") next.nodes = !next.nodes
-      if (id === "fibers") next.fibers = !next.fibers
-      if (id === "zones") next.zones = !next.zones
-      if (id === "cabeceras") next.cabeceras = !next.cabeceras
-      return next
-    })
-  }, [])
+  const handleToggleLayer = useCallback(
+    (id: string) => {
+      if (!esCapaEditable(id)) return
+      // Ocultar la capa activa la desactiva: no se edita lo que no se ve.
+      if (visible[id] && capaActiva === id) cambiarCapaActiva(null)
+      setVisible((prev) => ({ ...prev, [id]: !prev[id] }))
+    },
+    [visible, capaActiva, cambiarCapaActiva],
+  )
 
   const handleStatsChange = useCallback((stats: NetworkStats) => {
     setCounts(stats.counts)
@@ -163,7 +326,13 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-        <DashboardHeader subtitle={location} onNavigate={handleNavigate} />
+        <DashboardHeader
+          subtitle={location}
+          onNavigate={handleNavigate}
+          elementos={indice}
+          onElegirElemento={handleElegirElemento}
+          pedirFoco={pedirFocoBusqueda}
+        />
         <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
         <div className="flex flex-1 overflow-hidden">
           <DashboardSidebar
@@ -177,6 +346,9 @@ export default function DashboardPage() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
             loading={loadingData}
+            capaActiva={capaActiva}
+            onSelectCapa={handleSelectCapa}
+            pedirCapa={pedirCapa}
           />
           <main id="map-panel" className="relative flex-1 overflow-hidden">
             <NetworkMap
@@ -190,6 +362,33 @@ export default function DashboardPage() {
               onToolChange={setTool}
               onLoadingChange={setLoadingData}
               filters={filters}
+              capaActiva={capaActiva}
+              onIndiceChange={setIndice}
+              apiRef={mapaApiRef}
+            />
+            <GestionHilosDialog
+              open={hilosAbierto}
+              onOpenChange={setHilosAbierto}
+              cable={cableHilos}
+              onElegirCable={elegirCableParaHilos}
+            />
+            <RedesNodoDialog
+              open={redesAbierto}
+              onOpenChange={setRedesAbierto}
+              nodos={nodosDeFibra}
+              onUbicarNodo={ubicarNodo}
+            />
+            <ElementosAlimentadosDialog
+              open={gponAbierto}
+              onOpenChange={setGponAbierto}
+              nodos={nodosDeFibra}
+              nivel1={cubiertasNivel1}
+              claveNodo={claveNodoGpon}
+              onCambiarNodo={setClaveNodoGpon}
+              claveNivel1={claveNivel1Gpon}
+              onCambiarNivel1={setClaveNivel1Gpon}
+              onUbicar={ubicarDesdeGpon}
+              onElegirNodoEnMapa={elegirNodoGponEnMapa}
             />
           </main>
         </div>
