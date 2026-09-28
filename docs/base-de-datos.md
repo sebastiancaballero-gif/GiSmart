@@ -102,10 +102,12 @@ ningún cable. Pendiente para Carlos:
 - En 151 cubiertas los divisores repiten `num_divisor` y `cod_divisor` (dos «D-1»).
 - Los puertos de los divisores salen vacíos y `cable_fibra.cant_buff` está en 0.
 
-Y una que toca a Carlos y a Dario: de las 184 cubiertas con cables, **56 no se pueden
-dibujar**. El esquemático exige al menos un cable de entrada y uno de salida, y 44
+Y una que tocaba a Carlos y a Dario: de las 184 cubiertas con cables, 56 no se podían
+dibujar, porque el esquemático exigía al menos un cable de entrada y uno de salida, y 44
 cubiertas solo tienen cables con `sentido: "Salida"` (como la 13/14) y 12 solo con
-`"Entrada"` (como CO01).
+`"Entrada"` (como CO01). **Resuelto del lado del esquemático** (24 de septiembre de
+2026): `parseMufaData` acepta cubiertas de un solo sentido, dibuja la columna del lado
+ausente vacía y lo advierte en el aviso del diagrama. Las 184 se dibujan.
 
 La causa (revisado el 22 de septiembre de 2026): la función decide el sentido por **el
 sentido en que se dibujó el cable**, no por el de la señal. Si el cable termina en la
@@ -133,10 +135,10 @@ Qué hace falta:
 - **Carlos:** que la función calcule el sentido por el recorrido desde la cabecera
   (entra el cable que viene del lado de la cabecera) o que se inviertan los 147 cables
   dibujados al revés. Y unir a la cabecera las 6 cubiertas sueltas.
-- **Dario:** aceptar las cubiertas terminales de segundo nivel, con solo la entrada.
-  Hoy el esquemático las rechaza (47 cubiertas). El JSON no dice de qué nivel es la
-  cubierta: si Dario quiere exigir salidas solo en primer nivel, Carlos tiene que
-  agregar el nivel (`funcion_cub`) al JSON.
+- ~~**Dario:** aceptar las cubiertas terminales de segundo nivel, con solo la entrada.~~
+  Hecho: el esquemático ya no exige los dos sentidos. Queda abierto si conviene
+  distinguir por nivel (exigir salidas solo en primer nivel), y para eso Carlos tendría
+  que agregar el nivel (`funcion_cub`) al JSON.
 
 `pnpm run datos` revisa todo esto cada vez que se corre (sección 2).
 

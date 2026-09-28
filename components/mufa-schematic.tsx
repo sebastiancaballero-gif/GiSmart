@@ -13,11 +13,11 @@ import {
   ZoomOut,
 } from "lucide-react"
 
+import type { ModoConectividad } from "@/lib/map/conectividad"
 import {
   parseMufaData,
   type MufaCampoJSON,
 } from "@/lib/schematic/mufa-field-data"
-import { MUFA_CAMPO_MOCKUP } from "@/lib/schematic/mufa-field-mockup"
 import {
   aplicarEnrutamiento,
   cargarEscenarioCampo,
@@ -29,8 +29,20 @@ import {
 } from "@/lib/schematic/mufa-field-graph"
 
 type MufaSchematicProps = {
-  /** JSON de campo de la MUFA. Por defecto se usa el mockup de `JsonMufa.txt`. */
-  datos?: MufaCampoJSON
+  /**
+   * JSON de conectividad de la mufa, tal como lo devuelve
+   * `GET /api/mufas/{id}/conectividad`. Es obligatorio a propósito: antes tenía
+   * el mockup como valor por defecto y una mufa sin datos mostraba el diagrama
+   * de ejemplo como si fuera el suyo.
+   */
+  datos: MufaCampoJSON
+  /**
+   * Para qué se abre el esquema. `escritura` todavía no habilita la creación de
+   * empalmes desde el lienzo: el dibujado es igual en los dos modos y sólo
+   * cambia lo que se le dice al usuario. Está declarado para que quien lo abre
+   * pueda expresar la intención sin forzar tipos.
+   */
+  modo?: ModoConectividad
   className?: string
 }
 
@@ -40,7 +52,7 @@ const LIMITES_ZOOM = { min: 0.35, max: 2.2, paso: 0.15 }
  * Vista de conectividad interna de una MUFA alimentada por el JSON de campo:
  * cables a los lados, bandejas instaladas al centro y empalmes de solo lectura.
  */
-export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSchematicProps) {
+export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchematicProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<dia.Graph | null>(null)
@@ -277,7 +289,8 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
           role="status"
           aria-live="polite"
         >
-          Bandejas activas: {mufa.bandejasInstaladas} de {mufa.capacidadBandejas}
+          Bandejas activas: {mufa.bandejasInstaladas}
+          {mufa.capacidadBandejas !== null && ` de ${mufa.capacidadBandejas}`}
         </div>
 
         <div className="flex items-center gap-1 rounded-lg bg-card p-1 ring-1 ring-border">
@@ -359,9 +372,11 @@ export function MufaSchematic({ datos = MUFA_CAMPO_MOCKUP, className }: MufaSche
       </div>
 
       <footer className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-        Vista de solo lectura cargada desde el JSON de campo. Use el botón Ortogonal/Curvo para
-        cambiar el dibujo de los empalmes. Ctrl + rueda para acercar, arrastre el fondo para
-        desplazarse.
+        {modo === "escritura"
+          ? "Cargado desde el JSON de conectividad. Cambiar los empalmes desde el lienzo todavía no está disponible."
+          : "Vista de solo lectura cargada desde el JSON de conectividad."}{" "}
+        Use el botón Ortogonal/Curvo para cambiar el dibujo de los empalmes. Ctrl + rueda para
+        acercar, arrastre el fondo para desplazarse.
       </footer>
     </div>
   )

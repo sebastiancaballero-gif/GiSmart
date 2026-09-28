@@ -77,7 +77,11 @@ export type MufaCampoJSON = {
   mufa_id: number
   tipo: string
   estado: string
-  capacidad_band: number
+  /**
+   * Capacidad física de bandejas de la cubierta. La función de la base no la
+   * envía hoy, así que puede faltar.
+   */
+  capacidad_band?: number
   can_band_inst: number
   cables: CableCampoJSON[]
   /** Formato anterior (clave en minúscula). */
@@ -159,7 +163,8 @@ export type MufaCampoParseada = {
   mufaId: number
   tipo: string
   estado: string
-  capacidadBandejas: number
+  /** `null` cuando el JSON no declara la capacidad física de la cubierta. */
+  capacidadBandejas: number | null
   bandejasInstaladas: number
   cables: CableCampoParseado[]
   entradas: CableCampoParseado[]
@@ -516,8 +521,21 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
   const entradas = cables.filter((cable) => cable.rol === "entrada")
   const salidas = cables.filter((cable) => cable.rol === "salida")
 
-  if (entradas.length === 0) throw new ErrorDatosMufaCampo("no hay ningún cable de entrada")
-  if (salidas.length === 0) throw new ErrorDatosMufaCampo("no hay ningún cable de salida")
+  // Una cubierta puede tener cables de un solo sentido y seguir siendo válida:
+  // las de segundo nivel terminales solo reciben su cable de entrada. Exigir
+  // ambos lados dejaba 56 de las 184 cubiertas de la base sin dibujar (ver
+  // docs/base-de-datos.md). Se dibuja con la columna del lado ausente vacía, y
+  // se avisa para que no parezca que se perdió un dato.
+  if (salidas.length === 0) {
+    avisos.push(
+      "Esta cubierta solo tiene cables de entrada: se dibuja como terminal, sin columna de salida.",
+    )
+  }
+  if (entradas.length === 0) {
+    avisos.push(
+      "Esta cubierta solo tiene cables de salida: no hay columna de entrada que dibujar.",
+    )
+  }
 
   const hilosPorId = indexarHilos(cables, avisos)
   const instaladas = Math.max(0, json.can_band_inst ?? 0)
@@ -530,7 +548,7 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
     bandejas = ensamblarConSlots(fuente.slice(0, instaladas), hilosPorId, avisos)
     if (fuente.length > instaladas) {
       avisos.push(
-        `Se omitieron ${fuente.length - instaladas} bandeja(s) no instaladas (capacidad ${json.capacidad_band}, instaladas ${instaladas}).`,
+        `Se omitieron ${fuente.length - instaladas} bandeja(s) no instaladas (instaladas ${instaladas} de ${json.capacidad_band ?? "capacidad sin declarar"}).`,
       )
     }
   }
@@ -540,7 +558,7 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
     mufaId: json.mufa_id,
     tipo: json.tipo,
     estado: json.estado,
-    capacidadBandejas: json.capacidad_band,
+    capacidadBandejas: json.capacidad_band ?? null,
     bandejasInstaladas: instaladas,
     cables,
     entradas,
