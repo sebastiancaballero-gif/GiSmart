@@ -1,6 +1,6 @@
 "use client"
 
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -73,6 +73,9 @@ export function GiSmartLogin() {
   const bloqueada = bloqueoHasta !== null && segundosRestantes > 0
 
   useEffect(() => {
+    // El tema y la URL solo existen en el navegador: leerlos durante el render
+    // haría que el HTML del servidor no coincidiera con el del cliente.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDark(getCurrentTheme() === "dark")
 
     // Se llega con `?sesion=caducada` cuando el token venció con el mapa
@@ -94,7 +97,6 @@ export function GiSmartLogin() {
     control,
     handleSubmit,
     reset,
-    watch,
     setError,
     formState: { errors, isSubmitting, dirtyFields },
   } = useForm<FormValues>({
@@ -102,8 +104,10 @@ export function GiSmartLogin() {
     defaultValues: { usuario: "", contrasena: "", recordar: false },
   })
 
-  const usuarioValue = watch("usuario")
-  const contrasenaValue = watch("contrasena")
+  // `useWatch` y no `watch()`: `watch` no se puede memorizar y el compilador
+  // de React se saltaba el componente entero.
+  const usuarioValue = useWatch({ control, name: "usuario" })
+  const contrasenaValue = useWatch({ control, name: "contrasena" })
 
   function handleCaps(e: React.KeyboardEvent<HTMLInputElement>) {
     setCapsLock(e.getModifierState?.("CapsLock") ?? false)
@@ -117,7 +121,7 @@ export function GiSmartLogin() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usuario: data.usuario.trim(), contrasena: data.contrasena }),
+        body: JSON.stringify({ usuario: data.usuario.trim(), contrasena: data.contrasena, recordar: data.recordar }),
       })
 
       if (!res.ok) {
@@ -135,8 +139,10 @@ export function GiSmartLogin() {
         return
       }
 
-      const { token, user } = await res.json()
-      saveSession(token, user, data.recordar)
+      // La sesión ya quedó en una cookie que pone el servidor; aquí solo se
+      // guarda quién entró y cuándo vence.
+      const { user, expira } = await res.json()
+      saveSession(user, typeof expira === "number" ? expira : 0, data.recordar)
       setNombreBienvenida(typeof user?.nombre === "string" ? user.nombre : null)
       setConnected(true)
       setTimeout(() => router.push("/dashboard"), 700)

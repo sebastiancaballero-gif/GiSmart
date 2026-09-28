@@ -2,45 +2,54 @@
 
 import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
-import { expiracionDelToken, getToken, isTokenValid, terminarSesionCaducada } from "@/lib/auth"
+import { expiracionGuardada, terminarSesionCaducada, verificarSesion } from "@/lib/auth"
 import { GismartLogo } from "@/components/gismart-mark"
 import { TramaRed } from "@/components/trama-red"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false)
 
-  // El token vive en localStorage, que no existe durante el render del
-  // servidor: la comprobacion solo puede hacerse ya montado en el navegador.
+  // La sesión vive en una cookie httpOnly que el navegador no puede leer: se le
+  // pregunta al servidor. Lo que dejó el login en el navegador solo sirve para
+  // no esperar en vano cuando claramente no hay sesión.
   useEffect(() => {
-    const token = getToken()
-    if (!isTokenValid(token)) {
+    const guardada = expiracionGuardada()
+    if (!guardada || guardada <= Date.now()) {
       window.location.replace("/")
       return
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAuthorized(true)
-
-    // La sesión dura ocho horas, más que una jornada de trabajo con el mapa
-    // abierto. Antes solo se comprobaba al entrar, así que al vencer no pasaba
-    // nada visible: las capas empezaban a fallar y el mapa se quedaba vacío.
-    // Ahora se avisa en el momento justo, y también al volver a la pestaña
-    // (los temporizadores no corren mientras el equipo está suspendido).
-    const expira = expiracionDelToken(token)
-    const restante = expira ? expira - Date.now() : 0
-
-    // `setTimeout` no admite esperas mayores a ~24,8 días; ocho horas caben de
-    // sobra, pero se acota por si algún día se alarga la vigencia.
-    const temporizador = window.setTimeout(terminarSesionCaducada, Math.min(restante, 2_147_483_000))
+    let activo = true
+    let temporizador: number | undefined
+    let expira = guardada
 
     function comprobarAlVolver() {
-      if (document.visibilityState === "visible" && !isTokenValid(getToken())) {
-        terminarSesionCaducada()
-      }
+      if (document.visibilityState === "visible" && expira <= Date.now()) terminarSesionCaducada()
     }
 
-    document.addEventListener("visibilitychange", comprobarAlVolver)
+    void verificarSesion().then((resultado) => {
+      if (!activo) return
+      if (resultado === "invalida") {
+        terminarSesionCaducada()
+        return
+      }
+      // Sin red no se puede confirmar, pero tampoco es una sesión vencida: se
+      // entra con lo guardado y las capas dirán si algo falla.
+      if (resultado !== "sin-red") expira = resultado.expira
+      setAuthorized(true)
+
+      // La sesión dura ocho horas, más que una jornada de trabajo con el mapa
+      // abierto. Antes solo se comprobaba al entrar, así que al vencer no
+      // pasaba nada visible: las capas empezaban a fallar y el mapa se quedaba
+      // vacío. Ahora se avisa en el momento justo, y también al volver a la
+      // pestaña (los temporizadores no corren mientras el equipo está
+      // suspendido). `setTimeout` no admite esperas mayores a ~24,8 días.
+      temporizador = window.setTimeout(terminarSesionCaducada, Math.min(expira - Date.now(), 2_147_483_000))
+      document.addEventListener("visibilitychange", comprobarAlVolver)
+    })
+
     return () => {
+      activo = false
       window.clearTimeout(temporizador)
       document.removeEventListener("visibilitychange", comprobarAlVolver)
     }

@@ -1,82 +1,35 @@
-import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
-import { exigirSesion } from "@/lib/auth-server"
 import { normalizarCablesDeMufa } from "@/lib/map/cables-de-mufa"
+import { responderConFuncion } from "@/lib/supabase-servidor"
 
 /**
  * Cables de entrada y salida de una cubierta, según la función
  * `geo_fiber.fn_json_conectividad_cubierta` de Carlos.
  *
- * Va por el servidor, como la conectividad fina: la clave con la que se
- * consulta no sale nunca de aquí. Al navegador solo le llegan el UUID, la
- * dirección y el color de cada cable; la geometría que hoy manda la función se
- * queda aquí, porque el mapa ya tiene los cables dibujados.
+ * Al navegador solo le llegan el UUID, la dirección y el color de cada cable;
+ * la geometría que manda la función se queda aquí, porque el mapa ya tiene los
+ * cables dibujados.
  *
  * La función vive en `geo_fiber`, no en `public`, y su argumento se llama
  * `p_uuid_cubierta` (no `p_cubierta_id`, como el de la conectividad fina).
+ * Antes se llamó `fn_obtener_conectividad_cables` y luego
+ * `fn_generar_conectividad_cables`; Carlos la renombró el 24 de septiembre de
+ * 2026, con el mismo argumento y la misma respuesta.
  */
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const sinSesion = exigirSesion(request)
-  if (sinSesion) return sinSesion
-
-  const { id } = await params
-  if (!UUID.test(id)) {
-    return NextResponse.json({ message: "El identificador de la cubierta no es válido." }, { status: 400 })
-  }
-
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
-    return NextResponse.json(
-      { message: "SUPABASE_URL/SUPABASE_SECRET_KEY no están configurados." },
-      { status: 500 },
-    )
-  }
-
-  try {
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
-      db: { schema: "geo_fiber" },
-    })
-    // Antes se llamó `fn_obtener_conectividad_cables` y luego
-    // `fn_json_conectividad_cubierta`; Carlos la renombró el 24 de septiembre
-    // de 2026, con el mismo argumento y la misma respuesta.
-    const { data, error } = await supabase.rpc("fn_json_conectividad_cubierta", { p_uuid_cubierta: id })
-
-    if (error) {
-      console.error(`[cables ${id}] ${error.code} ${error.message}`)
-      return NextResponse.json(
-        {
-          message: mensajeDeError(error.code),
-          ...(process.env.NODE_ENV === "production" ? {} : { detalle: `${error.code}: ${error.message}` }),
-        },
-        { status: 502 },
-      )
-    }
-
-    return NextResponse.json({ cables: normalizarCablesDeMufa(data) })
-  } catch (e) {
-    return NextResponse.json(
-      {
-        message: "No se pudo conectar con Supabase para leer los cables de la cubierta.",
-        ...(process.env.NODE_ENV === "production" ? {} : { detalle: e instanceof Error ? e.message : String(e) }),
-      },
-      { status: 502 },
-    )
-  }
-}
-
-/** Traduce los fallos conocidos a algo que el usuario (o quien lo soporte) entienda. */
-function mensajeDeError(codigo: string | undefined): string {
-  switch (codigo) {
-    case "42501":
-      return "La base no permite ejecutar la función de cables: falta un permiso sobre el esquema geo_fiber."
-    case "PGRST202":
-      return "La función de cables no existe en la base o cambió de nombre o de parámetros."
-    case "42703":
-    case "42P01":
-      return "La función de cables de la base usa una columna o tabla que ya no existe. Hay que actualizarla."
-    default:
-      return "No se pudieron obtener los cables de esta cubierta."
-  }
+  return responderConFuncion({
+    request,
+    params,
+    idInvalido: "El identificador de la cubierta no es válido.",
+    esquema: "geo_fiber",
+    funcion: "fn_json_conectividad_cubierta",
+    argumento: "p_uuid_cubierta",
+    mensajes: {
+      nombre: "cables",
+      esquemaPermiso: "geo_fiber",
+      porDefecto: "No se pudieron obtener los cables de esta cubierta.",
+    },
+    sinConexion: "No se pudo conectar con Supabase para leer los cables de la cubierta.",
+    responder: (data) => NextResponse.json({ cables: normalizarCablesDeMufa(data) }),
+  })
 }

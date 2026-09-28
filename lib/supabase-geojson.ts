@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
+import { clienteSupabase, faltaConfiguracion } from "@/lib/supabase-servidor"
 
 /**
  * Vistas que ya se comprobó que no existen, con el momento en que se vio.
@@ -43,12 +43,8 @@ export async function serveGeoJsonView({
   /** Nombre en plural para los mensajes de error, p. ej. "las mufas". */
   entidad: string
 }) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
-    return NextResponse.json(
-      { message: "SUPABASE_URL/SUPABASE_SECRET_KEY no están configurados.", features: [] },
-      { status: 500 },
-    )
-  }
+  const supabase = clienteSupabase(schema)
+  if (!supabase) return faltaConfiguracion({ features: [] })
 
   try {
     const clave = `${schema}.${view}`
@@ -59,10 +55,6 @@ export async function serveGeoJsonView({
       }
       vistasAusentes.delete(clave)
     }
-
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
-      db: { schema },
-    })
 
     // Se piden todas las columnas: la vista ya define qué se expone, y repetir
     // la lista acá solo servía para que la ruta se rompiera cada vez que

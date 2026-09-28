@@ -9,7 +9,7 @@ import { NextResponse } from "next/server"
  * propósito, para que no se puedan desincronizar.
  */
 
-const VIGENCIA_SEGUNDOS = 60 * 60 * 8 // 8 horas
+export const VIGENCIA_SEGUNDOS = 60 * 60 * 8 // 8 horas
 
 /** Valor de muestra de `.env.example`: si llega hasta producción, no sirve. */
 const SECRETO_DE_MUESTRA = "cambia-este-valor-por-un-secreto-aleatorio"
@@ -97,6 +97,79 @@ export function verificarToken(token: string | null | undefined): SesionToken | 
 }
 
 /**
+ * Nombre de la cookie de sesión.
+ *
+ * La sesión viaja en una cookie `httpOnly`: el navegador la manda sola en cada
+ * petición y el JavaScript de la página no la puede leer. Antes el token vivía
+ * en localStorage, al alcance de cualquier script inyectado (XSS).
+ */
+export const COOKIE_SESION = "gismart_sesion"
+
+/** El token de la petición: la cookie de sesión o, para los scripts, `Authorization: Bearer`. */
+export function tokenDeLaPeticion(request: Request): string | null {
+  const cookies = request.headers.get("cookie") ?? ""
+  for (const parte of cookies.split(";")) {
+    const igual = parte.indexOf("=")
+    if (igual < 0) continue
+    if (parte.slice(0, igual).trim() === COOKIE_SESION) {
+      try {
+        return decodeURIComponent(parte.slice(igual + 1).trim()) || null
+      } catch {
+        return null
+      }
+    }
+  }
+  const cabecera = request.headers.get("authorization")
+  return cabecera?.toLowerCase().startsWith("bearer ") ? cabecera.slice(7).trim() : null
+}
+
+/** La sesión de la petición, si es auténtica y no ha caducado. */
+export function sesionDeLaPeticion(request: Request): SesionToken | null {
+  return verificarToken(tokenDeLaPeticion(request))
+}
+
+/**
+ * Si la petición llegó por HTTPS. Detrás de IIS la conexión con Node es HTTP,
+ * así que se mira también la cabecera que pone el proxy.
+ */
+export function llegoPorHttps(request: Request): boolean {
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase()
+  if (proto) return proto === "https"
+  try {
+    return new URL(request.url).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Deja la sesión en la cookie. Con «Recordar usuario» dura lo que el token
+ * (ocho horas) aunque se cierre el navegador; sin él, es una cookie de sesión
+ * que se borra al cerrarlo.
+ *
+ * `SameSite=Strict`: otra web no puede hacer que el navegador la mande, así que
+ * no sirve para peticiones falsificadas (CSRF). `Secure` solo por HTTPS: en
+ * `pnpm dev` o en una red interna sin certificado el navegador la rechazaría.
+ */
+export function ponerCookieDeSesion(
+  respuesta: NextResponse,
+  token: string,
+  { recordar, https }: { recordar: boolean; https: boolean },
+) {
+  respuesta.cookies.set(COOKIE_SESION, token, {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: https,
+    path: "/",
+    ...(recordar ? { maxAge: VIGENCIA_SEGUNDOS } : {}),
+  })
+}
+
+export function quitarCookieDeSesion(respuesta: NextResponse, https: boolean) {
+  respuesta.cookies.set(COOKIE_SESION, "", { httpOnly: true, sameSite: "strict", secure: https, path: "/", maxAge: 0 })
+}
+
+/**
  * Comprueba la sesión de una petición.
  *
  * Devuelve `null` si todo está en orden, o la respuesta 401 que la ruta debe
@@ -106,10 +179,7 @@ export function verificarToken(token: string | null | undefined): SesionToken | 
  *     if (sinSesion) return sinSesion
  */
 export function exigirSesion(request: Request): NextResponse | null {
-  const cabecera = request.headers.get("authorization")
-  const token = cabecera?.toLowerCase().startsWith("bearer ") ? cabecera.slice(7).trim() : null
-
-  if (verificarToken(token)) return null
+  if (sesionDeLaPeticion(request)) return null
 
   return NextResponse.json(
     { message: "Tu sesión no es válida o expiró. Vuelve a iniciar sesión.", features: [] },

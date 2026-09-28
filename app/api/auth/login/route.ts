@@ -1,6 +1,6 @@
-import { createClient } from "@supabase/supabase-js"
 import { type NextRequest, NextResponse } from "next/server"
-import { emitirToken } from "@/lib/auth-server"
+import { emitirToken, llegoPorHttps, ponerCookieDeSesion, verificarToken } from "@/lib/auth-server"
+import { clienteSupabase } from "@/lib/supabase-servidor"
 import { esHash, hashClave, verificarClave, HASH_SENUELO } from "@/lib/password"
 
 // Los usuarios reales viven en `public.usuario_app`. La tabla se recreó en
@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
 
   const usuario = typeof body.usuario === "string" ? body.usuario.trim() : ""
   const contrasena = typeof body.contrasena === "string" ? body.contrasena : ""
+  const recordar = body.recordar === true
 
   // Validaciones de servidor (defensa en profundidad)
   if (!usuario) {
@@ -164,7 +165,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY)
+  // Ya se comprobó arriba que las variables están; el `!` solo lo dice a TypeScript.
+  const supabase = clienteSupabase()!
 
   const { data: cuenta, error } = await supabase
     .from("usuario_app")
@@ -241,13 +243,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    token: emitirToken(cuentaValida.nombre_usuario, ROL_POR_DEFECTO),
+  // El token va en una cookie httpOnly y no en el cuerpo: así el JavaScript
+  // de la página nunca lo tiene. Al navegador le llega solo lo que muestra y
+  // cuándo vence, para avisar a tiempo.
+  const token = emitirToken(cuentaValida.nombre_usuario, ROL_POR_DEFECTO)
+  const respuesta = NextResponse.json({
     user: {
       usuario: cuentaValida.nombre_usuario,
       role: ROL_POR_DEFECTO,
       // El nombre para mostrar; si viene vacío, el de usuario.
       nombre: cuentaValida.nombre_completo || cuentaValida.nombre_usuario,
     },
+    expira: (verificarToken(token)?.exp ?? 0) * 1000,
   })
+  ponerCookieDeSesion(respuesta, token, { recordar, https: llegoPorHttps(req) })
+  return respuesta
 }
