@@ -329,7 +329,7 @@ function VentanaElementosAlimentados({
                   etiqueta="Ubicar el nodo en el mapa"
                   onClick={() => (nodo ? ubicar(nodo.clave, "nodo") : setMensaje({ texto: "Primero elige un nodo.", tono: "aviso" }))}
                 />
-                <BotonIcono icono={TableProperties} etiqueta="Datos del nodo" onClick={() => pendiente("Datos del nodo")} />
+                <BotonIcono pendiente icono={TableProperties} etiqueta="Datos del nodo" onClick={() => pendiente("Datos del nodo")} />
               </div>
             </div>
           </Grupo>
@@ -381,8 +381,8 @@ function VentanaElementosAlimentados({
                 <BotonIcono icono={ArrowLeft} etiqueta="Anterior" color="text-sky-600" onClick={() => moverNivel1(-1)} />
                 <BotonIcono icono={ArrowRight} etiqueta="Siguiente" color="text-sky-600" onClick={() => moverNivel1(1)} />
                 <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-                <BotonIcono icono={List} etiqueta="Listado" onClick={() => pendiente("Listado")} />
-                <BotonIcono icono={TableProperties} etiqueta="Datos de la cubierta" onClick={() => pendiente("Datos de la cubierta")} />
+                <BotonIcono pendiente icono={List} etiqueta="Listado" onClick={() => pendiente("Listado")} />
+                <BotonIcono pendiente icono={TableProperties} etiqueta="Datos de la cubierta" onClick={() => pendiente("Datos de la cubierta")} />
               </div>
 
               <div className="my-0.5 h-px bg-border" aria-hidden="true" />
@@ -397,13 +397,13 @@ function VentanaElementosAlimentados({
                 </span>
               </Fila>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <BotonIcono icono={ZoomIn} etiqueta="Ubicar el puerto" onClick={() => pendiente("Ubicar el puerto")} />
-                <BotonIcono icono={Star} etiqueta="Marcar" color="text-amber-500" onClick={() => pendiente("Marcar")} />
-                <BotonIcono icono={ArrowLeft} etiqueta="Volver" color="text-sky-600" onClick={() => pendiente("Volver")} />
+                <BotonIcono pendiente icono={ZoomIn} etiqueta="Ubicar el puerto" onClick={() => pendiente("Ubicar el puerto")} />
+                <BotonIcono pendiente icono={Star} etiqueta="Marcar" color="text-amber-500" onClick={() => pendiente("Marcar")} />
+                <BotonIcono pendiente icono={ArrowLeft} etiqueta="Volver" color="text-sky-600" onClick={() => pendiente("Volver")} />
                 <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-                <BotonIcono icono={Route} etiqueta="Recorrer (trace)" color="text-rose-600" onClick={() => pendiente("Recorrer")} />
-                <BotonIcono icono={Network} etiqueta="Elementos alimentados" color="text-emerald-600" onClick={() => pendiente("Elementos alimentados")} />
-                <BotonIcono icono={TableProperties} etiqueta="Datos del puerto" onClick={() => pendiente("Datos del puerto")} />
+                <BotonIcono pendiente icono={Route} etiqueta="Recorrer (trace)" color="text-rose-600" onClick={() => pendiente("Recorrer")} />
+                <BotonIcono pendiente icono={Network} etiqueta="Elementos alimentados" color="text-emerald-600" onClick={() => pendiente("Elementos alimentados")} />
+                <BotonIcono pendiente icono={TableProperties} etiqueta="Datos del puerto" onClick={() => pendiente("Datos del puerto")} />
               </div>
             </div>
           </Grupo>

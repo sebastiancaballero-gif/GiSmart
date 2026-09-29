@@ -282,7 +282,7 @@ function VentanaRedesNodo({
                       </option>
                     ))}
                   </select>
-                  <BotonIcono icono={TableProperties} etiqueta="Datos del nodo" onClick={() => pendiente("Datos del nodo")} />
+                  <BotonIcono pendiente icono={TableProperties} etiqueta="Datos del nodo" onClick={() => pendiente("Datos del nodo")} />
                   <BotonIcono
                     icono={MapPinned}
                     etiqueta="Ubicar el nodo en el mapa"
@@ -322,10 +322,10 @@ function VentanaRedesNodo({
               ]}
             />
             <span className="flex-1" />
-            <Boton icono={Router} onClick={() => pendiente("Equipos finales GPON")}>
+            <Boton pendiente icono={Router} onClick={() => pendiente("Equipos finales GPON")}>
               GPON
             </Boton>
-            <Boton icono={Router} onClick={() => pendiente("Equipos finales METH")}>
+            <Boton pendiente icono={Router} onClick={() => pendiente("Equipos finales METH")}>
               METH
             </Boton>
           </div>
@@ -442,16 +442,17 @@ function VentanaRedesNodo({
           {/* Herramientas de la grilla */}
           <div className="flex flex-wrap items-center gap-2">
             <BotonIcono
+              pendiente
               icono={ZoomIn}
               etiqueta="Acercar el mapa a la fila elegida"
               onClick={() =>
                 filas.length === 0 ? setMensaje({ texto: "Primero elige una fila de la tabla.", tono: "aviso" }) : pendiente("Acercar a la fila")
               }
             />
-            <BotonIcono icono={ArrowLeft} etiqueta="Volver" color="text-emerald-600" onClick={() => pendiente("Volver")} />
-            <BotonIcono icono={Calculator} etiqueta="Totales" onClick={() => pendiente("Totales")} />
+            <BotonIcono pendiente icono={ArrowLeft} etiqueta="Volver" color="text-emerald-600" onClick={() => pendiente("Volver")} />
+            <BotonIcono pendiente icono={Calculator} etiqueta="Totales" onClick={() => pendiente("Totales")} />
             <span className="flex-1" />
-            <Boton icono={FileSpreadsheet} colorIcono="text-emerald-600" onClick={exportar}>
+            <Boton pendiente icono={FileSpreadsheet} colorIcono="text-emerald-600" onClick={exportar}>
               Exportar a Excel
             </Boton>
           </div>

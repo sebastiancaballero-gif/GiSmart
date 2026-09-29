@@ -855,13 +855,13 @@ function VentanaHilos({
                     <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">m</span>
                   </span>
                 </label>
-                <Boton icono={MapPinned} onClick={() => pendiente("Ubicar")}>
+                <Boton pendiente icono={MapPinned} onClick={() => pendiente("Ubicar")}>
                   Ubicar
                 </Boton>
-                <Boton icono={Scissors} onClick={() => pendiente("Simular corte")} colorIcono="text-destructive">
+                <Boton pendiente icono={Scissors} onClick={() => pendiente("Simular corte")} colorIcono="text-destructive">
                   Simular corte
                 </Boton>
-                <Boton icono={Network} onClick={() => pendiente("Elementos afectados por corte")}>
+                <Boton pendiente icono={Network} onClick={() => pendiente("Elementos afectados por corte")}>
                   Elementos afectados por corte
                 </Boton>
               </div>
@@ -888,10 +888,10 @@ function VentanaHilos({
                 </span>
               </header>
               <div className="flex flex-wrap items-center gap-2">
-                <Boton icono={ArrowLeft} onClick={() => pendiente("Recorrido hacia la fuente")} colorIcono="text-emerald-600">
+                <Boton pendiente icono={ArrowLeft} onClick={() => pendiente("Recorrido hacia la fuente")} colorIcono="text-emerald-600">
                   Hacia la fuente
                 </Boton>
-                <Boton icono={ArrowRight} onClick={() => pendiente("Recorrido hacia abajo")} colorIcono="text-emerald-600" derecha>
+                <Boton pendiente icono={ArrowRight} onClick={() => pendiente("Recorrido hacia abajo")} colorIcono="text-emerald-600" derecha>
                   Hacia abajo
                 </Boton>
                 <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-foreground">

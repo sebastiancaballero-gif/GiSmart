@@ -1,6 +1,6 @@
 "use client"
 
-import { CircleAlert, Info, Loader2, TriangleAlert, type LucideIcon } from "lucide-react"
+import { CircleAlert, Clock, Info, Loader2, TriangleAlert, type LucideIcon } from "lucide-react"
 import { DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip } from "@/components/ui/tooltip"
 
@@ -108,6 +108,7 @@ export function Boton({
   principal = false,
   deshabilitado = false,
   titulo,
+  pendiente = false,
 }: {
   icono: LucideIcon
   children: React.ReactNode
@@ -118,25 +119,39 @@ export function Boton({
   principal?: boolean
   deshabilitado?: boolean
   titulo?: string
+  /** Todavía no tiene su función en la base (ver `PENDIENTE`). */
+  pendiente?: boolean
 }) {
   const icono = (
-    <Icono className={`size-4 shrink-0 ${principal ? "" : (colorIcono ?? "text-primary")}`} aria-hidden="true" />
+    <Icono
+      className={`size-4 shrink-0 ${principal ? "" : pendiente ? "text-muted-foreground/70" : (colorIcono ?? "text-primary")}`}
+      aria-hidden="true"
+    />
   )
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={deshabilitado}
-      title={titulo}
+      aria-disabled={pendiente ? true : undefined}
+      title={pendiente ? "Próximamente: todavía no tiene su función en la base" : titulo}
       className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${
         principal
           ? "bg-primary text-primary-foreground hover:bg-primary/90"
-          : "border border-border bg-card text-foreground hover:-translate-y-px hover:bg-accent hover:shadow active:translate-y-0"
+          : pendiente
+            ? "border border-dashed border-border bg-card/60 text-muted-foreground shadow-none hover:bg-accent/60"
+            : "border border-border bg-card text-foreground hover:-translate-y-px hover:bg-accent hover:shadow active:translate-y-0"
       }`}
     >
       {!derecha && icono}
       {children}
       {derecha && icono}
+      {pendiente && (
+        <>
+          <Clock className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+          <span className="sr-only">(próximamente)</span>
+        </>
+      )}
     </button>
   )
 }
@@ -249,27 +264,45 @@ export function Opciones<T extends string>({
   )
 }
 
-/** Botón cuadrado con solo un icono y su explicación al pasar el ratón. */
+/**
+ * Botón cuadrado con solo un icono y su explicación al pasar el ratón. Con
+ * `pendiente` se ve apagado, con borde punteado y un reloj: así no se confunde
+ * con los que ya funcionan (igual que los botones del ribbon). Se puede pulsar
+ * igual, y la ventana dice qué falta.
+ */
 export function BotonIcono({
   icono: Icono,
   etiqueta,
   onClick,
   color,
+  pendiente = false,
 }: {
   icono: LucideIcon
   etiqueta: string
   onClick: () => void
   color?: string
+  pendiente?: boolean
 }) {
   return (
-    <Tooltip label={etiqueta}>
+    <Tooltip label={pendiente ? `${etiqueta} · Próximamente` : etiqueta}>
       <button
         type="button"
         onClick={onClick}
-        aria-label={etiqueta}
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card shadow-sm outline-none transition hover:-translate-y-px hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+        aria-label={pendiente ? `${etiqueta} (próximamente)` : etiqueta}
+        aria-disabled={pendiente ? true : undefined}
+        className={`relative flex size-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          pendiente
+            ? "border-dashed border-border bg-card/60 hover:bg-accent/60"
+            : "border-border bg-card shadow-sm hover:-translate-y-px hover:bg-accent"
+        }`}
       >
-        <Icono className={`size-4 ${color ?? "text-primary"}`} aria-hidden="true" />
+        <Icono className={`size-4 ${pendiente ? "text-muted-foreground/60" : (color ?? "text-primary")}`} aria-hidden="true" />
+        {pendiente && (
+          <Clock
+            className="absolute -right-1 -top-1 size-3 rounded-full bg-card text-muted-foreground"
+            aria-hidden="true"
+          />
+        )}
       </button>
     </Tooltip>
   )
