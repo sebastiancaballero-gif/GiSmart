@@ -8,9 +8,17 @@ export function getStoredTheme(): Theme | null {
   return stored === "light" || stored === "dark" ? stored : null
 }
 
+/**
+ * El tema que se ve. Sin uno elegido a mano, el del sistema: antes se daba por
+ * claro, y con el equipo en oscuro el botón ofrecía «Cambiar a modo oscuro» y
+ * el primer click no cambiaba nada.
+ */
 export function getCurrentTheme(): Theme {
   if (typeof document === "undefined") return "light"
-  return document.documentElement.classList.contains("dark") ? "dark" : "light"
+  const clases = document.documentElement.classList
+  if (clases.contains("dark")) return "dark"
+  if (clases.contains("light")) return "light"
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
 export function applyTheme(theme: Theme) {

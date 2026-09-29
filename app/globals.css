@@ -2,7 +2,24 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Las utilidades `dark:` valen con el tema oscuro elegido a mano (clase
+ * `.dark` en <html>) y también con el del sistema, mientras no se haya elegido
+ * el claro (clase `.light`). Antes solo miraban la clase: con el tema en
+ * «sistema» y el equipo en oscuro, los colores base ya eran oscuros pero los
+ * `dark:` no se aplicaban, y quedaban piezas claras sobre fondo oscuro (los
+ * campos amarillos de las ventanas, la franja naranja del nodo en GPON…).
+ */
+@custom-variant dark {
+  &:is(.dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:is(:root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --font-sans: var(--font-inter), 'Inter Fallback', system-ui, sans-serif;
