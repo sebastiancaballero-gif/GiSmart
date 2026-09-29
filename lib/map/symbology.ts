@@ -615,6 +615,52 @@ export function marcadorStyle(feature: Feature<Geometry>) {
 }
 
 /**
+ * El punto que se buscó (una dirección o una coordenada). Violeta para no
+ * confundirlo con la marca roja de lo seleccionado ni con ninguna capa, y con
+ * el texto buscado debajo. Se quita al hacer click en el mapa.
+ */
+const DESTINO_COLOR = "#7c3aed"
+const estilosDestino = new Map<string, Style[]>()
+
+export function destinoStyle(feature: Feature<Geometry>) {
+  const etiqueta = (feature.get("etiqueta") as string | undefined) ?? ""
+  let estilo = estilosDestino.get(etiqueta)
+  if (!estilo) {
+    estilo = [
+      new Style({
+        image: new CircleStyle({
+          radius: 16,
+          fill: new Fill({ color: "rgba(124, 58, 237, 0.18)" }),
+          stroke: new Stroke({ color: "rgba(124, 58, 237, 0.6)", width: 2 }),
+          declutterMode: "none",
+        }),
+      }),
+      new Style({
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: DESTINO_COLOR }),
+          stroke: new Stroke({ color: "#ffffff", width: 2.5 }),
+          declutterMode: "none",
+        }),
+        text: etiqueta
+          ? new TextStyle({
+              text: etiqueta,
+              offsetY: 28,
+              font: "600 12px Inter, system-ui, sans-serif",
+              fill: new Fill({ color: "#ffffff" }),
+              backgroundFill: new Fill({ color: DESTINO_COLOR }),
+              padding: [2, 6, 2, 6],
+              overflow: true,
+            })
+          : undefined,
+      }),
+    ]
+    estilosDestino.set(etiqueta, estilo)
+  }
+  return estilo
+}
+
+/**
  * Puntas de un cable, para el botón «Cable» (Consultas → Red): «Entrada» en la
  * mufa padre y «Salida» en la hija, con los colores de la leyenda (entrada
  * verde, salida naranja). Llevan un anillo y la palabra escrita, para no

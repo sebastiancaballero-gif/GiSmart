@@ -25,7 +25,7 @@ import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR, extremoStyle, largoEnKm, marcadorStyle, sentidoStyle } from "@/lib/map/symbology"
+import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, sentidoStyle } from "@/lib/map/symbology"
 import {
   CABECERA_FIELD_LABELS,
   FIBER_FIELD_LABELS,
@@ -162,7 +162,12 @@ type NetworkMapProps = {
   /** Se dispara al terminar cada desplazamiento, con el centro actual del mapa. */
   onCenterChange?: (center: { lon: number; lat: number }) => void
   /** Centra el mapa en un punto. `nonce` permite repetir el mismo destino. */
-  flyTo?: { lon: number; lat: number; zoom?: number; nonce: number } | null
+  /**
+   * Centra el mapa en un punto y lo marca con un pin (el resultado del
+   * buscador). `etiqueta` es el texto que lleva el pin; `nonce` permite repetir
+   * el mismo destino.
+   */
+  flyTo?: { lon: number; lat: number; zoom?: number; etiqueta?: string; nonce: number } | null
   /** Al incrementarse, recarga los datos reales desde los endpoints. */
   reloadTrigger?: number
   /**
@@ -229,6 +234,8 @@ function MapaDeRed({
   const [marcadorSource] = useState(() => new VectorSource())
   // Puntas del cable consultado con el botón «Cable».
   const [extremosSource] = useState(() => new VectorSource())
+  // Pin del punto buscado (dirección o coordenada).
+  const [destinoSource] = useState(() => new VectorSource())
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
   const [baseMapSource] = useState(fuenteDelMapaBase)
 
@@ -240,6 +247,7 @@ function MapaDeRed({
   const sentidoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
   const deleteHoverRef = useRef<Select | null>(null)
@@ -888,6 +896,7 @@ function MapaDeRed({
     sentidoLayer.current = new VectorLayer({ source: sentidoSource, style: sentidoStyle as never })
     marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
     extremosLayer.current = new VectorLayer({ source: extremosSource, style: extremoStyle as never })
+    destinoLayer.current = new VectorLayer({ source: destinoSource, style: destinoStyle as never })
 
     const map = new Map({
       target: containerRef.current,
@@ -909,6 +918,7 @@ function MapaDeRed({
         // aunque la mufa esté tapada por otras.
         marcadorLayer.current,
         extremosLayer.current,
+        destinoLayer.current,
         measureLayer.current,
       ],
       view,
@@ -1021,6 +1031,10 @@ function MapaDeRed({
       teselasFallidas = 0
       if (!isCancelled()) setBaseMapError(false)
     })
+
+    // El pin del punto buscado ya cumplió al primer click sobre el mapa: si se
+    // quedara, se leería como un elemento más.
+    map.on("singleclick", () => destinoSource.clear())
 
     // "moveend" agrupa el final de cada paneo/zoom, así que evita disparar la
     // geocodificación inversa en cada cuadro de la animación.
@@ -1184,11 +1198,17 @@ function MapaDeRed({
     }
   }, [externalVisible])
 
-  // Centrar el mapa en el resultado del buscador.
+  // Centrar el mapa en el resultado del buscador y marcar el punto: la
+  // dirección o la coordenada no es un elemento de la red, y sin el pin no se
+  // sabía cuál era el lugar exacto dentro de la vista.
   useEffect(() => {
     if (!flyTo) return
     const view = mapRef.current?.getView()
     if (!view) return
+    destinoSource.clear()
+    destinoSource.addFeature(
+      new Feature({ geometry: new Point(fromLonLat([flyTo.lon, flyTo.lat])), etiqueta: flyTo.etiqueta }),
+    )
     view.animate({
       center: fromLonLat([flyTo.lon, flyTo.lat]),
       zoom: flyTo.zoom ?? 15,

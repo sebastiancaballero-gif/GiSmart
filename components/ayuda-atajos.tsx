@@ -13,7 +13,7 @@ const ATAJOS: { teclas: string[]; que: string }[] = [
   { teclas: ["6"], que: "Eliminar geometría" },
   { teclas: ["7"], que: "Medir distancia" },
   { teclas: ["8"], que: "Medir área" },
-  { teclas: ["Ctrl", "K"], que: "Buscar una cubierta, un cable o una dirección" },
+  { teclas: ["Ctrl", "K"], que: "Buscar una cubierta, un cable, una dirección o una coordenada" },
   { teclas: ["Esc"], que: "Cancelar el trazo o la medición en curso" },
   { teclas: ["Doble click"], que: "Terminar una línea, una zona o una medición" },
   { teclas: ["?"], que: "Abrir esta ayuda" },

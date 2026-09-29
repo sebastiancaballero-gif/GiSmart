@@ -50,7 +50,9 @@ export default function DashboardPage() {
   }, [])
   const [center, setCenter] = useState<{ lon: number; lat: number } | null>(null)
   const [location, setLocation] = useState("Ubicando…")
-  const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; nonce: number } | null>(null)
+  const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; zoom?: number; etiqueta?: string; nonce: number } | null>(
+    null,
+  )
   const [reloadTrigger, setReloadTrigger] = useState(0)
   const [fitTo, setFitTo] = useState<{ capa: "todo" | "nodes" | "fibers" | "cabeceras" | "zones"; nonce: number } | null>(null)
   const [tool, setTool] = useState<MapTool>("pan")
@@ -158,7 +160,7 @@ export default function DashboardPage() {
     [capaActiva, cambiarCapaActiva],
   )
 
-  const handleNavigate = useCallback((target: { lon: number; lat: number }) => {
+  const handleNavigate = useCallback((target: { lon: number; lat: number; zoom?: number; etiqueta?: string }) => {
     setFlyTo({ ...target, nonce: Date.now() })
   }, [])
 

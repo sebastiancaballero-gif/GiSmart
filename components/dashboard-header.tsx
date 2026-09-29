@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Box,
   Building2,
+  Crosshair,
   Hexagon,
   Loader2,
   LogOut,
@@ -14,19 +15,30 @@ import {
   Search,
   Spline,
   Sun,
+  X,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { getCurrentTheme, toggleTheme } from "@/lib/theme"
 import { fetchConSesion, getUser } from "@/lib/auth"
-import { buscarElementos, type ElementoBuscable, type TipoBuscable } from "@/lib/map/busqueda"
+import {
+  buscarElementos,
+  leerCoordenada,
+  textoDeCoordenada,
+  type Coordenada,
+  type ElementoBuscable,
+  type TipoBuscable,
+} from "@/lib/map/busqueda"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { Tooltip } from "@/components/ui/tooltip"
 
 type SearchResult = { label: string; lat: number; lon: number }
 
-/** Lo que se puede elegir en la lista: un elemento de la red o una dirección. */
-type Opcion = { tipo: "elemento"; elemento: ElementoBuscable } | { tipo: "direccion"; resultado: SearchResult }
+/** Lo que se puede elegir en la lista: una coordenada, un elemento de la red o una dirección. */
+type Opcion =
+  | { tipo: "coordenada"; coordenada: Coordenada }
+  | { tipo: "elemento"; elemento: ElementoBuscable }
+  | { tipo: "direccion"; resultado: SearchResult }
 
 const ICONO_DE_TIPO: Record<TipoBuscable, { icono: typeof Box; color: string }> = {
   node: { icono: Box, color: LAYER_COLORS.node },
@@ -55,8 +67,11 @@ export function DashboardHeader({
   subtitle?: string
   /** Si se pasa, muestra un botón para volver a esa ruta (p. ej. "/dashboard"). */
   backHref?: string
-  /** Se llama al elegir una dirección del buscador, para centrar el mapa allí. */
-  onNavigate?: (target: { lon: number; lat: number }) => void
+  /**
+   * Se llama al elegir una dirección o una coordenada, para centrar el mapa
+   * allí y marcar el punto con `etiqueta`.
+   */
+  onNavigate?: (target: { lon: number; lat: number; zoom?: number; etiqueta?: string }) => void
   /** Elementos de la red por los que también se puede buscar (ver lib/map/busqueda.ts). */
   elementos?: ElementoBuscable[]
   /** Se llama al elegir un elemento de la red en el buscador. */
@@ -82,6 +97,18 @@ export function DashboardHeader({
   const [activa, setActiva] = useState(0)
   const searchBoxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // En pantallas angostas el buscador no cabe en la cabecera: se abre encima
+  // del contenido con el botón de la lupa. Antes, en un celular no había forma
+  // de buscar.
+  const [buscadorMovil, setBuscadorMovil] = useState(false)
+  // El botón «Búsqueda» del ribbon también lo abre. Se compara con el pedido
+  // anterior durante el render (el patrón de React para ajustar estado cuando
+  // cambia una prop), así el campo ya está a la vista cuando toma el foco.
+  const [pedidoAtendido, setPedidoAtendido] = useState(pedirFoco)
+  if (pedirFoco !== pedidoAtendido) {
+    setPedidoAtendido(pedirFoco)
+    setBuscadorMovil(true)
+  }
 
   useEffect(() => {
     // El tema ya lo aplicó el script del layout sobre <html>; acá solo se lee
@@ -103,7 +130,8 @@ export function DashboardHeader({
 
     const timeout = setTimeout(async () => {
       const term = query.trim()
-      if (term.length < 3) {
+      // Una coordenada no se le pregunta a Nominatim: ya se sabe dónde es.
+      if (term.length < 3 || leerCoordenada(term)) {
         setResults([])
         setSearchError(null)
         setSearching(false)
@@ -140,33 +168,38 @@ export function DashboardHeader({
   // Elementos de la red: se filtran aquí mismo, sin esperar ni preguntar a
   // nadie, así que aparecen desde la primera letra («3/4», «CO01»).
   const enLaRed = useMemo(() => buscarElementos(elementos ?? [], query), [elementos, query])
+  const coordenada = useMemo(() => leerCoordenada(query), [query])
 
   const opciones: Opcion[] = useMemo(
     () => [
+      ...(coordenada ? [{ tipo: "coordenada" as const, coordenada }] : []),
       ...enLaRed.map((elemento) => ({ tipo: "elemento" as const, elemento })),
       ...results.map((resultado) => ({ tipo: "direccion" as const, resultado })),
     ],
-    [enLaRed, results],
+    [coordenada, enLaRed, results],
   )
   // Con elementos de la red a la vista, «Sin resultados» de direcciones sobra.
-  const mensaje = enLaRed.length === 0 && results.length === 0 ? searchError : null
+  const mensaje = !coordenada && enLaRed.length === 0 && results.length === 0 ? searchError : null
   const listaAbierta = openResults && query.trim() !== "" && (opciones.length > 0 || mensaje !== null)
 
-  // Cierra la lista al hacer click fuera del buscador.
+  // Cierra la lista (y el buscador en pantallas angostas) al hacer click fuera.
   useEffect(() => {
-    if (!openResults) return
+    if (!openResults && !buscadorMovil) return
     function alHacerClickFuera(evt: MouseEvent) {
-      if (!searchBoxRef.current?.contains(evt.target as Node)) setOpenResults(false)
+      if (searchBoxRef.current?.contains(evt.target as Node)) return
+      setOpenResults(false)
+      setBuscadorMovil(false)
     }
     document.addEventListener("mousedown", alHacerClickFuera)
     return () => document.removeEventListener("mousedown", alHacerClickFuera)
-  }, [openResults])
+  }, [openResults, buscadorMovil])
 
   // Ctrl+K (o ⌘K) lleva al buscador desde cualquier parte del tablero.
   useEffect(() => {
     function alPulsar(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
+        setBuscadorMovil(true)
         inputRef.current?.focus()
         inputRef.current?.select()
       }
@@ -182,15 +215,28 @@ export function DashboardHeader({
     inputRef.current?.select()
   }, [pedirFoco])
 
+  // Al abrirse en una pantalla angosta, el campo toma el foco solo. Solo al
+  // abrirse: al cerrarse (después de elegir) no debe volver a enfocarse.
+  useEffect(() => {
+    if (buscadorMovil) inputRef.current?.focus()
+  }, [buscadorMovil])
+
   function elegir(opcion: Opcion) {
     if (opcion.tipo === "elemento") {
       onElegirElemento?.(opcion.elemento)
       setQuery(opcion.elemento.nombre)
+    } else if (opcion.tipo === "coordenada") {
+      const texto = textoDeCoordenada(opcion.coordenada)
+      // Una coordenada es un punto preciso: se acerca más que a una dirección.
+      onNavigate?.({ ...opcion.coordenada, zoom: 18, etiqueta: texto })
+      setQuery(texto)
     } else {
-      onNavigate?.({ lon: opcion.resultado.lon, lat: opcion.resultado.lat })
-      setQuery(opcion.resultado.label.split(",")[0] ?? "")
+      const nombre = opcion.resultado.label.split(",")[0] ?? ""
+      onNavigate?.({ lon: opcion.resultado.lon, lat: opcion.resultado.lat, etiqueta: nombre })
+      setQuery(nombre)
     }
     setOpenResults(false)
+    setBuscadorMovil(false)
     inputRef.current?.blur()
   }
 
@@ -225,7 +271,13 @@ export function DashboardHeader({
 
       {/* `shrink-0`: el buscador y las acciones no ceden espacio al título. */}
       <div className="flex shrink-0 items-center gap-3">
-        <div ref={searchBoxRef} className="relative hidden md:block">
+        <div
+          ref={searchBoxRef}
+          className={`${
+            buscadorMovil ? "fixed inset-x-3 top-16 z-50 block rounded-xl bg-card p-2 shadow-xl ring-1 ring-border" : "hidden"
+          } md:relative md:inset-auto md:top-auto md:z-auto md:block md:rounded-none md:bg-transparent md:p-0 md:shadow-none md:ring-0`}
+        >
+          <div className="relative flex items-center gap-2">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             ref={inputRef}
@@ -249,36 +301,66 @@ export function DashboardHeader({
                 elegir(opciones[activa])
               } else if (e.key === "Escape") {
                 setOpenResults(false)
+                setBuscadorMovil(false)
               }
             }}
-            placeholder="Buscar cubierta, cable o dirección…"
-            aria-label="Buscar cubierta, cable o dirección"
+            placeholder="Buscar cubierta, cable, dirección o coordenada…"
+            aria-label="Buscar cubierta, cable, dirección o coordenada"
             role="combobox"
             aria-expanded={listaAbierta}
             aria-controls="buscador-lista"
             aria-autocomplete="list"
             aria-activedescendant={listaAbierta && opciones[activa] ? idOpcion(activa) : undefined}
-            className="h-9 w-64 bg-background pl-9 pr-14 lg:w-80"
+            className="h-9 w-full min-w-0 flex-1 bg-background pl-9 pr-14 md:w-64 lg:w-80"
           />
           {searching ? (
-            <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            <Loader2 className="absolute right-12 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground md:right-3" />
           ) : (
             query === "" && (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-px font-sans text-[10px] font-medium text-muted-foreground">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-px font-sans text-[10px] font-medium text-muted-foreground md:block">
                 Ctrl K
               </kbd>
             )
           )}
+          {/* Solo en pantallas angostas: cerrar el buscador flotante. */}
+          <button
+            type="button"
+            onClick={() => {
+              setOpenResults(false)
+              setBuscadorMovil(false)
+            }}
+            aria-label="Cerrar la búsqueda"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
+          >
+            <X className="size-4" />
+          </button>
+          </div>
 
           {listaAbierta && (
-            <div className="absolute right-0 top-11 z-50 w-96 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+            <div className="absolute right-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg md:w-96">
               <ul id="buscador-lista" role="listbox" aria-label="Resultados de la búsqueda" className="max-h-96 overflow-y-auto py-1">
                 {opciones.map((opcion, i) => {
-                  const primeraDireccion = opcion.tipo === "direccion" && (i === 0 || opciones[i - 1].tipo === "elemento")
+                  const primeraDireccion = opcion.tipo === "direccion" && (i === 0 || opciones[i - 1].tipo !== "direccion")
+                  const primerElemento = opcion.tipo === "elemento" && (i === 0 || opciones[i - 1].tipo !== "elemento")
+                  const clave =
+                    opcion.tipo === "elemento"
+                      ? opcion.elemento.clave
+                      : opcion.tipo === "coordenada"
+                        ? "coordenada"
+                        : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`
                   return (
-                    <li key={opcion.tipo === "elemento" ? opcion.elemento.clave : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`}>
-                      {i === 0 && opcion.tipo === "elemento" && (
+                    <li key={clave}>
+                      {opcion.tipo === "coordenada" && (
                         <p className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Coordenada
+                        </p>
+                      )}
+                      {primerElemento && (
+                        <p
+                          className={`px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${
+                            i > 0 ? "mt-1 border-t border-border pt-2" : ""
+                          }`}
+                        >
                           En la red
                         </p>
                       )}
@@ -303,7 +385,15 @@ export function DashboardHeader({
                           i === activa ? "bg-accent" : ""
                         }`}
                       >
-                        {opcion.tipo === "elemento" ? (
+                        {opcion.tipo === "coordenada" ? (
+                          <>
+                            <Crosshair className="mt-0.5 size-3.5 shrink-0 text-violet-600 dark:text-violet-400" aria-hidden="true" />
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate font-semibold">Ir a {textoDeCoordenada(opcion.coordenada)}</span>
+                              <span className="truncate text-[11px] text-muted-foreground">Latitud, longitud · se marca en el mapa</span>
+                            </span>
+                          </>
+                        ) : opcion.tipo === "elemento" ? (
                           (() => {
                             const { icono: Icono, color } = ICONO_DE_TIPO[opcion.elemento.tipo]
                             return (
@@ -337,6 +427,16 @@ export function DashboardHeader({
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setBuscadorMovil(true)}
+          aria-label="Buscar"
+          aria-expanded={buscadorMovil}
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
+        >
+          <Search className="size-4" />
+        </button>
 
         <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="bottom">
           <button

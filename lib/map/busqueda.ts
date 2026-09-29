@@ -6,8 +6,11 @@
  * cientos de símbolos. Ahora el mapa publica un índice de lo que tiene cargado
  * y aquí se filtra, sin preguntar a ningún servidor.
  *
+ * También reconoce coordenadas («4.5333, -76.0883»): quien sale a campo trae
+ * el punto del GPS, y antes esa búsqueda terminaba preguntándole a Nominatim.
+ *
  * Son funciones puras: no tocan el mapa ni React, y se prueban solas
- * (`pnpm run capa`).
+ * (`pnpm run busqueda`).
  */
 
 export type TipoBuscable = "node" | "fiber" | "cabecera" | "zone"
@@ -83,4 +86,40 @@ export function buscarElementos(
     )
     .slice(0, limite)
     .map((e) => e.elemento)
+}
+
+export type Coordenada = { lat: number; lon: number }
+
+// Dos números con punto decimal, separados por coma, punto y coma o espacios:
+// «4.5333, -76.0883», «4.5333,-76.0883», «4.5333 -76.0883», «4.5333; -76.0883».
+const CON_PUNTO = /^([-+]?\d+(?:\.\d+)?)\s*[,;\s]\s*([-+]?\d+(?:\.\d+)?)$/
+// Con coma decimal (como se escribe en Colombia), separados por espacios o
+// punto y coma: «4,5333 -76,0883», «4,5333; -76,0883».
+const CON_COMA = /^([-+]?\d+(?:,\d+)?)\s*(?:;|\s)\s*([-+]?\d+(?:,\d+)?)$/
+
+/**
+ * La coordenada escrita en el buscador, o `null` si no es una. Se lee como
+ * latitud, longitud (el orden de Google Maps y del GPS); si el primer número
+ * no cabe como latitud y el segundo sí, se entiende al revés. Para no
+ * confundir un código con una coordenada, al menos uno de los dos números debe
+ * llevar decimales o signo.
+ */
+export function leerCoordenada(texto: string): Coordenada | null {
+  const limpio = texto.replace(/°/g, "").trim()
+  const partes = CON_PUNTO.exec(limpio) ?? CON_COMA.exec(limpio)
+  if (!partes) return null
+  const [a, b] = [partes[1], partes[2]]
+  if (![a, b].some((n) => /[.,]|^[-+]/.test(n))) return null
+
+  const x = Number(a.replace(",", "."))
+  const y = Number(b.replace(",", "."))
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lon: y }
+  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lon: x }
+  return null
+}
+
+/** «4.53330, -76.08830»: cinco decimales, cerca de un metro. */
+export function textoDeCoordenada({ lat, lon }: Coordenada): string {
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
 }
