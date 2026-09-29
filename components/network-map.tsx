@@ -46,6 +46,7 @@ import {
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
+import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, destellar, type ColorRGB } from "@/lib/map/destello"
 import { fuenteDelMapaBase } from "@/lib/map/mapa-base"
 import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
 import type { ElementoBuscable } from "@/lib/map/busqueda"
@@ -248,6 +249,8 @@ function MapaDeRed({
   const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  /** Corta el destello en curso si se pide otro antes de que termine. */
+  const detenerDestelloRef = useRef<(() => void) | null>(null)
   const drawRef = useRef<Draw | null>(null)
   const selectRef = useRef<Select | null>(null)
   const deleteHoverRef = useRef<Select | null>(null)
@@ -332,6 +335,16 @@ function MapaDeRed({
   // La cortina de bienvenida solo cubre el arranque; las recargas posteriores
   // usan el aviso discreto para no tapar el mapa que el usuario está mirando.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
+  // Al terminar la primera carga la cortina se desvanece y después se quita.
+  // Antes desaparecía de golpe y la red saltaba a la vista de un fotograma a
+  // otro. Se quita con un temporizador y no con `transitionend`, que no llega
+  // si el sistema tiene las animaciones reducidas.
+  const [cortinaFuera, setCortinaFuera] = useState(false)
+  useEffect(() => {
+    if (!firstLoadDone) return
+    const id = window.setTimeout(() => setCortinaFuera(true), 600)
+    return () => window.clearTimeout(id)
+  }, [firstLoadDone])
 
   // Los callbacks se guardan en refs para que los manejadores de OpenLayers,
   // registrados una sola vez, siempre llamen a la versión más reciente sin
@@ -625,10 +638,25 @@ function MapaDeRed({
    * Encuadra el mapa sobre una extensión concreta. Se usa para la red
    * completa, para una sola capa y para el elemento seleccionado.
    */
-  const encuadrarEn = useCallback((extent: number[] | null | undefined, maxZoom = 16) => {
-    const view = mapRef.current?.getView()
-    if (!view || !extent || !extent.every((v) => Number.isFinite(v))) return
-    view.fit(extent, { padding: [80, 80, 80, 80], maxZoom, duration: 400 })
+  const encuadrarEn = useCallback(
+    (extent: number[] | null | undefined, maxZoom = 16, alTerminar?: (completo: boolean) => void) => {
+      const view = mapRef.current?.getView()
+      if (!view || !extent || !extent.every((v) => Number.isFinite(v))) return
+      view.fit(extent, { padding: [80, 80, 80, 80], maxZoom, duration: 400, callback: alTerminar })
+    },
+    [],
+  )
+
+  /**
+   * Destello donde terminó un viaje del mapa, para que se vea qué mirar (ver
+   * lib/map/destello.ts). Va sobre la capa del pin, que está encima de la red.
+   */
+  const destellarEn = useCallback((geometria: Geometry, color: ColorRGB) => {
+    const mapa = mapRef.current
+    const capa = destinoLayer.current
+    if (!mapa || !capa) return
+    detenerDestelloRef.current?.()
+    detenerDestelloRef.current = destellar(mapa, capa, geometria, color)
   }, [])
 
   /**
@@ -644,10 +672,18 @@ function MapaDeRed({
         const geometria = feature.getGeometry()
         if (!tipo || !geometria) return false
         const view = mapRef.current?.getView()
+        // Al llegar, un destello marca cuál es. Si el usuario mueve el mapa a
+        // mitad del viaje (`completo` en falso), ya no hace falta.
+        const alLlegar = (completo: boolean) => {
+          if (completo) destellarEn(geometria, DESTELLO_ELEMENTO)
+        }
         if (geometria instanceof Point) {
-          view?.animate({ center: geometria.getCoordinates(), zoom: Math.max(view.getZoom() ?? 0, 18.5), duration: 450 })
+          view?.animate(
+            { center: geometria.getCoordinates(), zoom: Math.max(view.getZoom() ?? 0, 18.5), duration: 450 },
+            alLlegar,
+          )
         } else {
-          encuadrarEn(geometria.getExtent(), 18.5)
+          encuadrarEn(geometria.getExtent(), 18.5, alLlegar)
         }
         editSelectRef.current?.getFeatures().clear()
         setSelected({ feature, type: tipo })
@@ -656,7 +692,7 @@ function MapaDeRed({
       }
       return false
     },
-    [nodeSource, fiberSource, cabeceraSource, zoneSource, tipoDeFeature, encuadrarEn],
+    [nodeSource, fiberSource, cabeceraSource, zoneSource, tipoDeFeature, encuadrarEn, destellarEn],
   )
 
   /** Lo que «Gestión de hilos» necesita saber de un cable del mapa. */
@@ -1206,13 +1242,10 @@ function MapaDeRed({
     const view = mapRef.current?.getView()
     if (!view) return
     destinoSource.clear()
-    destinoSource.addFeature(
-      new Feature({ geometry: new Point(fromLonLat([flyTo.lon, flyTo.lat])), etiqueta: flyTo.etiqueta }),
-    )
-    view.animate({
-      center: fromLonLat([flyTo.lon, flyTo.lat]),
-      zoom: flyTo.zoom ?? 15,
-      duration: 600,
+    const destino = new Point(fromLonLat([flyTo.lon, flyTo.lat]))
+    destinoSource.addFeature(new Feature({ geometry: destino, etiqueta: flyTo.etiqueta }))
+    view.animate({ center: destino.getCoordinates(), zoom: flyTo.zoom ?? 15, duration: 600 }, (completo) => {
+      if (completo) destellarEn(destino, DESTELLO_DESTINO)
     })
     // `nonce` permite repetir el mismo destino: se ignora el resto del objeto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1433,9 +1466,15 @@ function MapaDeRed({
       />
 
       {/* Cortina del primer arranque: evita mostrar un mapa vacío mientras
-          llegan las capas, que se leía como si no hubiera datos. */}
-      {!firstLoadDone && (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background/85 backdrop-blur-sm">
+          llegan las capas, que se leía como si no hubiera datos. Al terminar
+          se desvanece y deja ver la red debajo. */}
+      {!cortinaFuera && (
+        <div
+          aria-hidden={firstLoadDone || undefined}
+          className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background/85 backdrop-blur-sm transition-opacity duration-500 ${
+            firstLoadDone ? "pointer-events-none opacity-0" : ""
+          }`}
+        >
           <GismartMark className="size-14 rounded-2xl shadow-lg" />
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Loader2 className="size-4 animate-spin text-primary" />

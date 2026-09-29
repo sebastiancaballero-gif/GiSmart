@@ -49,6 +49,26 @@ Lo que sí falta y ninguna librería arregla es trabajo de diseño: jerarquía,
 espaciado y consistencia. Para eso ya están Tailwind v4 y los tokens de color de
 `app/globals.css`.
 
+### Animaciones
+
+Tampoco hace falta una librería de animación: bastan CSS, las transiciones de Base UI
+(`data-starting-style` / `data-ending-style`) y `tw-animate-css`, que ya venía instalado.
+
+- **Entrada**: login → «Bienvenido» → tablero sin cortes. «Verificando sesión…» solo asoma
+  si la comprobación tarda más de 300 ms; el tablero entra escalonado (cabecera, ribbon,
+  panel de capas y mapa) y la cortina «Cargando la red de fibra…» se desvanece en vez de
+  desaparecer de golpe.
+- **Ventanas**: suben un poco al abrirse y salen más rápido de lo que entran.
+- **Mapa**: al ubicar algo desde el buscador o desde una ventana, un **destello** marca
+  dónde quedó (`lib/map/destello.ts`).
+- **Tema**: el cambio claro/oscuro es un fundido de toda la pantalla (View Transitions).
+- **Celular**: el panel del elemento sube desde abajo; el buscador baja desde la cabecera.
+
+Las entradas usan `animation-fill-mode: backwards` y no `both`: con `both` el último
+fotograma queda puesto para siempre, y un transform puesto encierra a los elementos
+`position: fixed` de adentro (así se rompió la ventana de conexión del login). Con
+«reducir movimiento» activado en el sistema, todo esto se apaga.
+
 ---
 
 ## Requisitos
@@ -371,7 +391,9 @@ El campo de la cabecera busca en dos sitios a la vez:
   número no cabe como latitud (más de 90) y el segundo sí, se entiende al revés.
 
 Al elegir una dirección o una coordenada, el mapa la centra y la marca con un **pin
-violeta** con el texto buscado; el pin se quita con el siguiente click sobre el mapa.
+violeta** con el texto buscado; el pin se quita con el siguiente click sobre el mapa. Al
+llegar, un destello (violeta para el pin, turquesa para un elemento de la red) señala el
+punto exacto.
 
 Se abre con **Ctrl+K** desde cualquier parte del tablero o con «Búsqueda» (Consultas →
 Elementos) y se recorre con las flechas y Enter. En pantallas angostas el campo no cabe en
