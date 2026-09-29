@@ -130,6 +130,11 @@ export type AccesoAlMapa = {
    * si estaba oculta, lo centra y abre su ficha. `false` si ya no está.
    */
   ubicar: (clave: string) => boolean
+  /**
+   * Muestra una capa si estaba oculta. Se usa antes de elegir en el mapa: una
+   * capa oculta no responde al click y la elección quedaría esperando.
+   */
+  mostrarCapa: (capa: "nodes" | "fibers" | "cabeceras" | "zones") => void
 }
 
 type NetworkMapProps = {

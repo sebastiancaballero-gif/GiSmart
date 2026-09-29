@@ -98,7 +98,12 @@ export default function DashboardPage() {
     [indice, handleElegirElemento],
   )
   const accesoAlMapa = useMemo<AccesoAlMapa>(
-    () => ({ indice, api: mapaApiRef, ubicar: ubicarElemento }),
+    () => ({
+      indice,
+      api: mapaApiRef,
+      ubicar: ubicarElemento,
+      mostrarCapa: (capa) => setVisible((prev) => ({ ...prev, [capa]: true })),
+    }),
     [indice, ubicarElemento],
   )
 

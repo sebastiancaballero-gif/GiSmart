@@ -159,7 +159,10 @@ function VentanaRedesNodo({
   const nodo = nodos.find((n) => n.clave === claveNodo) ?? nodos[0] ?? null
   const actual = PESTANAS.find((p) => p.id === pestana) ?? PESTANAS[0]
   // Hoy ninguna pestaña trae filas: llegan cuando existan las funciones.
+  // Mientras tanto la base no respondió nada, y el contador de cada pestaña
+  // muestra «—» en vez de un 0 que se leería como «este nodo no tiene cables».
   const filas: Fila[] = []
+  const conRespuesta = false
   const consultadoEste = nodo !== null && consultado === nodo.clave
 
   function pendiente(nombre: string) {
@@ -295,8 +298,10 @@ function VentanaRedesNodo({
             </Boton>
           </div>
 
-          {/* Pestañas y grilla */}
-          <div className="flex min-h-0 flex-col">
+          {/* Pestañas y grilla. `shrink-0`: en pantallas bajas la grilla se
+              aplastaba a unos pocos píxeles; así conserva su alto y lo que
+              desplaza es la ventana. */}
+          <div className="flex shrink-0 flex-col">
             <div role="tablist" aria-label="Red del nodo" className="flex flex-wrap gap-1 border-b border-border">
               {PESTANAS.map((p) => {
                 const activa = p.id === pestana
@@ -319,7 +324,7 @@ function VentanaRedesNodo({
                         activa ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                       }`}
                     >
-                      {consultadoEste ? filas.length : "—"}
+                      {consultadoEste && conRespuesta ? filas.length : "—"}
                     </span>
                   </button>
                 )

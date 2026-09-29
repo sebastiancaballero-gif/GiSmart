@@ -89,6 +89,8 @@ export function ElementosAlimentadosDialog({ ref, mapa }: { ref?: Ref<ManejadorD
   // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había.
   async function elegirNodoEnMapa() {
     setAbierta(false)
+    // Con la capa de cabeceras oculta el click no encontraría ninguna.
+    mapa.mostrarCapa("cabeceras")
     const elegido =
       (await mapa.api.current?.elegirElemento("cabecera", "Haz click sobre el nodo (cabecera) que quieres consultar.")) ??
       null

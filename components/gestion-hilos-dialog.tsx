@@ -233,6 +233,8 @@ export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana
   // a abrir con él. Con Esc se vuelve con el que había.
   async function elegirCable() {
     setAbierta(false)
+    // Con el tendido oculto el click no encontraría ningún cable.
+    mapa.mostrarCapa("fibers")
     const elegido = (await mapa.api.current?.elegirCable()) ?? null
     if (elegido) setCable(elegido)
     setAbierta(true)
