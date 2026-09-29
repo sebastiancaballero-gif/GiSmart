@@ -23,6 +23,7 @@ const PASOS = [
   ["Buscador de elementos", `${PRUEBAS} scripts/probar-busqueda.mjs`],
   ["Sesión en cookie", `${PRUEBAS} scripts/probar-sesion.mjs`],
   ["Gestión de hilos", `${PRUEBAS} scripts/probar-hilos.mjs`],
+  ["Redes/Nodo y GPON", `${PRUEBAS} scripts/probar-red-de-fibra.mjs`],
 ]
 
 const resultados = []

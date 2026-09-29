@@ -1,6 +1,6 @@
 "use client"
 
-import { useImperativeHandle, useMemo, useState, type Ref } from "react"
+import { useId, useImperativeHandle, useMemo, useState, type Ref } from "react"
 import {
   ArrowLeft,
   Calculator,
@@ -27,12 +27,13 @@ import {
   EncabezadoVentana,
   EstadoVacio,
   Opciones,
+  PENDIENTE,
   Rotulo,
   type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
-import type { ElementoBuscable } from "@/lib/map/busqueda"
+import { nodosDeFibra, type NodoDeFibra } from "@/lib/map/red-de-fibra"
 
 /**
  * «Consulta de redes por nodo de fibra óptica» (ribbon: Red de fibra →
@@ -49,14 +50,6 @@ import type { ElementoBuscable } from "@/lib/map/busqueda"
  * la base y lo dice al pulsarlo. Las columnas de cada pestaña son provisionales
  * y se ajustan a lo que devuelvan esas funciones.
  */
-
-/** Un nodo de fibra (SDS) que se puede consultar: hoy, las cabeceras del mapa. */
-export type NodoDeFibra = { clave: string; nombre: string; detalle: string }
-
-/** Los nodos de fibra del índice del mapa: por ahora, las cabeceras cargadas. */
-export function nodosDeFibra(indice: ElementoBuscable[]): NodoDeFibra[] {
-  return indice.filter((e) => e.tipo === "cabecera").map((e) => ({ clave: e.clave, nombre: e.nombre, detalle: e.detalle }))
-}
 
 type PestanaId = "salientes" | "entrantes" | "primer-nivel" | "nivel-2"
 
@@ -118,17 +111,27 @@ const PESTANAS: { id: PestanaId; titulo: string; queMuestra: string; columnas: {
 /** Una fila de una pestaña, en el orden de sus columnas. Hoy no llegan filas. */
 type Fila = { id: string; valores: (string | number | null)[] }
 
-const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
-
 /** La ventana con su estado. El tablero solo la abre (ver `ManejadorDeVentana`). */
 export function RedesNodoDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
   const [abierta, setAbierta] = useState(false)
-  useImperativeHandle(ref, () => ({ abrir: () => setAbierta(true) }), [])
+  useImperativeHandle(
+    ref,
+    () => ({
+      abrir: () => {
+        // Una elección en el mapa que siguiera esperando ya no vale.
+        mapa.api.current?.abandonarEleccion()
+        setAbierta(true)
+      },
+    }),
+    [mapa.api],
+  )
   const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
 
   // «Ubicar en el mapa»: se cierra la ventana y el mapa se centra en el nodo.
   function ubicarNodo(clave: string) {
-    if (mapa.ubicar(clave)) setAbierta(false)
+    const ubicado = mapa.ubicar(clave)
+    if (ubicado) setAbierta(false)
+    return ubicado
   }
 
   return <VentanaRedesNodo open={abierta} onOpenChange={setAbierta} nodos={nodos} onUbicarNodo={ubicarNodo} />
@@ -144,8 +147,8 @@ function VentanaRedesNodo({
   onOpenChange: (abierto: boolean) => void
   /** Nodos de fibra que se pueden consultar (hoy, las cabeceras del mapa). */
   nodos: NodoDeFibra[]
-  /** «Ubicar en el mapa»: cierra la ventana y centra el mapa en el nodo. */
-  onUbicarNodo: (clave: string) => void
+  /** «Ubicar en el mapa»: cierra la ventana y centra el mapa en el nodo. `false` si ya no está. */
+  onUbicarNodo: (clave: string) => boolean
 }) {
   const [red, setRed] = useState<"existente" | "proyectada">("existente")
   const [claveNodo, setClaveNodo] = useState<string | null>(null)
@@ -154,6 +157,9 @@ function VentanaRedesNodo({
   // El nodo para el que se pidió «Cargar cubiertas».
   const [consultado, setConsultado] = useState<string | null>(null)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
+  const idBase = useId()
+  const idPestana = (id: PestanaId) => `${idBase}-pestana-${id}`
+  const idGrilla = `${idBase}-grilla`
 
   // Sin elegir, el primero: casi siempre hay un solo nodo.
   const nodo = nodos.find((n) => n.clave === claveNodo) ?? nodos[0] ?? null
@@ -176,6 +182,32 @@ function VentanaRedesNodo({
     }
     setConsultado(nodo.clave)
     pendiente("Cargar cubiertas")
+  }
+
+  function ubicar(clave: string) {
+    if (onUbicarNodo(clave)) setMensaje(null)
+    else setMensaje({ texto: "Ese nodo ya no está en el mapa. Actualiza el mapa y vuelve a elegirlo.", tono: "aviso" })
+  }
+
+  // Pestañas con el teclado, como pide el patrón de pestañas: flechas para
+  // moverse entre ellas, Inicio y Fin para ir a la primera y a la última.
+  function teclaEnPestanas(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const actualIndice = PESTANAS.findIndex((p) => p.id === pestana)
+    const n = PESTANAS.length
+    const destino =
+      e.key === "ArrowRight"
+        ? (actualIndice + 1) % n
+        : e.key === "ArrowLeft"
+          ? (actualIndice - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : null
+    if (destino === null) return
+    e.preventDefault()
+    setPestana(PESTANAS[destino].id)
+    document.getElementById(idPestana(PESTANAS[destino].id))?.focus()
   }
 
   function exportar() {
@@ -254,7 +286,7 @@ function VentanaRedesNodo({
                   <BotonIcono
                     icono={MapPinned}
                     etiqueta="Ubicar el nodo en el mapa"
-                    onClick={() => (nodo ? onUbicarNodo(nodo.clave) : setMensaje({ texto: "Primero elige un nodo de fibra.", tono: "aviso" }))}
+                    onClick={() => (nodo ? ubicar(nodo.clave) : setMensaje({ texto: "Primero elige un nodo de fibra.", tono: "aviso" }))}
                   />
                 </div>
               </div>
@@ -308,9 +340,14 @@ function VentanaRedesNodo({
                 return (
                   <button
                     key={p.id}
+                    id={idPestana(p.id)}
                     type="button"
                     role="tab"
                     aria-selected={activa}
+                    aria-controls={idGrilla}
+                    // Solo la pestaña activa entra con Tab; las demás, con flechas.
+                    tabIndex={activa ? 0 : -1}
+                    onKeyDown={teclaEnPestanas}
                     onClick={() => setPestana(p.id)}
                     className={`-mb-px flex items-center gap-1.5 rounded-t-lg border px-3.5 py-1.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
                       activa
@@ -333,8 +370,11 @@ function VentanaRedesNodo({
 
             <div
               role="tabpanel"
-              aria-label={actual.titulo}
-              className="flex h-[min(20rem,40vh)] flex-col overflow-auto rounded-b-xl border border-t-0 border-border bg-card shadow-sm"
+              id={idGrilla}
+              aria-labelledby={idPestana(actual.id)}
+              // Se puede enfocar para desplazar la grilla con el teclado.
+              tabIndex={0}
+              className="flex h-[min(20rem,40vh)] flex-col overflow-auto rounded-b-xl border border-t-0 border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
                 <thead>
@@ -419,15 +459,12 @@ function VentanaRedesNodo({
 
         {/* Barra de estado con el avance, como la del SIG anterior */}
         <BarraDeEstado mensaje={barra}>
-          <span className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
-            <Layers className="size-3.5" aria-hidden="true" />
+          {/* Todavía no mide nada (no hay proceso que avance): se ve como en
+              el SIG anterior, pero los lectores de pantalla no la anuncian. */}
+          <span aria-hidden="true" className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+            <Layers className="size-3.5" />
             Avance
             <span
-              role="progressbar"
-              aria-label="Avance"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={0}
               className="h-2 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-border"
             >
               <span className="block h-full w-0 rounded-full bg-primary transition-[width]" />

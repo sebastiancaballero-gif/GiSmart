@@ -15,7 +15,8 @@
     "capa": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-capa-activa.mjs",
     "busqueda": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-busqueda.mjs",
     "sesion": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-sesion.mjs",
-    "hilos": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-hilos.mjs"
+    "hilos": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-hilos.mjs",
+    "red": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-red-de-fibra.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

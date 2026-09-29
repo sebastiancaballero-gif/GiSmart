@@ -334,7 +334,8 @@ estado), así que se ven iguales.
 
 Las funciones que devuelven filas se leen de forma tolerante: los nombres de campo se
 comparan sin mayúsculas, tildes ni guiones, así que un cambio de nombre en la función
-(«Tecnología», «num_buffer») no rompe la pantalla. Pruebas: `pnpm run hilos`.
+(«Tecnología», «num_buffer») no rompe la pantalla. Pruebas: `pnpm run hilos` y `pnpm run red`
+(listas de nodos y de «Cod. Nivel 1», búsqueda por caracteres y flechas).
 
 ### Panel de capas
 

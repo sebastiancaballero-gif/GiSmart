@@ -23,13 +23,20 @@ import {
   EncabezadoVentana,
   Grupo,
   Opciones,
+  PENDIENTE,
   Rotulo,
   type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
-import { nodosDeFibra, type NodoDeFibra } from "@/components/redes-nodo-dialog"
 import type { AccesoAlMapa } from "@/components/network-map"
-import { normalizar } from "@/lib/map/busqueda"
+import {
+  buscarNodos,
+  cubiertasNivel1,
+  nodosDeFibra,
+  vecinoEnLista,
+  type CubiertaNivel1,
+  type NodoDeFibra,
+} from "@/lib/map/red-de-fibra"
 
 /**
  * «Elementos alimentados por fibra óptica» (ribbon: Red de fibra → GPON), como
@@ -48,11 +55,6 @@ import { normalizar } from "@/lib/map/busqueda"
  * una cabecera, puertos, NAP, recorridos) espera las funciones de la base y
  * lo dice al pulsarlo.
  */
-
-/** Una cubierta de la lista «Cod. Nivel 1». */
-export type CubiertaNivel1 = { clave: string; nombre: string }
-
-const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
 
 /** Una fila con la etiqueta a la izquierda, como en la pantalla original. */
 function Fila({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
@@ -74,33 +76,42 @@ export function ElementosAlimentadosDialog({ ref, mapa }: { ref?: Ref<ManejadorD
   const [abierta, setAbierta] = useState(false)
   const [claveNodo, setClaveNodo] = useState<string | null>(null)
   const [claveNivel1, setClaveNivel1] = useState<string | null>(null)
-  useImperativeHandle(ref, () => ({ abrir: () => setAbierta(true) }), [])
-
-  const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
-  const nivel1 = useMemo<CubiertaNivel1[]>(
-    () =>
-      mapa.indice
-        .filter((e) => e.tipo === "node" && e.categoria === "Primer nivel")
-        .map((e) => ({ clave: e.clave, nombre: e.nombre })),
-    [mapa.indice],
+  useImperativeHandle(
+    ref,
+    () => ({
+      abrir: () => {
+        // Una elección en el mapa que siguiera esperando ya no vale.
+        mapa.api.current?.abandonarEleccion()
+        setAbierta(true)
+      },
+    }),
+    [mapa.api],
   )
 
+  const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
+  const nivel1 = useMemo(() => cubiertasNivel1(mapa.indice), [mapa.indice])
+
   // El pin de la ventana: se cierra, se elige la cabecera con un click en el
-  // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había.
+  // mapa y se vuelve a abrir con ella. Con Esc vuelve con la que había; si
+  // mientras tanto se abrió otra ventana, esta no se vuelve a abrir sola.
   async function elegirNodoEnMapa() {
     setAbierta(false)
     // Con la capa de cabeceras oculta el click no encontraría ninguna.
     mapa.mostrarCapa("cabeceras")
-    const elegido =
-      (await mapa.api.current?.elegirElemento("cabecera", "Haz click sobre el nodo (cabecera) que quieres consultar.")) ??
-      null
-    if (elegido) setClaveNodo(elegido.clave)
+    const eleccion = await mapa.api.current?.elegirElemento(
+      "cabecera",
+      "Haz click sobre el nodo (cabecera) que quieres consultar.",
+    )
+    if (eleccion?.estado === "abandonada") return
+    if (eleccion?.estado === "elegido") setClaveNodo(eleccion.valor.clave)
     setAbierta(true)
   }
 
   // «Ubicar»: se cierra la ventana y el mapa se centra en el elemento.
   function ubicar(clave: string) {
-    if (mapa.ubicar(clave)) setAbierta(false)
+    const ubicado = mapa.ubicar(clave)
+    if (ubicado) setAbierta(false)
+    return ubicado
   }
 
   return (
@@ -141,8 +152,8 @@ function VentanaElementosAlimentados({
   onCambiarNodo: (clave: string) => void
   claveNivel1: string | null
   onCambiarNivel1: (clave: string) => void
-  /** Cierra la ventana y centra el mapa en ese elemento. */
-  onUbicar: (clave: string) => void
+  /** Cierra la ventana y centra el mapa en ese elemento. `false` si ya no está. */
+  onUbicar: (clave: string) => boolean
   /** Cierra la ventana para elegir el nodo con un click en el mapa. */
   onElegirNodoEnMapa: () => void
 }) {
@@ -157,30 +168,24 @@ function VentanaElementosAlimentados({
   // Sin elegir, el primero: casi siempre hay un solo nodo.
   const nodo = nodos.find((n) => n.clave === claveNodo) ?? nodos[0] ?? null
 
-  // «Cod. Nivel 1 totales» son todas las de primer nivel; las «de la cabecera»
-  // necesitan saber qué alimenta cada nodo, y eso todavía no está en la base.
-  const lista = useMemo(
-    () =>
-      busquedaPor === "totales"
-        ? [...nivel1].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true }))
-        : [],
-    [busquedaPor, nivel1],
-  )
-  const posicion = lista.findIndex((c) => c.clave === claveNivel1)
-  const cubierta = posicion >= 0 ? lista[posicion] : (lista[0] ?? null)
-  const indice = cubierta ? lista.indexOf(cubierta) : -1
+  // «Cod. Nivel 1 totales» son todas las de primer nivel (ya ordenadas); las
+  // «de la cabecera» necesitan saber qué alimenta cada nodo, y eso todavía no
+  // está en la base.
+  const lista = busquedaPor === "totales" ? nivel1 : []
+  // Sin elegir (o si la elegida ya no está), la primera.
+  const posicion = Math.max(0, lista.findIndex((c) => c.clave === claveNivel1))
+  const cubierta = lista[posicion] ?? null
 
   function pendiente(nombre: string) {
     setMensaje({ texto: PENDIENTE(nombre), tono: "info" })
   }
 
   function buscarPorCaracteres() {
-    const q = normalizar(caracteres)
-    if (!q) {
+    const encontrados = buscarNodos(nodos, caracteres)
+    if (!encontrados) {
       setMensaje({ texto: "Escribe parte del nombre del nodo para buscarlo.", tono: "aviso" })
       return
     }
-    const encontrados = nodos.filter((n) => normalizar(n.nombre).includes(q))
     setCoincidencias(encontrados)
     if (encontrados.length === 0) {
       setMensaje({ texto: `Ningún nodo contiene «${caracteres.trim()}».`, tono: "aviso" })
@@ -194,10 +199,22 @@ function VentanaElementosAlimentados({
   }
 
   function moverNivel1(paso: number) {
-    if (lista.length === 0) return
-    const siguiente = lista[Math.min(lista.length - 1, Math.max(0, indice + paso))]
+    const siguiente = vecinoEnLista(lista, posicion, paso)
+    if (!siguiente) return
     onCambiarNivel1(siguiente.clave)
     setMensaje(null)
+  }
+
+  // La ventana se cierra sin pasar por el Dialog (ubicar, elegir en el mapa):
+  // el mensaje se limpia aquí para que al volver no quede uno viejo.
+  function ubicar(clave: string, queEs: string) {
+    if (onUbicar(clave)) setMensaje(null)
+    else setMensaje({ texto: `Ese ${queEs} ya no está en el mapa. Actualiza el mapa y vuelve a elegirlo.`, tono: "aviso" })
+  }
+
+  function elegirEnMapa() {
+    setMensaje(null)
+    onElegirNodoEnMapa()
   }
 
   function cambiarBusqueda(valor: "cabecera" | "totales") {
@@ -210,7 +227,7 @@ function VentanaElementosAlimentados({
     (!nodo
       ? { texto: "No hay nodos de fibra cargados en el mapa.", tono: "aviso" }
       : cubierta
-        ? { texto: `${nodo.nombre} · ${cubierta.nombre} (${indice + 1} de ${lista.length}).`, tono: "info" }
+        ? { texto: `${nodo.nombre} · ${cubierta.nombre} (${posicion + 1} de ${lista.length}).`, tono: "info" }
         : { texto: `Elige una cubierta de nivel 1 para ver sus puertos.`, tono: "info" })
 
   return (
@@ -265,7 +282,7 @@ function VentanaElementosAlimentados({
                     </option>
                   ))}
                 </select>
-                <BotonIcono icono={MousePointerClick} etiqueta="Elegir el nodo en el mapa" color="text-emerald-600" onClick={onElegirNodoEnMapa} />
+                <BotonIcono icono={MousePointerClick} etiqueta="Elegir el nodo en el mapa" color="text-emerald-600" onClick={elegirEnMapa} />
               </Fila>
               <Fila etiqueta="Caracteres del nombre">
                 <input
@@ -310,7 +327,7 @@ function VentanaElementosAlimentados({
                 <BotonIcono
                   icono={ZoomIn}
                   etiqueta="Ubicar el nodo en el mapa"
-                  onClick={() => (nodo ? onUbicar(nodo.clave) : setMensaje({ texto: "Primero elige un nodo.", tono: "aviso" }))}
+                  onClick={() => (nodo ? ubicar(nodo.clave, "nodo") : setMensaje({ texto: "Primero elige un nodo.", tono: "aviso" }))}
                 />
                 <BotonIcono icono={TableProperties} etiqueta="Datos del nodo" onClick={() => pendiente("Datos del nodo")} />
               </div>
@@ -351,7 +368,7 @@ function VentanaElementosAlimentados({
                 </select>
                 {lista.length > 0 && (
                   <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {indice + 1} de {lista.length}
+                    {posicion + 1} de {lista.length}
                   </span>
                 )}
               </Fila>
@@ -359,7 +376,7 @@ function VentanaElementosAlimentados({
                 <BotonIcono
                   icono={ZoomIn}
                   etiqueta="Ubicar la cubierta en el mapa"
-                  onClick={() => (cubierta ? onUbicar(cubierta.clave) : setMensaje({ texto: "Primero elige una cubierta.", tono: "aviso" }))}
+                  onClick={() => (cubierta ? ubicar(cubierta.clave, "cubierta") : setMensaje({ texto: "Primero elige una cubierta.", tono: "aviso" }))}
                 />
                 <BotonIcono icono={ArrowLeft} etiqueta="Anterior" color="text-sky-600" onClick={() => moverNivel1(-1)} />
                 <BotonIcono icono={ArrowRight} etiqueta="Siguiente" color="text-sky-600" onClick={() => moverNivel1(1)} />

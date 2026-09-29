@@ -29,6 +29,7 @@ import {
   EncabezadoVentana,
   EstadoVacio,
   Hueso,
+  PENDIENTE,
   type ManejadorDeVentana,
   type Mensaje,
 } from "@/components/ventana-sig"
@@ -204,8 +205,6 @@ const GRUPOS: { titulo: string; columnas: Columna[] }[] = [
 const TOTAL_COLUMNAS = 2 + GRUPOS.reduce((total, g) => total + g.columnas.length, 0)
 const clave = (g: string, c: string) => `${g}-${c}`
 
-const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
-
 type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
 
 /**
@@ -221,6 +220,8 @@ export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana
     ref,
     () => ({
       abrir: () => {
+        // Una elección en el mapa que siguiera esperando ya no vale.
+        mapa.api.current?.abandonarEleccion()
         const seleccionado = mapa.api.current?.cableSeleccionado()
         if (seleccionado) setCable(seleccionado)
         setAbierta(true)
@@ -230,13 +231,15 @@ export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana
   )
 
   // El botón de selección: se cierra, se elige el cable en el mapa y se vuelve
-  // a abrir con él. Con Esc se vuelve con el que había.
+  // a abrir con él. Con Esc se vuelve con el que había; si mientras tanto se
+  // abrió otra ventana, esta no se vuelve a abrir sola.
   async function elegirCable() {
     setAbierta(false)
     // Con el tendido oculto el click no encontraría ningún cable.
     mapa.mostrarCapa("fibers")
-    const elegido = (await mapa.api.current?.elegirCable()) ?? null
-    if (elegido) setCable(elegido)
+    const eleccion = await mapa.api.current?.elegirCable()
+    if (eleccion?.estado === "abandonada") return
+    if (eleccion?.estado === "elegido") setCable(eleccion.valor)
     setAbierta(true)
   }
 

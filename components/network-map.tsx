@@ -96,6 +96,16 @@ export type CableElegido = {
   destino: string | null
 }
 
+/**
+ * Cómo terminó una elección en el mapa (ver `MapaApi.elegirCable`).
+ *
+ * - `elegido`: se hizo click sobre un elemento.
+ * - `cancelada`: Esc o la ✕ del aviso; quien la pidió vuelve a lo que estaba.
+ * - `abandonada`: se abrió otra ventana (o la misma) antes de elegir; quien la
+ *   pidió no debe volver a abrirse por su cuenta.
+ */
+export type Eleccion<T> = { estado: "elegido"; valor: T } | { estado: "cancelada" } | { estado: "abandonada" }
+
 /** Lo que el tablero le puede pedir al mapa desde fuera (el buscador, los hilos). */
 export type MapaApi = {
   /** Centra el mapa en el elemento y lo selecciona. `false` si ya no está. */
@@ -103,16 +113,22 @@ export type MapaApi = {
   /** El cable seleccionado en el mapa, si lo hay. */
   cableSeleccionado: () => CableElegido | null
   /**
-   * Espera a que se haga click sobre un cable y lo devuelve; `null` si se
-   * cancela con Esc. Mientras tanto el mapa lo dice en un aviso y vuelve a
-   * «Mover mapa», para que ninguna herramienta se quede con el click.
+   * Espera a que se haga click sobre un cable y lo devuelve. Mientras tanto el
+   * mapa lo dice en un aviso y vuelve a «Mover mapa», para que ninguna
+   * herramienta se quede con el click.
    */
-  elegirCable: () => Promise<CableElegido | null>
+  elegirCable: () => Promise<Eleccion<CableElegido>>
   /**
    * Lo mismo con una cabecera o una cubierta: devuelve su clave (la del índice
    * del buscador) y su nombre. El aviso dice para qué se elige.
    */
-  elegirElemento: (tipo: "cabecera" | "node", aviso: string) => Promise<{ clave: string; nombre: string } | null>
+  elegirElemento: (tipo: "cabecera" | "node", aviso: string) => Promise<Eleccion<{ clave: string; nombre: string }>>
+  /**
+   * Deja sin efecto la elección que esté esperando un click (la termina como
+   * `abandonada`). Lo llama cada ventana al abrirse, para que una elección
+   * vieja no la vuelva a abrir ni deje el aviso del mapa colgado.
+   */
+  abandonarEleccion: () => void
 }
 
 /**
@@ -293,7 +309,7 @@ function MapaDeRed({
   const [fiberNotice, setFiberNotice] = useState<string | null>(null)
   // Mientras se elige un cable para «Gestión de hilos».
   const [avisoEleccion, setAvisoEleccion] = useState<string | null>(null)
-  const cancelarEleccionRef = useRef<(() => void) | null>(null)
+  const cancelarEleccionRef = useRef<((estado: "cancelada" | "abandonada") => void) | null>(null)
   // Por qué no se pudo usar una herramienta de edición: le falta la capa
   // activa. Se guarda la herramienta para ocultar el aviso en cuanto se active
   // la capa que pedía.
@@ -664,19 +680,20 @@ function MapaDeRed({
   )
 
   /**
-   * Espera un click sobre un elemento de una capa y lo devuelve convertido;
-   * `null` si se cancela con Esc o desde el aviso. Mientras tanto el mapa lo
-   * dice en un aviso y el cursor pasa a mano sobre lo que se puede elegir.
+   * Espera un click sobre un elemento de una capa y lo devuelve convertido
+   * (ver `Eleccion`). Mientras tanto el mapa lo dice en un aviso y el cursor
+   * pasa a mano sobre lo que se puede elegir.
    */
   const esperarClick = useCallback(
     <T,>(capa: () => VectorLayer<VectorSource> | null, aviso: string, convertir: (f: Feature<Geometry>) => T) =>
-      new Promise<T | null>((resolve) => {
+      new Promise<Eleccion<T>>((resolve) => {
         const map = mapRef.current
         if (!map) {
-          resolve(null)
+          resolve({ estado: "cancelada" })
           return
         }
-        cancelarEleccionRef.current?.()
+        // Una elección anterior que siguiera esperando queda sin efecto.
+        cancelarEleccionRef.current?.("abandonada")
         // Ninguna herramienta debe quedarse con el click que elige.
         setTool("pan")
 
@@ -695,14 +712,14 @@ function MapaDeRed({
         })
         const claveClick = map.on("singleclick", (evt) => {
           const elemento = elementoEn(evt.pixel)
-          if (elemento) terminar(convertir(elemento))
+          if (elemento) terminar({ estado: "elegido", valor: convertir(elemento) })
         })
         const alTeclear = (e: KeyboardEvent) => {
-          if (e.key === "Escape") terminar(null)
+          if (e.key === "Escape") terminar({ estado: "cancelada" })
         }
         window.addEventListener("keydown", alTeclear)
 
-        function terminar(resultado: T | null) {
+        function terminar(resultado: Eleccion<T>) {
           unByKey([claveMover, claveClick])
           window.removeEventListener("keydown", alTeclear)
           if (containerRef.current) containerRef.current.style.cursor = cursorAnterior
@@ -710,7 +727,7 @@ function MapaDeRed({
           setAvisoEleccion(null)
           resolve(resultado)
         }
-        cancelarEleccionRef.current = () => terminar(null)
+        cancelarEleccionRef.current = (estado) => terminar({ estado })
       }),
     [setTool],
   )
@@ -730,16 +747,18 @@ function MapaDeRed({
     [esperarClick],
   )
 
+  const abandonarEleccion = useCallback(() => cancelarEleccionRef.current?.("abandonada"), [])
+
   useEffect(() => {
     if (!apiRef) return
-    apiRef.current = { enfocarElemento, cableSeleccionado, elegirCable, elegirElemento }
+    apiRef.current = { enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion }
     return () => {
       apiRef.current = null
     }
-  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento])
+  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion])
 
-  // Si el mapa se desmonta con una elección a medias, se cancela.
-  useEffect(() => () => cancelarEleccionRef.current?.(), [])
+  // Si el mapa se desmonta con una elección a medias, queda sin efecto.
+  useEffect(() => () => cancelarEleccionRef.current?.("abandonada"), [])
 
   // Extensión combinada de las capas con datos de red.
   const extensionDeRed = useCallback(() => {
@@ -1437,7 +1456,7 @@ function MapaDeRed({
         )}
 
         {avisoEleccion && (
-          <MapNotice tono="info" onCerrar={() => cancelarEleccionRef.current?.()}>
+          <MapNotice tono="info" onCerrar={() => cancelarEleccionRef.current?.("cancelada")}>
             {avisoEleccion}
           </MapNotice>
         )}

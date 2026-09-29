@@ -6,7 +6,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 
 /**
  * Piezas comunes de las ventanas de consulta que siguen al SIG anterior
- * («Gestión de hilos», «Redes por nodo»): encabezado, campos de solo lectura
+ * («Gestión de hilos», «Redes por nodo», «GPON»): encabezado, campos de solo lectura
  * con el fondo amarillo de entonces, botones, avisos sin datos y la barra de
  * estado de abajo. Viven juntas para que todas las ventanas se vean iguales.
  */
@@ -19,6 +19,9 @@ export type Mensaje = { texto: string; tono: TonoDeMensaje; detalle?: string }
  * demás (qué cable, qué nodo, si está abierta) lo lleva la propia ventana.
  */
 export type ManejadorDeVentana = { abrir: () => void }
+
+/** Lo que dice un botón puesto que todavía no tiene su función en la base. */
+export const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
 
 /** Franja de color, icono, título y una línea que resume lo que se está viendo. */
 export function EncabezadoVentana({ icono: Icono, titulo, descripcion }: { icono: LucideIcon; titulo: string; descripcion: string }) {
@@ -175,7 +178,11 @@ export function EstadoVacio({
   )
 }
 
-/** Dos o más opciones excluyentes, como botones de radio en una sola pieza. */
+/**
+ * Dos o más opciones excluyentes, como botones de radio en una sola pieza. Con
+ * el teclado se comporta como un grupo de radio: Tab entra en la opción
+ * marcada y las flechas pasan a la siguiente habilitada y la marcan.
+ */
 export function Opciones<T extends string>({
   valor,
   opciones,
@@ -187,8 +194,29 @@ export function Opciones<T extends string>({
   onChange: (id: T) => void
   etiqueta: string
 }) {
+  function alTeclear(e: React.KeyboardEvent<HTMLDivElement>) {
+    const paso =
+      e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0
+    if (!paso) return
+    const habilitadas = opciones.filter((o) => !o.deshabilitada)
+    if (habilitadas.length < 2) return
+    e.preventDefault()
+    const actual = habilitadas.findIndex((o) => o.id === valor)
+    const siguiente = habilitadas[(actual + paso + habilitadas.length) % habilitadas.length]
+    onChange(siguiente.id)
+    e.currentTarget.querySelector<HTMLButtonElement>(`[data-opcion="${siguiente.id}"]`)?.focus()
+  }
+  // La que recibe el Tab: la marcada, o la primera habilitada si la marcada no se puede usar.
+  const enfocable =
+    opciones.find((o) => o.id === valor && !o.deshabilitada)?.id ?? opciones.find((o) => !o.deshabilitada)?.id
+
   return (
-    <div role="radiogroup" aria-label={etiqueta} className="inline-flex flex-wrap rounded-lg bg-muted p-0.5 ring-1 ring-border">
+    <div
+      role="radiogroup"
+      aria-label={etiqueta}
+      onKeyDown={alTeclear}
+      className="inline-flex flex-wrap rounded-lg bg-muted p-0.5 ring-1 ring-border"
+    >
       {opciones.map((o) => {
         const activa = o.id === valor
         return (
@@ -197,6 +225,9 @@ export function Opciones<T extends string>({
             type="button"
             role="radio"
             aria-checked={activa}
+            data-opcion={o.id}
+            // Solo una entra en el orden de Tab; a las demás se llega con flechas.
+            tabIndex={o.id === enfocable ? 0 : -1}
             disabled={o.deshabilitada}
             title={o.titulo}
             onClick={() => onChange(o.id)}
