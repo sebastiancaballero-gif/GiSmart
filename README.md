@@ -309,10 +309,16 @@ botones son todavía la maqueta heredada. Los que ya ejecutan una acción real s
 | Red de fibra → Hilos | Abre «Gestión de hilos» del cable (ver abajo). |
 | Red de fibra → GPON | Abre «Elementos alimentados por fibra óptica» (ver abajo). |
 | Red de fibra → Redes/Nodo | Abre «Consulta de redes por nodo de fibra óptica» (ver abajo). |
-| Usuario → Salir | Cierra sesión (con confirmación). |
+| Usuario → Salir / Cambiar usuario | Cierra sesión (con confirmación). |
+| Varios → A coordenada | Lleva al buscador para escribir una latitud y longitud. |
 
-Los demás muestran un aviso de que la función no está disponible todavía, en vez de no
-hacer nada al pulsarlos.
+Qué hace cada botón lo dice su `accion` en `components/dashboard-ribbon-data.ts`. Los que
+no tienen se ven **apagados, con un reloj y «Próximamente»** en la etiqueta emergente, y
+al pulsarlos avisan que falta su función. Antes todos se veían iguales y solo se sabía
+cuáles funcionaban probándolos. Los que funcionan explican qué hacen al pasar el ratón.
+
+Las pestañas se recorren con las flechas (Inicio y Fin van a la primera y a la última) y,
+en pantallas angostas, se desplazan a lo ancho en vez de quedar cortadas.
 
 El ribbon **se pliega** pulsando la pestaña activa (como en Office) o con la flecha de la
 derecha, y recuerda la preferencia. Entre cabecera, pestañas y barra se iban casi 190 px
@@ -360,10 +366,17 @@ El campo de la cabecera busca en dos sitios a la vez:
   publica un índice de lo que tiene cargado (`lib/map/busqueda.ts`). Al elegir uno, el mapa
   lo centra y abre su ficha; si su capa estaba oculta, la muestra.
 - **Municipios y zonas** contra Nominatim, desde la tercera letra.
+- **Coordenadas** escritas como latitud, longitud: «4.5333, -76.0883», «4.5333 -76.0883»
+  o con coma decimal, «4,5333; -76,0883». No se le preguntan a Nominatim. Si el primer
+  número no cabe como latitud (más de 90) y el segundo sí, se entiende al revés.
+
+Al elegir una dirección o una coordenada, el mapa la centra y la marca con un **pin
+violeta** con el texto buscado; el pin se quita con el siguiente click sobre el mapa.
 
 Se abre con **Ctrl+K** desde cualquier parte del tablero o con «Búsqueda» (Consultas →
-Elementos) y se recorre con las flechas y Enter. Las pruebas del orden de los resultados se
-corren con `pnpm run busqueda`.
+Elementos) y se recorre con las flechas y Enter. En pantallas angostas el campo no cabe en
+la cabecera: se abre con la lupa y flota debajo. Las pruebas del orden de los resultados y
+de las coordenadas se corren con `pnpm run busqueda`.
 
 Nominatim **no resuelve direcciones exactas**: OpenStreetMap no tiene ese nivel de
 detalle para la mayoría de municipios colombianos, por eso el campo habla de «municipio o
@@ -381,6 +394,15 @@ salen con su nombre y en un orden pensado para consulta en campo, y cualquier co
 nueva aparece igualmente, con un nombre derivado del de la columna. Así un cambio de
 esquema no deja datos ocultos.
 
+Los campos **sin dato se ocultan** (la ficha dice cuántos y se ven con un click), con más
+de 8 campos aparece un **buscador** por nombre o valor, y cada valor se **copia** con su
+botón (en las referencias a otro elemento se copia el UUID). Copiar funciona también
+detrás de un IIS en HTTP, donde el navegador no ofrece el portapapeles moderno.
+
+El panel de una cubierta o una cabecera muestra sus **coordenadas** con botón para
+copiarlas y un acceso **«Cómo llegar»** que abre la ruta en Google Maps. En pantallas
+angostas el panel va abajo y a todo el ancho, para no tapar las herramientas del mapa.
+
 Para las mufas hay además dos acciones propias: **«Gestionar esquema»** y
 **«Ver conexiones»**, que abren el diagrama de conectividad interna (bandejas, buffers e
 hilos) construido con JointJS.
@@ -392,9 +414,14 @@ hilos) construido con JointJS.
 1. El login (`components/gismart-login.tsx`) envía usuario y clave a `/api/auth/login`.
 2. La ruta busca el registro en `public.usuario_app` por `nombre` (comparación
    insensible a mayúsculas) y verifica que `activo` sea verdadero.
-3. Si coincide, firma un JWT HMAC-SHA256 con `AUTH_JWT_SECRET` y lo devuelve.
-4. El cliente lo guarda en `localStorage` (si se marcó «recordarme») o en
-   `sessionStorage`, y `components/auth-guard.tsx` protege las rutas del dashboard.
+3. Si coincide, firma un JWT HMAC-SHA256 con `AUTH_JWT_SECRET` y lo deja en la cookie
+   httpOnly `gismart_sesion` (SameSite=Strict, Secure con HTTPS): ningún script de la
+   página lo puede leer. Con «Recordar usuario» dura las 8 horas del token; sin él, se
+   borra al cerrar el navegador.
+4. En el navegador solo queda quién entró y cuándo vence la sesión.
+   `components/auth-guard.tsx` pregunta a `GET /api/auth/sesion` al abrir el tablero y
+   protege sus rutas. **Cinco minutos antes** de que venza avisa a qué hora vence, y al
+   vencer vuelve al login con un mensaje (antes la sesión se cortaba sin aviso).
 
 ### Protección de los endpoints
 

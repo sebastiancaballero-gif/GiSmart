@@ -1,8 +1,29 @@
 "use client"
 
+import { useState } from "react"
 import type LineString from "ol/geom/LineString"
+import Point from "ol/geom/Point"
+import { toLonLat } from "ol/proj"
 import { getLength } from "ol/sphere"
-import { Box, Building2, Crosshair, Hexagon, Info, Network, Pencil, Spline, Trash2, Waypoints, X } from "lucide-react"
+import {
+  Box,
+  Building2,
+  Check,
+  Copy,
+  Crosshair,
+  Hexagon,
+  Info,
+  MapPin,
+  Navigation,
+  Network,
+  Pencil,
+  Spline,
+  Trash2,
+  Waypoints,
+  X,
+} from "lucide-react"
+import { textoDeCoordenada } from "@/lib/map/busqueda"
+import { copiarTexto } from "@/lib/portapapeles"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { TYPE_LABELS, colorForFuncionCub, type FeatureType } from "@/lib/map/symbology"
 import { CAPA_DE_TIPO, NOMBRE_DE_CAPA } from "@/lib/map/capa-activa"
@@ -106,11 +127,29 @@ export function PanelSeleccion({
     if (typeof hilos === "number" && hilos > 0) datos.push({ etiqueta: "Hilos", valor: String(hilos) })
   }
 
+  // Coordenadas de una cubierta o una cabecera: quien va a campo las copia al
+  // GPS o abre la ruta en el celular. Un cable o una zona no tienen un punto.
+  const geometria = feature.getGeometry()
+  const coordenada =
+    geometria instanceof Point
+      ? (([lon, lat]) => ({ lat, lon }))(toLonLat(geometria.getCoordinates()))
+      : null
+  const [copiado, setCopiado] = useState<boolean | null>(null)
+
+  async function copiarCoordenada() {
+    if (!coordenada) return
+    const ok = await copiarTexto(textoDeCoordenada(coordenada))
+    setCopiado(ok)
+    setTimeout(() => setCopiado(null), 1500)
+  }
+
   const Icon = TYPE_ICONS[type]
   const color = LAYER_COLORS[type]
 
+  // En pantallas angostas el panel va abajo y a todo el ancho, como una hoja:
+  // arriba a la derecha tapaba la barra de herramientas del mapa.
   return (
-    <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur animate-gismart-fade-in">
+    <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur animate-gismart-fade-in max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
       <div className="border-b border-border px-3.5 pb-3 pt-3">
         <div className="flex items-center justify-between">
           <span
@@ -165,6 +204,44 @@ export function PanelSeleccion({
               </div>
             ))}
           </dl>
+        )}
+
+        {coordenada && (
+          <div className="mt-2 flex items-center gap-1 px-1.5 text-[11px]">
+            <MapPin className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate tabular-nums text-muted-foreground" title="Latitud, longitud">
+              {textoDeCoordenada(coordenada)}
+            </span>
+            <button
+              type="button"
+              onClick={() => void copiarCoordenada()}
+              aria-label="Copiar las coordenadas"
+              title={copiado === null ? "Copiar las coordenadas" : copiado ? "Copiadas" : "No se pudieron copiar"}
+              className={`flex size-6 shrink-0 items-center justify-center rounded-md outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                copiado === null
+                  ? "text-muted-foreground hover:text-foreground"
+                  : copiado
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-destructive"
+              }`}
+            >
+              {copiado ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            </button>
+            {/* Abre la ruta en Google Maps (en el celular, en su aplicación). */}
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${coordenada.lat.toFixed(6)},${coordenada.lon.toFixed(6)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Cómo llegar (abre Google Maps)"
+              title="Cómo llegar (abre Google Maps)"
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-primary outline-none transition hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <Navigation className="size-3.5" aria-hidden="true" />
+            </a>
+            <span role="status" className="sr-only">
+              {copiado === null ? "" : copiado ? "Coordenadas copiadas" : "No se pudieron copiar las coordenadas"}
+            </span>
+          </div>
         )}
       </div>
 

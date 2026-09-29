@@ -1,13 +1,19 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Clock, Loader2, X } from "lucide-react"
 import { expiracionGuardada, terminarSesionCaducada, verificarSesion } from "@/lib/auth"
 import { GismartLogo } from "@/components/gismart-mark"
 import { TramaRed } from "@/components/trama-red"
 
+/** Con cuánta anticipación se avisa que la sesión va a vencer. */
+const AVISO_ANTES_MS = 5 * 60 * 1000
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false)
+  // Hora a la que vence la sesión, cuando faltan pocos minutos. Antes la
+  // sesión se cortaba de golpe y el usuario aparecía en el login sin aviso.
+  const [venceA, setVenceA] = useState<number | null>(null)
 
   // La sesión vive en una cookie httpOnly que el navegador no puede leer: se le
   // pregunta al servidor. Lo que dejó el login en el navegador solo sirve para
@@ -21,6 +27,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     let activo = true
     let temporizador: number | undefined
+    let temporizadorAviso: number | undefined
     let expira = guardada
 
     function comprobarAlVolver() {
@@ -45,12 +52,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       // pestaña (los temporizadores no corren mientras el equipo está
       // suspendido). `setTimeout` no admite esperas mayores a ~24,8 días.
       temporizador = window.setTimeout(terminarSesionCaducada, Math.min(expira - Date.now(), 2_147_483_000))
+      const vence = expira
+      temporizadorAviso = window.setTimeout(
+        () => setVenceA(vence),
+        Math.min(Math.max(0, vence - AVISO_ANTES_MS - Date.now()), 2_147_483_000),
+      )
       document.addEventListener("visibilitychange", comprobarAlVolver)
     })
 
     return () => {
       activo = false
       window.clearTimeout(temporizador)
+      window.clearTimeout(temporizadorAviso)
       document.removeEventListener("visibilitychange", comprobarAlVolver)
     }
   }, [])
@@ -72,5 +85,33 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {children}
+      {venceA !== null && (
+        <div
+          role="alert"
+          className="fixed left-1/2 top-3 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-950 shadow-lg ring-1 ring-amber-300 animate-gismart-fade-in dark:bg-amber-950 dark:text-amber-100 dark:ring-amber-700"
+        >
+          <Clock className="size-4 shrink-0" aria-hidden="true" />
+          <span>
+            Tu sesión vence a las{" "}
+            <span className="font-semibold tabular-nums">
+              {/* 24 horas: «13:44». Con «p. m.» el punto final quedaba doble. */}
+              {new Date(venceA).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}
+            </span>
+            . Después tendrás que volver a iniciar sesión.
+          </span>
+          <button
+            type="button"
+            onClick={() => setVenceA(null)}
+            aria-label="Cerrar el aviso"
+            className="-mr-1 rounded-md p-1 outline-none transition hover:bg-amber-200/60 focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:bg-amber-800/60"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+    </>
+  )
 }
