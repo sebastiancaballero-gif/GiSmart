@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Minimize, ChevronUp } from "lucide-react"
+import { Minimize, ChevronUp, Clock } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -100,89 +100,110 @@ export function DashboardRibbon({
     }
   }
 
-  // Botones ya conectados a una capacidad real del mapa. El resto del ribbon
-  // sigue siendo la maqueta del SIG heredado y avisa que está pendiente.
+  // Qué hace cada botón lo dice su `accion` en dashboard-ribbon-data.ts. El
+  // que no tiene es parte de la maqueta del SIG anterior y lo avisa.
   function handleItemClick(item: RibbonItem) {
-    switch (item.label) {
-      case "Salir":
+    const avisar = (mensaje: string | void) => {
+      if (mensaje) setAviso(mensaje)
+    }
+    switch (item.accion) {
+      case "salir":
         setLogoutOpen(true)
         return
-      case "Extensión":
+      case "pantallaCompleta":
         toggleFullscreen()
         return
-      case "Actualizar":
+      case "actualizar":
         actions?.onRefresh?.()
         setAviso("Recargando datos de red…")
         return
-      case "Mapa de red":
-      case "Acercar ext.":
+      case "encuadrar":
         actions?.onFitToData?.()
         return
-      case "GPON":
+      case "gpon":
         actions?.onGpon?.()
         return
-      case "Redes/Nodo":
+      case "redesNodo":
         actions?.onRedesNodo?.()
         return
-      case "Hilos":
+      case "hilos":
         actions?.onHilos?.()
         return
-      case "Búsqueda":
+      case "buscar":
         actions?.onBuscar?.()
-        setAviso("Escribe el nombre de una cubierta, un cable o una dirección.")
+        setAviso("Escribe el nombre de una cubierta, un cable, una dirección o una coordenada.")
         return
-      case "Activar capa": {
-        const mensaje = actions?.onActivarCapa?.()
-        if (mensaje) setAviso(mensaje)
+      case "aCoordenada":
+        actions?.onBuscar?.()
+        setAviso("Escribe la coordenada como latitud, longitud: por ejemplo 4.5333, -76.0883.")
         return
-      }
-      case "Identificar":
-      case "Atributos":
+      case "activarCapa":
+        avisar(actions?.onActivarCapa?.())
+        return
+      case "identificar":
         actions?.onIdentify?.()
         setAviso("Haz click sobre un elemento del mapa para ver su información.")
         return
-      case "Mediciones":
+      case "medir":
         actions?.onMeasure?.()
         return
-      case "Crear": {
-        if (activeTab !== "edicion") break
-        const mensaje = actions?.onDraw?.()
-        if (mensaje) setAviso(mensaje)
+      case "crear":
+        avisar(actions?.onDraw?.())
         return
-      }
-      case "Borrar": {
-        const mensaje = actions?.onDelete?.()
-        if (mensaje) setAviso(mensaje)
+      case "borrar":
+        avisar(actions?.onDelete?.())
         return
-      }
       // Flujo acordado con Aurelio: cambia el cursor, el usuario elige un
       // elemento y, si es una cubierta, se abre su conectividad en consulta.
-      case "Conectividad fina":
+      case "conectividad":
         actions?.onConnectivity?.()
         return
-      case "Entradas y salidas":
+      case "sentido":
         actions?.onSentido?.()
         return
-      case "Cable":
+      case "cable":
         actions?.onCable?.()
         return
-      case "Mover vértice":
-      case "Editar atributos":
+      case "editar":
         actions?.onEditGeometry?.()
         return
+      case undefined:
+        setAviso(`«${item.label}» todavía no está disponible: falta su función.`)
+        return
     }
+  }
 
-    if (item.onClick) {
-      item.onClick()
-      return
-    }
-    setAviso(`«${item.label}» todavía no está disponible.`)
+  // Pestañas con el teclado: flechas para pasar de una a otra, Inicio y Fin.
+  function teclaEnPestanas(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const actual = RIBBON_TABS.findIndex((t) => t.id === activeTab)
+    const n = RIBBON_TABS.length
+    const destino =
+      e.key === "ArrowRight"
+        ? (actual + 1) % n
+        : e.key === "ArrowLeft"
+          ? (actual - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : null
+    if (destino === null) return
+    e.preventDefault()
+    setActiveTab(RIBBON_TABS[destino].id)
+    alternarColapso(false)
+    document.getElementById(`ribbon-pestana-${RIBBON_TABS[destino].id}`)?.focus()
   }
 
   return (
     <div className="shrink-0 border-b border-border bg-card">
       {/* Pestañas */}
-      <div role="tablist" aria-label="Secciones" className="flex items-end border-b border-border bg-gradient-to-b from-card to-muted/30 px-1 pt-1">
+      {/* En pantallas angostas las diez pestañas no caben: se desplazan a lo
+          ancho en vez de quedar cortadas. */}
+      <div
+        role="tablist"
+        aria-label="Secciones"
+        className="flex items-end overflow-x-auto border-b border-border bg-gradient-to-b from-card to-muted/30 px-1 pt-1 [scrollbar-width:none]"
+      >
         {RIBBON_TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
@@ -195,11 +216,15 @@ export function DashboardRibbon({
               label={isActive ? (colapsado ? "Desplegar la barra" : "Plegar la barra") : undefined}
             >
             <button
+              id={`ribbon-pestana-${tab.id}`}
               role="tab"
               aria-selected={isActive}
+              aria-controls="ribbon-herramientas"
+              tabIndex={isActive ? 0 : -1}
+              onKeyDown={teclaEnPestanas}
               onClick={() => alPulsarPestana(tab.id)}
               className={`
-                relative rounded-t-lg px-4 py-2 text-sm font-semibold outline-none transition-all
+                relative shrink-0 whitespace-nowrap rounded-t-lg px-4 py-2 text-sm font-semibold outline-none transition-all
                 focus-visible:ring-2 focus-visible:ring-ring/50
                 ${isActive
                   ? "bg-card text-primary shadow-sm"
@@ -233,7 +258,9 @@ export function DashboardRibbon({
       {!colapsado && (
       <div
         key={activeTab}
+        id="ribbon-herramientas"
         role="tabpanel"
+        aria-labelledby={`ribbon-pestana-${activeTab}`}
         className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2 animate-gismart-fade-in"
       >
         {currentTab.groups.map((group, gi) => (
@@ -248,22 +275,39 @@ export function DashboardRibbon({
                   // Encendido mientras su herramienta está activa: antes solo lo
                   // decía la barra de estado, abajo del mapa.
                   const isActivo = activos.includes(item.label)
+                  // Sin acción: todavía no tiene su función.
+                  const proximamente = !item.accion
 
                   return (
                     <Tooltip
                       key={ii}
-                      label={isExtension && isFullscreen ? "Salir de pantalla completa" : (item.tooltip ?? item.label)}
+                      label={
+                        isExtension && isFullscreen
+                          ? "Salir de pantalla completa"
+                          : proximamente
+                            ? `${item.label} · Próximamente`
+                            : (item.tooltip ?? item.label)
+                      }
                       side="bottom"
                     >
                     <button
                       onClick={() => handleItemClick(item)}
                       disabled={item.disabled}
-                      aria-label={isExtension && isFullscreen ? "Salir de pantalla completa" : item.label}
+                      aria-label={
+                        isExtension && isFullscreen
+                          ? "Salir de pantalla completa"
+                          : proximamente
+                            ? `${item.label} (próximamente)`
+                            : item.label
+                      }
+                      aria-disabled={proximamente ? true : undefined}
                       aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
                       className={`
-                        group flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
+                        group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
                         focus-visible:ring-2 focus-visible:ring-ring/50
-                        ${isActivo
+                        ${proximamente
+                          ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
+                          : isActivo
                           ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40 hover:bg-primary/20"
                           : isPrimary
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
@@ -275,6 +319,11 @@ export function DashboardRibbon({
                         min-w-[64px]
                       `}
                     >
+                      {/* El reloj marca lo que todavía no está, sin depender
+                          solo del color apagado. */}
+                      {proximamente && (
+                        <Clock className="absolute right-1 top-1 size-2.5 text-muted-foreground/70" aria-hidden="true" />
+                      )}
                       <Icon className="size-[18px] shrink-0" />
                       {/* Hasta dos líneas: con una sola, «Conectividad fina» o
                           «Entradas y salidas» salían cortadas con puntos suspensivos. */}

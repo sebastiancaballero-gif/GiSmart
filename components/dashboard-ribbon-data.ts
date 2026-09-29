@@ -8,12 +8,39 @@ import {
   Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ArrowLeftRight,
 } from "lucide-react"
 
+/**
+ * Lo que hace un botón del ribbon. Los botones sin `accion` son la maqueta
+ * del SIG anterior: se ven apagados, dicen «próximamente» y, al pulsarlos,
+ * avisan que todavía no están. Antes todos se veían iguales y solo se sabía
+ * cuáles funcionaban probándolos uno por uno.
+ */
+export type AccionDeRibbon =
+  | "encuadrar"
+  | "pantallaCompleta"
+  | "actualizar"
+  | "activarCapa"
+  | "identificar"
+  | "salir"
+  | "buscar"
+  | "aCoordenada"
+  | "conectividad"
+  | "sentido"
+  | "cable"
+  | "editar"
+  | "crear"
+  | "borrar"
+  | "hilos"
+  | "gpon"
+  | "redesNodo"
+  | "medir"
+
 export type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
-  /** Texto de la etiqueta emergente, cuando el botón necesita explicarse más que su nombre. */
+  /** Qué hace, en la etiqueta emergente. Sin él se muestra el nombre. */
   tooltip?: string
-  onClick?: () => void
+  /** Sin acción, el botón todavía no tiene su función (ver `AccionDeRibbon`). */
+  accion?: AccionDeRibbon
   disabled?: boolean
   variant?: "default" | "primary" | "destructive"
 }
@@ -37,16 +64,16 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Mapa",
         items: [
-          { icon: Map, label: "Mapa de red" },
-          { icon: Maximize, label: "Extensión" },
-          { icon: RefreshCw, label: "Actualizar" },
+          { icon: Map, label: "Mapa de red", accion: "encuadrar", tooltip: "Encuadrar toda la red" },
+          { icon: Maximize, label: "Extensión", accion: "pantallaCompleta", tooltip: "Ver el mapa en pantalla completa" },
+          { icon: RefreshCw, label: "Actualizar", accion: "actualizar", tooltip: "Volver a cargar las capas desde la base" },
         ],
       },
       {
         label: "Capas",
         items: [
-          { icon: Layers, label: "Activar capa" },
-          { icon: Eye, label: "Identificar" },
+          { icon: Layers, label: "Activar capa", accion: "activarCapa", tooltip: "Elegir la capa en la que se edita, mueve o crea" },
+          { icon: Eye, label: "Identificar", accion: "identificar", tooltip: "Click sobre un elemento para ver su información" },
         ],
       },
     ],
@@ -58,8 +85,8 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Sesión",
         items: [
-          { icon: User, label: "Cambiar usuario" },
-          { icon: LogOut, label: "Salir", variant: "destructive" },
+          { icon: User, label: "Cambiar usuario", accion: "salir", tooltip: "Cerrar la sesión para entrar con otro usuario" },
+          { icon: LogOut, label: "Salir", variant: "destructive", accion: "salir", tooltip: "Cerrar la sesión" },
         ],
       },
     ],
@@ -81,16 +108,16 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Elementos",
         items: [
-          { icon: Search, label: "Búsqueda" },
-          { icon: Eye, label: "Atributos" },
+          { icon: Search, label: "Búsqueda", accion: "buscar", tooltip: "Buscar por nombre, código, dirección o coordenada (Ctrl+K)" },
+          { icon: Eye, label: "Atributos", accion: "identificar", tooltip: "Click sobre un elemento para ver sus datos" },
         ],
       },
       {
         label: "Red",
         items: [
-          { icon: GitBranch, label: "Conectividad fina" },
-          { icon: ArrowLeftRight, label: "Entradas y salidas" },
-          { icon: Cable, label: "Cable", tooltip: "Extremos de un cable" },
+          { icon: GitBranch, label: "Conectividad fina", accion: "conectividad", tooltip: "Click sobre una cubierta para ver su conectividad" },
+          { icon: ArrowLeftRight, label: "Entradas y salidas", accion: "sentido", tooltip: "Click sobre una cubierta para ver los cables que entran y salen" },
+          { icon: Cable, label: "Cable", accion: "cable", tooltip: "Click sobre un cable para ver su entrada y su salida" },
         ],
       },
     ],
@@ -110,7 +137,7 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Extensión",
         items: [
-          { icon: Maximize, label: "Acercar ext." },
+          { icon: Maximize, label: "Acercar ext.", accion: "encuadrar", tooltip: "Encuadrar toda la red" },
           { icon: RefreshCw, label: "Actualizar ext." },
           { icon: ToggleRight, label: "Cambiar estado" },
         ],
@@ -130,22 +157,22 @@ export const RIBBON_TABS: RibbonTab[] = [
     groups: [
       {
         label: "Atributos",
-        items: [{ icon: PenLine, label: "Editar atributos" }],
+        items: [{ icon: PenLine, label: "Editar atributos", accion: "editar", tooltip: "Seleccionar un elemento de la capa activa para renombrarlo" }],
       },
       {
         label: "Geometría",
         items: [
           { icon: Plus, label: "Add vértice" },
           { icon: Minus, label: "Borrar vértice" },
-          { icon: Move, label: "Mover vértice" },
+          { icon: Move, label: "Mover vértice", accion: "editar", tooltip: "Arrastrar los vértices de un elemento de la capa activa" },
           { icon: Save, label: "Guardar", variant: "primary" },
         ],
       },
       {
         label: "Elementos",
         items: [
-          { icon: PlusCircle, label: "Crear" },
-          { icon: Trash2, label: "Borrar", variant: "destructive" },
+          { icon: PlusCircle, label: "Crear", accion: "crear", tooltip: "Dibujar en la capa activa" },
+          { icon: Trash2, label: "Borrar", variant: "destructive", accion: "borrar", tooltip: "Quitar del mapa elementos de la capa activa" },
           { icon: Move3d, label: "Mover" },
           { icon: Plug, label: "Conectar" },
           { icon: Unplug, label: "Desconectar" },
@@ -164,9 +191,9 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Consultas",
         items: [
-          { icon: Cable, label: "Hilos" },
-          { icon: Wifi, label: "GPON" },
-          { icon: Server, label: "Redes/Nodo" },
+          { icon: Cable, label: "Hilos", accion: "hilos", tooltip: "Gestión de hilos de un cable" },
+          { icon: Wifi, label: "GPON", accion: "gpon", tooltip: "Elementos alimentados por fibra óptica" },
+          { icon: Server, label: "Redes/Nodo", accion: "redesNodo", tooltip: "Consulta de redes por nodo de fibra óptica" },
           { icon: Route, label: "Enrutamiento" },
         ],
       },
@@ -217,8 +244,8 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Herramientas",
         items: [
-          { icon: Ruler, label: "Mediciones" },
-          { icon: Crosshair, label: "A coordenada" },
+          { icon: Ruler, label: "Mediciones", accion: "medir", tooltip: "Medir distancias y áreas" },
+          { icon: Crosshair, label: "A coordenada", accion: "aCoordenada", tooltip: "Ir a una latitud y longitud" },
           { icon: Eraser, label: "Limpiar trace" },
         ],
       },
