@@ -258,10 +258,11 @@
 
 /*
  * Entrada del login: cada bloque sube y aparece, uno tras otro. El orden lo
- * marca `--retraso` en cada elemento. `both` los deja ocultos hasta su turno.
+ * marca `--retraso` en cada elemento. `backwards` los deja ocultos hasta su
+ * turno y, al terminar, no deja nada puesto (ver la nota de `gismart-baja`).
  */
 .gismart-entrada {
-  animation: gismart-subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: gismart-subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   animation-delay: var(--retraso, 0ms);
 }
 
@@ -272,7 +273,90 @@
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
+  }
+}
+
+/*
+ * Entrada del tablero, al llegar del login: la cabecera y el ribbon bajan, el
+ * panel de capas entra desde la izquierda y el mapa aparece, uno tras otro
+ * (`--retraso`). Antes, al terminar «Verificando sesión…», todo salía de golpe.
+ *
+ * Van con `backwards` y no con `both`: con `both` el último fotograma se
+ * queda puesto para siempre, y un `translateY(0)` sigue siendo un transform
+ * que encierra a los elementos `position: fixed` de adentro (el buscador del
+ * celular, el aviso del ribbon). Es lo que pasaba con la ventana de conexión
+ * del login. `backwards` oculta durante el retraso y al terminar lo suelta.
+ */
+.gismart-baja {
+  animation: gismart-baja 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--retraso, 0ms);
+}
+
+@keyframes gismart-baja {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.gismart-desde-izquierda {
+  animation: gismart-desde-izquierda 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--retraso, 0ms);
+}
+
+@keyframes gismart-desde-izquierda {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Solo opacidad: para el mapa, al que no conviene moverle la caja. */
+.gismart-fundido {
+  animation: gismart-fundido 0.5s ease-out backwards;
+  animation-delay: var(--retraso, 0ms);
+}
+
+@keyframes gismart-fundido {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * Panel del elemento seleccionado. En el celular va abajo, como una hoja, y
+ * sube desde el borde en vez de aparecer en el sitio.
+ */
+.gismart-panel {
+  animation: gismart-fade-in 0.18s ease-out;
+}
+
+@media (width < 40rem) {
+  .gismart-panel {
+    animation: gismart-hoja 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes gismart-hoja {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -324,6 +408,21 @@
   .gismart-onda {
     animation: none;
     opacity: 0;
+  }
+
+  .gismart-baja,
+  .gismart-desde-izquierda,
+  .gismart-fundido,
+  .gismart-panel,
+  .animate-gismart-fade-in {
+    animation: none;
+  }
+
+  /* El cambio de tema también se hace sin fundido (ver lib/theme.ts). */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
   }
 }
 

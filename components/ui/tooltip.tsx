@@ -60,7 +60,7 @@ function Tooltip({
           <TooltipPrimitive.Popup
             className={cn(
               "max-w-56 rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-md",
-              "transition-[opacity,transform] duration-150",
+              "transition-[opacity,transform] duration-150 motion-reduce:transition-none",
               "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
               "data-[starting-style]:scale-95 data-[ending-style]:scale-95",
             )}

@@ -254,98 +254,106 @@ export function DashboardRibbon({
         </Tooltip>
       </div>
 
-      {/* Toolbar */}
-      {!colapsado && (
+      {/* Toolbar. Al plegarla o desplegarla la altura se anima (filas de
+          0fr a 1fr) en vez de saltar, y el mapa de abajo se acomoda con ella.
+          Plegada queda `inert`: no se ve ni recibe el foco. */}
       <div
-        key={activeTab}
-        id="ribbon-herramientas"
-        role="tabpanel"
-        aria-labelledby={`ribbon-pestana-${activeTab}`}
-        className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2 animate-gismart-fade-in"
+        className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+          colapsado ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+        }`}
       >
-        {currentTab.groups.map((group, gi) => (
-          <div key={gi} className="flex items-stretch">
-            <div className="flex flex-col justify-center px-2 py-1.5">
-              <div className="flex items-center gap-0.5">
-                {group.items.map((item, ii) => {
-                  const isExtension = item.label === "Extensión"
-                  const Icon = isExtension && isFullscreen ? Minimize : item.icon
-                  const isPrimary = item.variant === "primary" || (isExtension && isFullscreen)
-                  const isDestructive = item.variant === "destructive"
-                  // Encendido mientras su herramienta está activa: antes solo lo
-                  // decía la barra de estado, abajo del mapa.
-                  const isActivo = activos.includes(item.label)
-                  // Sin acción: todavía no tiene su función.
-                  const proximamente = !item.accion
+        <div className="min-h-0 overflow-hidden" inert={colapsado}>
+          <div
+            key={activeTab}
+            id="ribbon-herramientas"
+            role="tabpanel"
+            aria-labelledby={`ribbon-pestana-${activeTab}`}
+            className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2 animate-gismart-fade-in"
+          >
+            {currentTab.groups.map((group, gi) => (
+              <div key={gi} className="flex items-stretch">
+                <div className="flex flex-col justify-center px-2 py-1.5">
+                  <div className="flex items-center gap-0.5">
+                    {group.items.map((item, ii) => {
+                      const isExtension = item.label === "Extensión"
+                      const Icon = isExtension && isFullscreen ? Minimize : item.icon
+                      const isPrimary = item.variant === "primary" || (isExtension && isFullscreen)
+                      const isDestructive = item.variant === "destructive"
+                      // Encendido mientras su herramienta está activa: antes solo lo
+                      // decía la barra de estado, abajo del mapa.
+                      const isActivo = activos.includes(item.label)
+                      // Sin acción: todavía no tiene su función.
+                      const proximamente = !item.accion
 
-                  return (
-                    <Tooltip
-                      key={ii}
-                      label={
-                        isExtension && isFullscreen
-                          ? "Salir de pantalla completa"
-                          : proximamente
-                            ? `${item.label} · Próximamente`
-                            : (item.tooltip ?? item.label)
-                      }
-                      side="bottom"
-                    >
-                    <button
-                      onClick={() => handleItemClick(item)}
-                      disabled={item.disabled}
-                      aria-label={
-                        isExtension && isFullscreen
-                          ? "Salir de pantalla completa"
-                          : proximamente
-                            ? `${item.label} (próximamente)`
-                            : item.label
-                      }
-                      aria-disabled={proximamente ? true : undefined}
-                      aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
-                      className={`
-                        group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
-                        focus-visible:ring-2 focus-visible:ring-ring/50
-                        ${proximamente
-                          ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
-                          : isActivo
-                          ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40 hover:bg-primary/20"
-                          : isPrimary
-                          ? "bg-primary/10 text-primary hover:bg-primary/20"
-                          : isDestructive
-                            ? "text-destructive hover:bg-destructive/10"
-                            : "text-foreground hover:bg-accent"
-                        }
-                        ${item.disabled ? "opacity-40 cursor-not-allowed" : ""}
-                        min-w-[64px]
-                      `}
-                    >
-                      {/* El reloj marca lo que todavía no está, sin depender
-                          solo del color apagado. */}
-                      {proximamente && (
-                        <Clock className="absolute right-1 top-1 size-2.5 text-muted-foreground/70" aria-hidden="true" />
-                      )}
-                      <Icon className="size-[18px] shrink-0" />
-                      {/* Hasta dos líneas: con una sola, «Conectividad fina» o
-                          «Entradas y salidas» salían cortadas con puntos suspensivos. */}
-                      <span className="line-clamp-2 max-w-[68px] text-center text-[10px] font-medium leading-[1.15]">
-                        {item.label}
-                      </span>
-                    </button>
-                    </Tooltip>
-                  )
-                })}
+                      return (
+                        <Tooltip
+                          key={ii}
+                          label={
+                            isExtension && isFullscreen
+                              ? "Salir de pantalla completa"
+                              : proximamente
+                                ? `${item.label} · Próximamente`
+                                : (item.tooltip ?? item.label)
+                          }
+                          side="bottom"
+                        >
+                        <button
+                          onClick={() => handleItemClick(item)}
+                          disabled={item.disabled}
+                          aria-label={
+                            isExtension && isFullscreen
+                              ? "Salir de pantalla completa"
+                              : proximamente
+                                ? `${item.label} (próximamente)`
+                                : item.label
+                          }
+                          aria-disabled={proximamente ? true : undefined}
+                          aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
+                          className={`
+                            group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
+                            focus-visible:ring-2 focus-visible:ring-ring/50
+                            ${proximamente
+                              ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
+                              : isActivo
+                              ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40 hover:bg-primary/20"
+                              : isPrimary
+                              ? "bg-primary/10 text-primary hover:bg-primary/20"
+                              : isDestructive
+                                ? "text-destructive hover:bg-destructive/10"
+                                : "text-foreground hover:bg-accent"
+                            }
+                            ${item.disabled ? "opacity-40 cursor-not-allowed" : ""}
+                            min-w-[64px]
+                          `}
+                        >
+                          {/* El reloj marca lo que todavía no está, sin depender
+                              solo del color apagado. */}
+                          {proximamente && (
+                            <Clock className="absolute right-1 top-1 size-2.5 text-muted-foreground/70" aria-hidden="true" />
+                          )}
+                          <Icon className="size-[18px] shrink-0" />
+                          {/* Hasta dos líneas: con una sola, «Conectividad fina» o
+                              «Entradas y salidas» salían cortadas con puntos suspensivos. */}
+                          <span className="line-clamp-2 max-w-[68px] text-center text-[10px] font-medium leading-[1.15]">
+                            {item.label}
+                          </span>
+                        </button>
+                        </Tooltip>
+                      )
+                    })}
+                  </div>
+                  <span className="mt-1 text-center text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {group.label}
+                  </span>
+                </div>
+                {gi < currentTab.groups.length - 1 && (
+                  <div className="my-2 w-px bg-border" />
+                )}
               </div>
-              <span className="mt-1 text-center text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                {group.label}
-              </span>
-            </div>
-            {gi < currentTab.groups.length - 1 && (
-              <div className="my-2 w-px bg-border" />
-            )}
+            ))}
           </div>
-        ))}
+        </div>
       </div>
-      )}
 
       {aviso && (
         <div

@@ -27,8 +27,31 @@ export function applyTheme(theme: Theme) {
   localStorage.setItem(THEME_KEY, theme)
 }
 
+/** El tema pedido que todavía no se aplicó: el fundido lo aplica un fotograma después. */
+let temaEnCamino: Theme | null = null
+
+/**
+ * Cambia de tema con un fundido de toda la pantalla. Antes el cambio era de
+ * golpe: cada color saltaba por su lado y el mapa base se invertía de un
+ * fotograma a otro. Donde el navegador no tiene `startViewTransition`, o el
+ * sistema pide reducir el movimiento, cambia como antes.
+ */
 export function toggleTheme(): Theme {
-  const next: Theme = getCurrentTheme() === "dark" ? "light" : "dark"
-  applyTheme(next)
+  const next: Theme = (temaEnCamino ?? getCurrentTheme()) === "dark" ? "light" : "dark"
+  const reducir = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  if (reducir || typeof document.startViewTransition !== "function") {
+    applyTheme(next)
+    return next
+  }
+  // Dos clicks seguidos: el segundo parte del tema que pidió el primero, no
+  // del que todavía se ve.
+  temaEnCamino = next
+  const transicion = document.startViewTransition(() => {
+    applyTheme(next)
+    if (temaEnCamino === next) temaEnCamino = null
+  })
+  // Si llega otro click antes de que empiece, el navegador salta este fundido
+  // y rechaza `ready`; sin atraparlo quedaba un error en la consola.
+  transicion.ready.catch(() => {})
   return next
 }

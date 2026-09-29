@@ -147,9 +147,10 @@ export function PanelSeleccion({
   const color = LAYER_COLORS[type]
 
   // En pantallas angostas el panel va abajo y a todo el ancho, como una hoja:
-  // arriba a la derecha tapaba la barra de herramientas del mapa.
+  // arriba a la derecha tapaba la barra de herramientas del mapa. Ahí sube
+  // desde el borde al aparecer (`gismart-panel` en globals.css).
   return (
-    <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur animate-gismart-fade-in max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
+    <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
       <div className="border-b border-border px-3.5 pb-3 pt-3">
         <div className="flex items-center justify-between">
           <span

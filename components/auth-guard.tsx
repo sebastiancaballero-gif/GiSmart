@@ -71,10 +71,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!authorized) {
     // Mismo fondo y logo que el login: es el paso intermedio entre las dos
     // pantallas, y así el cambio se siente continuo.
+    //
+    // El logo espera 300 ms antes de asomar. Casi siempre la sesión se confirma
+    // antes, y entonces no se ve nada más que el fondo; antes el logo alcanzaba
+    // a parpadear un instante entre el «Bienvenido» del login y el tablero.
     return (
       <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-background">
         <TramaRed />
-        <div className="gismart-entrada relative flex flex-col items-center gap-5">
+        <div
+          className="gismart-entrada relative flex flex-col items-center gap-5"
+          style={{ "--retraso": "300ms" } as React.CSSProperties}
+        >
           <GismartLogo tamanoMarca="h-11" tamanoNombre="text-3xl" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />

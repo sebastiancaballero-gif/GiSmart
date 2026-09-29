@@ -283,31 +283,44 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-        <DashboardHeader
-          subtitle={location}
-          onNavigate={handleNavigate}
-          elementos={indice}
-          onElegirElemento={handleElegirElemento}
-          pedirFoco={pedirFocoBusqueda}
-        />
-        <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
-        <div className="flex flex-1 overflow-hidden">
-          <DashboardSidebar
-            layers={layers}
-            onToggleLayer={handleToggleLayer}
-            onToggleItem={handleToggleItem}
-            onClearItems={handleClearItems}
-            onZoomLayer={handleZoomLayer}
-            totalKm={totalKm}
-            enPantalla={enPantalla}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-            loading={loadingData}
-            capaActiva={capaActiva}
-            onSelectCapa={handleSelectCapa}
-            pedirCapa={pedirCapa}
+        {/* Entrada escalonada al llegar del login: arriba la cabecera y el
+            ribbon, luego el panel de capas y el mapa (ver `gismart-baja` en
+            globals.css). Antes todo aparecía de golpe. */}
+        <div className="gismart-baja shrink-0">
+          <DashboardHeader
+            subtitle={location}
+            onNavigate={handleNavigate}
+            elementos={indice}
+            onElegirElemento={handleElegirElemento}
+            pedirFoco={pedirFocoBusqueda}
           />
-          <main id="map-panel" className="relative flex-1 overflow-hidden">
+        </div>
+        <div className="gismart-baja shrink-0" style={{ "--retraso": "70ms" } as React.CSSProperties}>
+          <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="gismart-desde-izquierda flex shrink-0" style={{ "--retraso": "140ms" } as React.CSSProperties}>
+            <DashboardSidebar
+              layers={layers}
+              onToggleLayer={handleToggleLayer}
+              onToggleItem={handleToggleItem}
+              onClearItems={handleClearItems}
+              onZoomLayer={handleZoomLayer}
+              totalKm={totalKm}
+              enPantalla={enPantalla}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+              loading={loadingData}
+              capaActiva={capaActiva}
+              onSelectCapa={handleSelectCapa}
+              pedirCapa={pedirCapa}
+            />
+          </div>
+          <main
+            id="map-panel"
+            className="gismart-fundido relative flex-1 overflow-hidden"
+            style={{ "--retraso": "100ms" } as React.CSSProperties}
+          >
             <NetworkMap
               visible={visible}
               onStatsChange={handleStatsChange}

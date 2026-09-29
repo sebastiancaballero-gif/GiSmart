@@ -15,8 +15,8 @@ function DialogBackdrop({ className, ...props }: React.ComponentProps<typeof Dia
     <DialogPrimitive.Backdrop
       data-slot="dialog-backdrop"
       className={cn(
-        "fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm transition-opacity duration-150",
-        "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
+        "fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm transition-opacity duration-200 ease-out motion-reduce:transition-none",
+        "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 data-[ending-style]:duration-150 data-[ending-style]:ease-in",
         className,
       )}
       {...props}
@@ -37,9 +37,13 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card shadow-xl ring-1 ring-border transition-all duration-150",
-          "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
-          "data-[starting-style]:scale-[0.97] data-[ending-style]:scale-[0.97]",
+          // Entra subiendo un poco y con una curva que frena al final, como las
+          // tarjetas del login; sale más rápido, para no hacer esperar a quien
+          // ya terminó. Antes entraba y salía igual, con solo un leve zoom.
+          "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card shadow-xl ring-1 ring-border",
+          "transition-[opacity,scale,translate] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          "data-[starting-style]:translate-y-[calc(-50%_+_10px)] data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
+          "data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[ending-style]:duration-120 data-[ending-style]:ease-in",
           large
             ? "h-[70vh] w-[70vw] min-h-[460px] min-w-[560px] overflow-hidden"
             : "w-full max-w-sm p-6",

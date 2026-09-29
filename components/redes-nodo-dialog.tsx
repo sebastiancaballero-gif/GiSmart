@@ -376,7 +376,11 @@ function VentanaRedesNodo({
               tabIndex={0}
               className="flex h-[min(20rem,40vh)] flex-col overflow-auto rounded-b-xl border border-t-0 border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
+              {/* Con la clave de la pestaña, la grilla nueva aparece con un fundido corto al cambiar. */}
+              <table
+                key={actual.id}
+                className="w-max min-w-full border-separate border-spacing-0 text-xs animate-in fade-in duration-200 motion-reduce:animate-none"
+              >
                 <thead>
                   <tr>
                     <th className="sticky left-0 top-0 z-30 w-8 min-w-8 border-b border-r border-border bg-muted" aria-label="Fila seleccionada" />

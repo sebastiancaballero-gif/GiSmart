@@ -274,8 +274,10 @@ export function DashboardHeader({
         <div
           ref={searchBoxRef}
           className={`${
-            buscadorMovil ? "fixed inset-x-3 top-16 z-50 block rounded-xl bg-card p-2 shadow-xl ring-1 ring-border" : "hidden"
-          } md:relative md:inset-auto md:top-auto md:z-auto md:block md:rounded-none md:bg-transparent md:p-0 md:shadow-none md:ring-0`}
+            buscadorMovil
+              ? "fixed inset-x-3 top-16 z-50 block rounded-xl bg-card p-2 shadow-xl ring-1 ring-border animate-in fade-in slide-in-from-top-2 duration-200 motion-reduce:animate-none"
+              : "hidden"
+          } md:relative md:inset-auto md:top-auto md:z-auto md:block md:animate-none md:rounded-none md:bg-transparent md:p-0 md:shadow-none md:ring-0`}
         >
           <div className="relative flex items-center gap-2">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -337,7 +339,7 @@ export function DashboardHeader({
           </div>
 
           {listaAbierta && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg md:w-96">
+            <div className="absolute right-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none md:w-96">
               <ul id="buscador-lista" role="listbox" aria-label="Resultados de la búsqueda" className="max-h-96 overflow-y-auto py-1">
                 {opciones.map((opcion, i) => {
                   const primeraDireccion = opcion.tipo === "direccion" && (i === 0 || opciones[i - 1].tipo !== "direccion")
