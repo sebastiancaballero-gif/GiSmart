@@ -284,7 +284,9 @@ export function BotonIcono({
   pendiente?: boolean
 }) {
   return (
-    <Tooltip label={pendiente ? `${etiqueta} · Próximamente` : etiqueta}>
+    // Arriba y no a la derecha: estos botones van en fila, y a la derecha la
+    // etiqueta tapaba el botón de al lado mientras uno recorría la fila.
+    <Tooltip label={pendiente ? `${etiqueta} · Próximamente` : etiqueta} side="top">
       <button
         type="button"
         onClick={onClick}
