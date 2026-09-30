@@ -28,10 +28,18 @@ import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbol
  * que aparecen en el mapa.
  */
 export function MapLegend({ sentido = false, extremos = false }: { sentido?: boolean; extremos?: boolean }) {
-  const [abierta, setAbierta] = useState(true)
+  // En el celular empieza plegada: abierta ocupaba media pantalla y tapaba la
+  // escala y la barra de estado. El mapa solo se dibuja en el navegador (el
+  // tablero espera a confirmar la sesión), así que aquí ya hay `window`.
+  const [abierta, setAbierta] = useState(
+    () => typeof window === "undefined" || !window.matchMedia("(max-width: 639px)").matches,
+  )
 
+  // `gismart-leyenda`: se aparta mientras el panel del elemento la tapa (ver
+  // globals.css). En el celular va encima de la barra de estado, que ahí ocupa
+  // casi todo el ancho y quedaba debajo de la leyenda.
   return (
-    <div className="absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
+    <div className="gismart-leyenda absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:bottom-14">
       <button
         type="button"
         onClick={() => setAbierta((v) => !v)}

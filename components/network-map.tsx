@@ -1436,27 +1436,10 @@ function MapaDeRed({
     <div className={`relative size-full ${className ?? ""}`}>
       <div
         ref={containerRef}
-        /* Los controles propios de OpenLayers se reestilizan acá para que
-           coincidan con los botones de la aplicación. */
-        className="size-full
-          [&_.ol-zoom]:!left-auto [&_.ol-zoom]:!right-3 [&_.ol-zoom]:!top-3
-          [&_.ol-zoom]:flex [&_.ol-zoom]:flex-col [&_.ol-zoom]:gap-0.5
-          [&_.ol-zoom]:rounded-xl [&_.ol-zoom]:bg-card/95 [&_.ol-zoom]:p-1
-          [&_.ol-zoom]:shadow-lg [&_.ol-zoom]:ring-1 [&_.ol-zoom]:ring-border
-          [&_.ol-zoom]:backdrop-blur
-          [&_.ol-zoom_button]:!m-0 [&_.ol-zoom_button]:size-9
-          [&_.ol-zoom_button]:!rounded-lg [&_.ol-zoom_button]:!bg-transparent
-          [&_.ol-zoom_button]:!text-base [&_.ol-zoom_button]:!font-medium
-          [&_.ol-zoom_button]:!text-foreground
-          [&_.ol-zoom_button:hover]:!bg-accent
-          [&_.ol-scale-bar]:!bottom-14 [&_.ol-scale-bar]:!left-3
-          [&_.ol-scale-bar]:rounded-md [&_.ol-scale-bar]:bg-card/90
-          [&_.ol-scale-bar]:px-1.5 [&_.ol-scale-bar]:py-1
-          [&_.ol-scale-bar]:shadow-md [&_.ol-scale-bar]:ring-1
-          [&_.ol-scale-bar]:ring-border [&_.ol-scale-bar]:backdrop-blur
-          [&_.ol-scale-text]:!bottom-auto [&_.ol-scale-text]:!text-foreground
-          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
-          focus-visible:ring-ring/60"
+        /* Los controles propios de OpenLayers (zoom, créditos y escala) se
+           reestilizan en globals.css, bajo `.gismart-mapa`, para que coincidan
+           con los botones de la aplicación. */
+        className="gismart-mapa size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
         // OpenLayers trae desplazamiento y zoom por teclado, pero solo actúan
         // cuando el mapa tiene el foco. Sin `tabIndex` el contenedor no podía
         // recibirlo, así que las flechas y +/- nunca hacían nada.

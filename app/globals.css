@@ -178,6 +178,11 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Barras de desplazamiento finas y del color del tema. Las de Windows son
+       gruesas, con flechas y grises claras: en el ribbon, en las ventanas y en
+       las tablas desentonaban, sobre todo en modo oscuro. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent;
   }
   body {
     @apply bg-background text-foreground;
@@ -471,5 +476,184 @@
   :root:not(.light) .gismart-basemap,
   :root:not(.light) .gismart-basemap canvas {
     filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.72);
+  }
+}
+
+/*
+ * Controles de OpenLayers con el aspecto de la aplicación: la misma tarjeta que
+ * la barra de herramientas del mapa (fondo de tarjeta, borde fino, sombra).
+ *
+ * Van aquí y no como utilidades de Tailwind en el contenedor, que es donde
+ * estaban: `ol/ol.css` se carga fuera de las capas de Tailwind y por eso le
+ * ganaba a todo lo que no llevara `!`. El zoom se veía con el gris de fábrica
+ * de OpenLayers y el texto de la escala («1 : 4232») quedaba montado encima de
+ * la barra. Con dos clases (`.gismart-mapa .ol-…`) estas reglas pesan más que
+ * las de ol.css sin tener que marcar cada una como importante.
+ */
+.gismart-mapa {
+  --gismart-sombra-control: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1), 0 0 0 1px var(--border);
+}
+
+.gismart-mapa .ol-control {
+  border-radius: 0.75rem;
+  background-color: color-mix(in oklch, var(--card) 95%, transparent);
+  box-shadow: var(--gismart-sombra-control);
+  backdrop-filter: blur(8px);
+}
+
+.gismart-mapa .ol-control button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 0.5rem;
+  background-color: transparent;
+  color: var(--foreground);
+  font-weight: 500;
+  line-height: 1;
+  transition: background-color 150ms;
+}
+
+/* ol.css les pone un contorno gris al pasar el ratón y al enfocar: aquí solo cambia el fondo. */
+.gismart-mapa .ol-control button:hover {
+  outline: none;
+  background-color: var(--accent);
+}
+
+.gismart-mapa .ol-control button:focus {
+  outline: none;
+}
+
+.gismart-mapa .ol-control button:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 50%, transparent);
+}
+
+/* Zoom: arriba a la derecha, botones del tamaño de los de la barra de herramientas. */
+.gismart-mapa .ol-zoom {
+  top: 12px;
+  right: 12px;
+  left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.gismart-mapa .ol-zoom button {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+
+/*
+ * Créditos del mapa base: al lado del zoom. Abajo a la derecha, donde los pone
+ * OpenLayers, la «i» tapaba el último renglón de la leyenda.
+ */
+.gismart-mapa .ol-attribution {
+  top: 12px;
+  right: 64px;
+  bottom: auto;
+  max-width: calc(100% - 140px);
+  padding: 4px;
+  gap: 2px;
+}
+
+.gismart-mapa .ol-attribution:not(.ol-collapsed) {
+  background-color: color-mix(in oklch, var(--card) 95%, transparent);
+}
+
+.gismart-mapa .ol-attribution button {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.gismart-mapa .ol-attribution ul {
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  text-shadow: none;
+}
+
+.gismart-mapa .ol-attribution a {
+  color: var(--primary);
+}
+
+/*
+ * Escala: encima de la barra de estado, con la proporción arriba, la barra en
+ * medio y las distancias debajo, todo dentro de su tarjeta.
+ */
+.gismart-mapa .ol-scale-bar {
+  left: 12px;
+  bottom: 56px;
+  padding: 18px 22px 4px 10px;
+  border-radius: 0.5rem;
+  background-color: color-mix(in oklch, var(--card) 90%, transparent);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1), 0 0 0 1px var(--border);
+  backdrop-filter: blur(8px);
+}
+
+/* Así la proporción, las marcas y los textos se ubican respecto de la barra y
+   no de la tarjeta. */
+.gismart-mapa .ol-scale-bar-inner {
+  position: relative;
+}
+
+.gismart-mapa .ol-scale-bar-inner > .ol-scale-step-marker {
+  top: 0 !important;
+}
+
+.gismart-mapa .ol-scale-text {
+  top: -15px;
+  bottom: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-shadow: none;
+}
+
+.gismart-mapa .ol-scale-step-text {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--foreground);
+  text-shadow: none;
+}
+
+.gismart-mapa .ol-scale-step-marker {
+  background-color: var(--foreground);
+}
+
+.gismart-mapa .ol-scale-singlebar {
+  border-color: var(--foreground);
+}
+
+.gismart-mapa .ol-scale-singlebar-odd {
+  background-color: var(--card);
+}
+
+.gismart-mapa .ol-scale-singlebar-even {
+  background-color: var(--foreground);
+}
+
+/*
+ * Con el mapa bajo (una portátil de 720 px de alto), el panel del elemento
+ * seleccionado tapa casi toda la leyenda y solo asomaban dos o tres renglones
+ * sueltos debajo de él. Mientras el panel está abierto la leyenda se aparta;
+ * al cerrarlo vuelve. En pantallas altas caben los dos y no cambia nada.
+ */
+.gismart-leyenda {
+  transition:
+    opacity 150ms,
+    visibility 0s linear 0s;
+}
+
+@media (max-height: 880px) {
+  #map-panel:has(.gismart-panel) .gismart-leyenda {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 150ms,
+      visibility 0s linear 150ms;
   }
 }

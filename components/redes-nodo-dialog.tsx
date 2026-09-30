@@ -433,7 +433,9 @@ function VentanaRedesNodo({
                       titulo={`${actual.titulo} de ${nodo.nombre}`}
                       texto={`Pulsa «Cargar cubiertas» para ver ${actual.queMuestra}.`}
                     >
-                      <Boton icono={Download} principal onClick={cargarCubiertas}>
+                      {/* Secundario: el azul relleno es el de arriba, junto al nodo.
+                          Con los dos en azul competían por ser «la» acción. */}
+                      <Boton icono={Download} onClick={cargarCubiertas}>
                         Cargar cubiertas
                       </Boton>
                     </EstadoVacio>

@@ -90,7 +90,7 @@ export function DashboardSidebar({
   return (
     <aside
       className={`flex shrink-0 flex-col overflow-hidden border-r border-border bg-card transition-[width] duration-200 ease-in-out ${
-        collapsed ? "w-12 items-center py-3" : "w-64"
+        collapsed ? "w-12 items-center py-3" : "w-72"
       }`}
     >
       {collapsed ? (
@@ -176,8 +176,10 @@ function SidebarExpandedContent({
     })
   }
 
+  // 18rem y no 16: con los tres botones de cada capa, «Tendido de fibra»
+  // quedaba en «Tendido de…» apenas el conteo pasaba de un dígito.
   return (
-    <div className="flex h-full w-64 flex-col animate-gismart-fade-in">
+    <div className="flex h-full w-72 flex-col animate-gismart-fade-in">
       {/* Header */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         <div className="flex flex-col gap-1">
@@ -241,7 +243,7 @@ function SidebarExpandedContent({
                     icono del ojo, y con cuatro capas costaba ver cuál estaba
                     fuera del mapa. */}
                 <div
-                  className={`flex items-center gap-1 rounded-lg py-1.5 pl-0.5 pr-2.5 transition ${
+                  className={`flex items-center gap-1 rounded-lg py-1.5 pl-0.5 pr-1.5 transition ${
                     activa ? "bg-primary/12 ring-1 ring-primary/40" : "hover:bg-accent"
                   } ${layer.visible ? "" : "opacity-45"}`}
                 >

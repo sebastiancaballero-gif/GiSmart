@@ -148,9 +148,10 @@ export function PanelSeleccion({
 
   // En pantallas angostas el panel va abajo y a todo el ancho, como una hoja:
   // arriba a la derecha tapaba la barra de herramientas del mapa. Ahí sube
-  // desde el borde al aparecer (`gismart-panel` en globals.css).
+  // desde el borde al aparecer (`gismart-panel` en globals.css). En escritorio
+  // empieza debajo del zoom (12 px + 82 px de alto), sin taparle el «−».
   return (
-    <div className="absolute right-3 top-20 z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
+    <div className="absolute right-3 top-[6.5rem] z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
       <div className="border-b border-border px-3.5 pb-3 pt-3">
         <div className="flex items-center justify-between">
           <span

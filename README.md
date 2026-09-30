@@ -297,12 +297,17 @@ las herramientas de medición (o con el botón «Limpiar»).
   hacer click para saber qué era cada punto.
 - **Resalte de selección**: lo seleccionado lleva un halo azul en el mapa, no solo la
   ficha en el panel. Con 185 mufas juntas, antes no había forma de saber cuál se tocó.
-- **Barra de escala** abajo a la izquierda, para juzgar distancias sin medir.
+- **Barra de escala** abajo a la izquierda, para juzgar distancias sin medir, con la
+  proporción (1 : 4 252) arriba y las distancias debajo.
+- **Leyenda** abajo a la derecha. En el celular empieza plegada, y con el mapa bajo (una
+  portátil) se aparta mientras el panel del elemento está abierto, porque la tapaba.
 - **El mapa recuerda la última vista** (centro y zoom) entre sesiones, en vez de volver
   siempre al encuadre completo de la red.
 
 La barra de estado inferior izquierda muestra **longitud, latitud, zoom y la herramienta
-activa**. El subtítulo de la cabecera muestra el **municipio que se está
+activa**. El zoom y los créditos del mapa base (la «i») van arriba a la derecha; zoom,
+créditos y escala son controles de OpenLayers reestilizados en `app/globals.css`
+(`.gismart-mapa`) para que se vean como el resto. El subtítulo de la cabecera muestra el **municipio que se está
 viendo** y se actualiza al navegar: el mapa emite su centro al terminar cada
 desplazamiento y el dashboard lo traduce con `/api/reverse-geocode`.
 

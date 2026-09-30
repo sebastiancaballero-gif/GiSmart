@@ -64,6 +64,9 @@ function textoParaCopiar(key: string, value: unknown): string {
 }
 
 /** Valor de una fila, con las traducciones que hacen legible la ficha. */
+/** Un UUID de la base: se muestra como identificador, en letra de ancho fijo. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function Valor({
   campo,
   valor,
@@ -79,7 +82,7 @@ function Valor({
       return (
         <>
           {nombre}
-          <span className="block text-[11px] text-muted-foreground">{valor}</span>
+          <span className="block font-mono text-[11px] text-muted-foreground">{valor}</span>
         </>
       )
     }
@@ -87,6 +90,11 @@ function Valor({
   // El código se conserva al lado: es lo que buscan quienes filtran en la base.
   if (campo === "tipo_red_prin" && typeof valor === "string" && TIPO_RED_NOMBRES[valor]) {
     return <>{`${TIPO_RED_NOMBRES[valor]} (${valor})`}</>
+  }
+  // En letra de ancho fijo y algo más chico: en la de texto se leía como una
+  // frase partida en dos renglones, y es un código que se copia tal cual.
+  if (typeof valor === "string" && UUID.test(valor)) {
+    return <span className="font-mono text-[11px]">{valor}</span>
   }
   return <>{formatValue(campo, valor)}</>
 }
@@ -135,7 +143,8 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
         if (!abierto) setFiltro("")
       }}
     >
-      <DialogContent className="max-w-lg">
+      {/* max-w-xl: con max-w-lg un UUID no cabía en un renglón. */}
+      <DialogContent className="max-w-xl">
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Info className="size-5" />

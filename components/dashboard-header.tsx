@@ -313,7 +313,9 @@ export function DashboardHeader({
             aria-controls="buscador-lista"
             aria-autocomplete="list"
             aria-activedescendant={listaAbierta && opciones[activa] ? idOpcion(activa) : undefined}
-            className="h-9 w-full min-w-0 flex-1 bg-background pl-9 pr-14 md:w-64 lg:w-80"
+            // `text-ellipsis`: el texto de ayuda no cabe entero y se cortaba a
+            // media letra detrás de «Ctrl K»; así termina en «…».
+            className="h-9 w-full min-w-0 flex-1 bg-background pl-9 pr-14 text-ellipsis md:w-64 lg:w-80"
           />
           {searching ? (
             <Loader2 className="absolute right-12 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground md:right-3" />
