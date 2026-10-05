@@ -340,8 +340,8 @@ export type FilaDeGrilla = { id: string; valores: (string | number | null)[] }
 
 /**
  * Grilla de solo lectura con los encabezados fijos al desplazar, como las del
- * SIG anterior. Sin filas muestra `vacio` debajo de los encabezados en vez de
- * quedar en blanco. Se puede enfocar para desplazarla con el teclado.
+ * SIG anterior. Sin filas quedan solo los encabezados, o `vacio` debajo de
+ * ellos si se pasa. Se puede enfocar para desplazarla con el teclado.
  *
  * `marco` en falso cuando va dentro de `Pestanas`, que ya pone el borde.
  */
@@ -355,7 +355,7 @@ export function Grilla({
 }: {
   columnas: Columna[]
   filas?: FilaDeGrilla[]
-  vacio: React.ReactNode
+  vacio?: React.ReactNode
   etiqueta: string
   alto?: string
   marco?: boolean
@@ -399,7 +399,7 @@ export function Grilla({
           ))}
         </tbody>
       </table>
-      {filas.length === 0 && <div className="min-h-0 flex-1">{vacio}</div>}
+      {filas.length === 0 && vacio && <div className="min-h-0 flex-1">{vacio}</div>}
     </div>
   )
 }

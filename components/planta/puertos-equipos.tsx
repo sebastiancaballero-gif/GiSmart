@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { BarChart3, Save, SkipForward } from "lucide-react"
 import { BotonIcono, Campo, Grilla, Grupo, Pestanas, type Columna } from "@/components/ventana-sig"
-import { MarcoDePlanta, SeleccionDeEquipo, useVentana, VacioPendiente, type PropsDeVentana } from "@/components/planta/piezas"
+import { MarcoDePlanta, SeleccionDeEquipo, useVentana, type PropsDeVentana } from "@/components/planta/piezas"
 
 /**
  * «Gestión de puertos de equipos» (ribbon: Red de fibra → Puertos OLT), como
@@ -71,7 +71,6 @@ export function VentanaPuertosDeEquipos({ open, onOpenChange }: PropsDeVentana) 
           marco={false}
           etiqueta={`Puertos de ${equipo}`}
           columnas={COLUMNAS[pestana]}
-          vacio={<VacioPendiente como="Al elegir el elemento" queMuestra={`los puertos de sus ${equipo} con su estado de uso`} />}
         />
       </Pestanas>
 

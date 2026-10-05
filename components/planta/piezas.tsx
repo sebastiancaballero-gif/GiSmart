@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Clock, FileSpreadsheet, MousePointerClick, Pin, Plug, Save, type LucideIcon } from "lucide-react"
+import { FileSpreadsheet, MousePointerClick, Pin, Plug, Save, type LucideIcon } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
   BarraDeEstado,
@@ -10,7 +10,6 @@ import {
   Campo,
   claseSelect,
   EncabezadoVentana,
-  EstadoVacio,
   Grupo,
   PENDIENTE,
   Rotulo,
@@ -132,17 +131,6 @@ export function BotonExportar({ onClick }: { onClick: () => void }) {
     <Boton pendiente icono={FileSpreadsheet} colorIcono="text-emerald-600" onClick={onClick}>
       Exportar a Excel
     </Boton>
-  )
-}
-
-/** Aviso de la grilla mientras no hay datos: qué va a aparecer y por qué aún no. */
-export function VacioPendiente({ como, queMuestra }: { como: string; queMuestra: string }) {
-  return (
-    <EstadoVacio
-      icono={Clock}
-      titulo="Todavía sin datos"
-      texto={`${como}, aquí aparecen ${queMuestra}. La consulta todavía no está disponible: falta su función en la base.`}
-    />
   )
 }
 

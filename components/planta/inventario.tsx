@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Box, Search } from "lucide-react"
 import { Boton, claseSelect, Grilla, Opciones, Pestanas, type Columna } from "@/components/ventana-sig"
-import { BotonExportar, MarcoDePlanta, useVentana, VacioPendiente, type PropsDeVentana } from "@/components/planta/piezas"
+import { BotonExportar, MarcoDePlanta, useVentana, type PropsDeVentana } from "@/components/planta/piezas"
 import type { NodoDeFibra } from "@/lib/map/red-de-fibra"
 
 /**
@@ -33,11 +33,11 @@ const DETALLE: Columna[] = [
   { titulo: "Cantidad", ancho: "min-w-24" },
 ]
 
-const PESTANAS: { id: PestanaId; titulo: string; columnas: Columna[]; queMuestra: string }[] = [
-  { id: "resumen-nodo", titulo: "Resumen / Nodo", columnas: RESUMEN, queMuestra: "las cantidades del nodo por tipo de elemento" },
-  { id: "detalle-nodo", titulo: "Detalle / Nodo", columnas: DETALLE, queMuestra: "cada elemento del nodo con su cantidad" },
-  { id: "resumen-contrato", titulo: "Resumen contrato", columnas: RESUMEN, queMuestra: "las cantidades del contrato por tipo de elemento" },
-  { id: "detalle-contrato", titulo: "Detalle contrato", columnas: DETALLE, queMuestra: "cada elemento del contrato con su cantidad" },
+const PESTANAS: { id: PestanaId; titulo: string; columnas: Columna[] }[] = [
+  { id: "resumen-nodo", titulo: "Resumen / Nodo", columnas: RESUMEN },
+  { id: "detalle-nodo", titulo: "Detalle / Nodo", columnas: DETALLE },
+  { id: "resumen-contrato", titulo: "Resumen contrato", columnas: RESUMEN },
+  { id: "detalle-contrato", titulo: "Detalle contrato", columnas: DETALLE },
 ]
 
 export function VentanaInventario({ open, onOpenChange, nodos }: PropsDeVentana & { nodos: NodoDeFibra[] }) {
@@ -112,12 +112,6 @@ export function VentanaInventario({ open, onOpenChange, nodos }: PropsDeVentana 
           etiqueta={actual.titulo}
           columnas={actual.columnas}
           alto="h-[min(18rem,36vh)]"
-          vacio={
-            <VacioPendiente
-              como={actual.id.endsWith("contrato") ? "Al consultar un contrato" : "Al consultar el nodo"}
-              queMuestra={actual.queMuestra}
-            />
-          }
         />
       </Pestanas>
 

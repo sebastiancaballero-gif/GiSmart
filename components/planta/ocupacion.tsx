@@ -8,7 +8,6 @@ import {
   MarcoDePlanta,
   SeleccionDeEquipo,
   useVentana,
-  VacioPendiente,
   type PropsDeVentana,
 } from "@/components/planta/piezas"
 import type { NodoDeFibra } from "@/lib/map/red-de-fibra"
@@ -55,7 +54,6 @@ export function VentanaOcupacionOlt({ open, onOpenChange }: PropsDeVentana) {
           etiqueta="Ocupación de puertos de la OLT"
           columnas={COLUMNAS_OLT}
           alto="h-[min(22rem,46vh)]"
-          vacio={<VacioPendiente como="Al elegir el rack y la OLT" queMuestra="sus puertos con el arpón y el divisor de cada uno" />}
         />
       </Grupo>
     </MarcoDePlanta>
@@ -94,7 +92,6 @@ export function VentanaOcupacionOdf({ open, onOpenChange }: PropsDeVentana) {
           etiqueta="Ocupación de puertos del ODF"
           columnas={COLUMNAS_ODF}
           alto="h-[min(22rem,46vh)]"
-          vacio={<VacioPendiente como="Al elegir el rack y el ODF" queMuestra="sus puertos con el arpón y el divisor de cada uno" />}
         />
       </Grupo>
     </MarcoDePlanta>
@@ -183,12 +180,6 @@ export function VentanaOcupacionCables({ open, onOpenChange, nodos }: PropsDeVen
           etiqueta="Ocupación de cables"
           columnas={COLUMNAS_CABLES}
           alto="h-[min(22rem,46vh)]"
-          vacio={
-            <VacioPendiente
-              como="Al generar el reporte"
-              queMuestra="los cables del nodo con sus hilos libres, conectados y ocupados"
-            />
-          }
         />
       </Grupo>
     </MarcoDePlanta>

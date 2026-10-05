@@ -8,7 +8,6 @@ import {
   PanelDeCambio,
   SeleccionDeEquipo,
   useVentana,
-  VacioPendiente,
   type PropsDeVentana,
 } from "@/components/planta/piezas"
 
@@ -54,7 +53,6 @@ export function VentanaOltOdf({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad de puertos OLT-ODF"
           columnas={COLUMNAS_OLT_ODF}
-          vacio={<VacioPendiente como="Al elegir el rack y el ODF" queMuestra="los puertos de la OLT conectados a cada puerto del ODF" />}
         />
       </Grupo>
       <PanelDeCambio titulo="Modificación individual de conectividad" onPendiente={v.pendiente}>
@@ -104,7 +102,6 @@ export function VentanaOdfOdf({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad entre puertos ODF"
           columnas={COLUMNAS_ODF_ODF}
-          vacio={<VacioPendiente como="Al elegir los dos racks" queMuestra="los puertos de sus ODF conectados entre sí" />}
         />
       </Grupo>
       {/* Dos columnas como en el SIG anterior: a la izquierda cable y ODF, a la
@@ -154,7 +151,6 @@ export function VentanaOdfCables({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad de puertos ODF"
           columnas={COLUMNAS_ODF_CABLES}
-          vacio={<VacioPendiente como="Al elegir el rack y el ODF" queMuestra="el cable y el hilo de salida de cada puerto" />}
         />
       </Grupo>
       <PanelDeCambio titulo="Modificación de conectividad de puerto" onPendiente={v.pendiente}>
