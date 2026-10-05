@@ -18,7 +18,9 @@ import {
  * cambiar la conexión de un puerto, apagado hasta elegir una fila.
  *
  * Solo la vista. Las columnas son las del SIG anterior y se ajustan a lo que
- * devuelvan las funciones de la base cuando existan.
+ * devuelvan las funciones de la base cuando existan. Las grillas miden como
+ * mucho el 30 % del alto de la pantalla: con el recuadro de modificación
+ * debajo, en una portátil de 720 px la ventana cabe entera sin desplazarse.
  */
 
 const COLUMNAS_OLT_ODF: Columna[] = [
@@ -53,6 +55,7 @@ export function VentanaOltOdf({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad de puertos OLT-ODF"
           columnas={COLUMNAS_OLT_ODF}
+          alto="h-[min(18rem,30vh)]"
         />
       </Grupo>
       <PanelDeCambio titulo="Modificación individual de conectividad" onPendiente={v.pendiente}>
@@ -102,6 +105,7 @@ export function VentanaOdfOdf({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad entre puertos ODF"
           columnas={COLUMNAS_ODF_ODF}
+          alto="h-[min(18rem,30vh)]"
         />
       </Grupo>
       {/* Dos columnas como en el SIG anterior: a la izquierda cable y ODF, a la
@@ -151,6 +155,7 @@ export function VentanaOdfCables({ open, onOpenChange }: PropsDeVentana) {
         <Grilla
           etiqueta="Conectividad de puertos ODF"
           columnas={COLUMNAS_ODF_CABLES}
+          alto="h-[min(18rem,30vh)]"
         />
       </Grupo>
       <PanelDeCambio titulo="Modificación de conectividad de puerto" onPendiente={v.pendiente}>

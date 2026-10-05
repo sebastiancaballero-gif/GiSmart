@@ -26,7 +26,9 @@ const ATAJOS: { teclas: string[]; que: string }[] = [
 export function AyudaAtajos({ open, onOpenChange }: { open: boolean; onOpenChange: (abierto: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      {/* max-w-lg: en max-w-sm tres de las filas largas («Cancelar el trazo…»)
+          se partían en dos renglones. */}
+      <DialogContent className="max-w-lg">
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Keyboard className="size-5" aria-hidden="true" />

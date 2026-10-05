@@ -372,9 +372,11 @@ function VentanaRedesNodo({
               role="tabpanel"
               id={idGrilla}
               aria-labelledby={idPestana(actual.id)}
-              // Se puede enfocar para desplazar la grilla con el teclado.
+              // Se puede enfocar para desplazar la grilla con el teclado. Mide
+              // como mucho el 28 % del alto: en una portátil de 720 px la
+              // ventana cabe entera sin desplazarse.
               tabIndex={0}
-              className="flex h-[min(20rem,40vh)] flex-col overflow-auto rounded-b-xl border border-t-0 border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="flex h-[min(20rem,28vh)] flex-col overflow-auto rounded-b-xl border border-t-0 border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               {/* Con la clave de la pestaña, la grilla nueva aparece con un fundido corto al cambiar. */}
               <table

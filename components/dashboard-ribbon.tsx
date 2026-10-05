@@ -278,7 +278,7 @@ export function DashboardRibbon({
           >
             {currentTab.groups.map((group, gi) => (
               <div key={gi} className="flex items-stretch">
-                <div className="flex flex-col justify-center px-2 py-1.5">
+                <div className="flex flex-col justify-center px-1.5 py-1.5">
                   <div className="flex items-center gap-0.5">
                     {group.items.map((item, ii) => {
                       const isExtension = item.label === "Extensión"
@@ -316,7 +316,7 @@ export function DashboardRibbon({
                           aria-disabled={proximamente ? true : undefined}
                           aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
                           className={`
-                            group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 outline-none transition
+                            group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1.5 outline-none transition
                             focus-visible:ring-2 focus-visible:ring-ring/50
                             ${proximamente
                               ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
@@ -329,7 +329,7 @@ export function DashboardRibbon({
                                 : "text-foreground hover:bg-accent"
                             }
                             ${item.disabled ? "opacity-40 cursor-not-allowed" : ""}
-                            min-w-[64px]
+                            min-w-[58px]
                           `}
                         >
                           {/* El reloj marca lo que todavía no está, sin depender
@@ -339,9 +339,14 @@ export function DashboardRibbon({
                           )}
                           <Icon className="size-[18px] shrink-0" />
                           {/* Hasta dos líneas: con una sola, «Conectividad fina» o
-                              «Entradas y salidas» salían cortadas con puntos suspensivos. */}
-                          <span className="line-clamp-2 max-w-[68px] text-center text-[10px] font-medium leading-[1.15]">
-                            {item.label}
+                              «Entradas y salidas» salían cortadas con puntos suspensivos.
+                              Se parte en los espacios y después de «/» (un espacio
+                              invisible: si no, «Puertos/equipo» se cortaba en
+                              «Puertos/equi»), pero no en el guion: «ODF-ODF» quedaba en
+                              «ODF-» y «ODF». `min-w-min`: una palabra más larga que el
+                              máximo, como «Enrutamiento», ensancha el botón. */}
+                          <span className="line-clamp-2 min-w-min max-w-[62px] text-center text-[10px] font-medium leading-[1.15]">
+                            {item.label.replaceAll("/", "/\u200b").replaceAll("-", "\u2011")}
                           </span>
                         </button>
                         </Tooltip>
