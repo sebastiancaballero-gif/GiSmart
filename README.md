@@ -363,6 +363,23 @@ estado), así que se ven iguales.
 | **Elementos alimentados por fibra óptica** (`elementos-alimentados-dialog.tsx`) | Nodo origen: lista de cabeceras, búsqueda por caracteres, elegir el nodo en el mapa y ubicarlo. «Cod. Nivel 1 totales»: las cubiertas de primer nivel del mapa, con flechas y ubicar. | «Cod. Nivel 1 de la cabecera», puertos nivel 2, NAP conectada y recorridos. |
 | **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña (columnas provisionales). |
 
+**Planta interna y externa** (`components/planta/`). Ocho ventanas tomadas de las pantallas del
+SIG anterior que llegaron en «Conectividad Fina.pptx». Por ahora son **solo la vista**: botones,
+grillas con sus columnas, pestañas y el recuadro de modificación, apagado hasta elegir una fila.
+Los racks, las OLT y los ODF no están en el mapa, así que todo lo que consulta o guarda espera
+su función en la base y lo dice al pulsarlo. Inventario y Ocup. cables eligen el nodo de las
+cabeceras del mapa, como Redes/Nodo.
+
+| Botón (Red de fibra) | Ventana | Contenido |
+| --- | --- | --- |
+| Puertos OLT | Gestión de puertos de equipos | Pestañas OLT y ODF con el estado de uso de cada puerto; potencia real y nota del puerto. |
+| Inventario | Reporte de inventario de red de fibra óptica | Por nodo o por contrato, en resumen o en detalle (cuatro pestañas). |
+| OLT-ODF | Conectividad de puertos entre OLT y ODF | Tarjeta y puerto de la OLT conectados a cada puerto del ODF. |
+| ODF-ODF | Gestión alfanumérica de conectividad de puertos de ODF | Puertos de un ODF conectados a los de otro, con cable e hilo de cada lado. |
+| ODF-Cables | Conectividad de puertos entre ODF y cables de salida | Cable e hilo que salen de cada puerto del ODF. |
+| Ocup. OLT / Ocup. ODF | Reporte de ocupación de OLT / de ODF | Puertos ocupados con su arpón y su divisor. |
+| Ocup. cables | Reporte gráfico de ocupación de cables de fibra en el nodo | Hilos libres, conectados y ocupados de cada cable, con sus porcentajes. |
+
 Las funciones que devuelven filas se leen de forma tolerante: los nombres de campo se
 comparan sin mayúsculas, tildes ni guiones, así que un cambio de nombre en la función
 («Tecnología», «num_buffer») no rompe la pantalla. Pruebas: `pnpm run hilos` y `pnpm run red`

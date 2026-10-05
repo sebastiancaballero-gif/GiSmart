@@ -7,6 +7,7 @@ import {
   MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
   Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ArrowLeftRight,
 } from "lucide-react"
+import type { VentanaDePlanta } from "@/components/planta"
 
 /**
  * Lo que hace un botón del ribbon. Los botones sin `accion` son la maqueta
@@ -33,6 +34,8 @@ export type AccionDeRibbon =
   | "gpon"
   | "redesNodo"
   | "medir"
+  /** Abre una de las ventanas de planta (ver `ventana`). */
+  | "ventana"
 
 export type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
@@ -41,6 +44,8 @@ export type RibbonItem = {
   tooltip?: string
   /** Sin acción, el botón todavía no tiene su función (ver `AccionDeRibbon`). */
   accion?: AccionDeRibbon
+  /** Con `accion: "ventana"`, cuál de las ventanas de planta abre. */
+  ventana?: VentanaDePlanta
   disabled?: boolean
   variant?: "default" | "primary" | "destructive"
 }
@@ -199,30 +204,38 @@ export const RIBBON_TABS: RibbonTab[] = [
       },
       {
         label: "Análisis",
-        items: [{ icon: BarChart3, label: "Puertos OLT" }],
+        items: [
+          {
+            icon: BarChart3,
+            label: "Puertos OLT",
+            accion: "ventana",
+            ventana: "puertosEquipos",
+            tooltip: "Gestión de puertos de equipos",
+          },
+        ],
       },
       {
         label: "Reportes",
         items: [
           { icon: ClipboardList, label: "Auditoría" },
           { icon: Activity, label: "Trace" },
-          { icon: Box, label: "Inventario" },
+          { icon: Box, label: "Inventario", accion: "ventana", ventana: "inventario", tooltip: "Reporte de inventario de red de fibra óptica" },
         ],
       },
       {
         label: "Planta interna",
         items: [
-          { icon: HardDrive, label: "OLT-ODF" },
-          { icon: CableCar, label: "ODF-ODF" },
-          { icon: Cable, label: "ODF-Cables" },
-          { icon: MapPin, label: "Ocup. OLT" },
-          { icon: Grid3x3, label: "Ocup. ODF" },
+          { icon: HardDrive, label: "OLT-ODF", accion: "ventana", ventana: "oltOdf", tooltip: "Conectividad de puertos entre OLT y ODF" },
+          { icon: CableCar, label: "ODF-ODF", accion: "ventana", ventana: "odfOdf", tooltip: "Conectividad de puertos de ODF" },
+          { icon: Cable, label: "ODF-Cables", accion: "ventana", ventana: "odfCables", tooltip: "Conectividad de puertos entre ODF y cables de salida" },
+          { icon: MapPin, label: "Ocup. OLT", accion: "ventana", ventana: "ocupacionOlt", tooltip: "Reporte de ocupación de OLT" },
+          { icon: Grid3x3, label: "Ocup. ODF", accion: "ventana", ventana: "ocupacionOdf", tooltip: "Reporte de ocupación de ODF" },
         ],
       },
       {
         label: "Planta externa",
         items: [
-          { icon: Cable, label: "Ocup. cables" },
+          { icon: Cable, label: "Ocup. cables", accion: "ventana", ventana: "ocupacionCables", tooltip: "Ocupación de cables de fibra en el nodo" },
           { icon: Box, label: "Inventario ext." },
           { icon: Grid3x3, label: "Cross conn." },
           { icon: MapPin, label: "Ocup. NAPs" },

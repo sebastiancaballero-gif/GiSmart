@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Minimize, ChevronUp, Clock } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
+import type { VentanaDePlanta } from "@/components/planta"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { Tooltip } from "@/components/ui/tooltip"
 
@@ -28,6 +29,8 @@ export type RibbonActions = {
   onRedesNodo?: () => void
   /** «GPON» (Red de fibra): abre «Elementos alimentados por fibra óptica». */
   onGpon?: () => void
+  /** Planta interna y externa (Red de fibra): abre la ventana del botón. */
+  onVentana?: (ventana: VentanaDePlanta) => void
   /** Consulta de conectividad de una cubierta (Consultas → Red). */
   onConnectivity?: () => void
   /** Pinta los cables de entrada y salida de una mufa (Consultas → Red). */
@@ -128,6 +131,9 @@ export function DashboardRibbon({
         return
       case "hilos":
         actions?.onHilos?.()
+        return
+      case "ventana":
+        if (item.ventana) actions?.onVentana?.(item.ventana)
         return
       case "buscar":
         actions?.onBuscar?.()

@@ -8,6 +8,7 @@ import { NetworkMap, type AccesoAlMapa, type MapaApi } from "@/components/networ
 import { GestionHilosDialog } from "@/components/gestion-hilos-dialog"
 import { RedesNodoDialog } from "@/components/redes-nodo-dialog"
 import { ElementosAlimentadosDialog } from "@/components/elementos-alimentados-dialog"
+import { VentanasDePlanta, type ManejadorDeVentanasDePlanta, type VentanaDePlanta } from "@/components/planta"
 import type { ManejadorDeVentana } from "@/components/ventana-sig"
 import { AuthGuard } from "@/components/auth-guard"
 import type { MapTool } from "@/lib/map/herramientas"
@@ -80,6 +81,9 @@ export default function DashboardPage() {
   const hilosRef = useRef<ManejadorDeVentana>(null)
   const redesRef = useRef<ManejadorDeVentana>(null)
   const gponRef = useRef<ManejadorDeVentana>(null)
+  // Las de planta interna y externa (Puertos OLT, Inventario, OLT-ODF…) van
+  // juntas: el ribbon dice cuál abrir.
+  const plantaRef = useRef<ManejadorDeVentanasDePlanta>(null)
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
   // estaba oculta se muestra: si no, se enfocaría algo que no se ve.
@@ -190,6 +194,7 @@ export default function DashboardPage() {
       onHilos: () => hilosRef.current?.abrir(),
       onRedesNodo: () => redesRef.current?.abrir(),
       onGpon: () => gponRef.current?.abrir(),
+      onVentana: (ventana: VentanaDePlanta) => plantaRef.current?.abrir(ventana),
       onActivarCapa: () => {
         if (capaActiva) {
           cambiarCapaActiva(null)
@@ -339,6 +344,7 @@ export default function DashboardPage() {
             <GestionHilosDialog ref={hilosRef} mapa={accesoAlMapa} />
             <RedesNodoDialog ref={redesRef} mapa={accesoAlMapa} />
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
+            <VentanasDePlanta ref={plantaRef} mapa={accesoAlMapa} />
           </main>
         </div>
       </div>

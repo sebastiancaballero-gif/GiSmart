@@ -1,14 +1,16 @@
 "use client"
 
-import { CircleAlert, Clock, Info, Loader2, TriangleAlert, type LucideIcon } from "lucide-react"
+import { useId } from "react"
+import { ChevronRight, CircleAlert, Clock, Info, Loader2, TriangleAlert, type LucideIcon } from "lucide-react"
 import { DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip } from "@/components/ui/tooltip"
 
 /**
  * Piezas comunes de las ventanas de consulta que siguen al SIG anterior
- * («Gestión de hilos», «Redes por nodo», «GPON»): encabezado, campos de solo lectura
- * con el fondo amarillo de entonces, botones, avisos sin datos y la barra de
- * estado de abajo. Viven juntas para que todas las ventanas se vean iguales.
+ * («Gestión de hilos», «Redes por nodo», «GPON» y las de planta en
+ * `components/planta/`): encabezado, campos de solo lectura con el fondo amarillo
+ * de entonces, botones, grillas, pestañas, avisos sin datos y la barra de estado
+ * de abajo. Viven juntas para que todas las ventanas se vean iguales.
  */
 
 export type TonoDeMensaje = "info" | "aviso" | "error"
@@ -314,15 +316,173 @@ export function BotonIcono({
 export const claseSelect =
   "h-8 rounded-lg border border-input bg-card px-2.5 text-xs font-semibold text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-muted/50 disabled:text-muted-foreground"
 
-/** Un grupo con título sobre el borde, como los recuadros del SIG anterior. */
+/**
+ * Un grupo con título sobre el borde, como los recuadros del SIG anterior.
+ * `min-w-0`: un fieldset crece por defecto hasta el ancho de su contenido, y
+ * una grilla ancha ensanchaba la ventana entera en vez de desplazarse dentro.
+ */
 export function Grupo({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <fieldset className="rounded-xl border border-border bg-card px-3.5 pb-3.5 pt-2 shadow-sm">
+    <fieldset className="min-w-0 rounded-xl border border-border bg-card px-3.5 pb-3.5 pt-2 shadow-sm">
       <legend className="mx-auto rounded-full bg-primary/10 px-3 py-0.5 text-[11px] font-bold text-primary ring-1 ring-primary/20">
         {titulo}
       </legend>
       {children}
     </fieldset>
+  )
+}
+
+/** Una columna de una grilla: su título y, si hace falta, un ancho mínimo. */
+export type Columna = { titulo: string; ancho?: string }
+
+/** Una fila de una grilla, con los valores en el orden de las columnas. */
+export type FilaDeGrilla = { id: string; valores: (string | number | null)[] }
+
+/**
+ * Grilla de solo lectura con los encabezados fijos al desplazar, como las del
+ * SIG anterior. Sin filas muestra `vacio` debajo de los encabezados en vez de
+ * quedar en blanco. Se puede enfocar para desplazarla con el teclado.
+ *
+ * `marco` en falso cuando va dentro de `Pestanas`, que ya pone el borde.
+ */
+export function Grilla({
+  columnas,
+  filas = [],
+  vacio,
+  etiqueta,
+  alto = "h-[min(18rem,38vh)]",
+  marco = true,
+}: {
+  columnas: Columna[]
+  filas?: FilaDeGrilla[]
+  vacio: React.ReactNode
+  etiqueta: string
+  alto?: string
+  marco?: boolean
+}) {
+  return (
+    <div
+      role="region"
+      aria-label={etiqueta}
+      tabIndex={0}
+      className={`flex ${alto} flex-col overflow-auto bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+        marco ? "rounded-xl border border-border shadow-sm" : ""
+      }`}
+    >
+      <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
+        <thead>
+          <tr>
+            <th className="sticky left-0 top-0 z-30 w-8 min-w-8 border-b border-r border-border bg-muted" aria-label="Fila seleccionada" />
+            {columnas.map((c, i) => (
+              <th
+                key={i}
+                scope="col"
+                className={`sticky top-0 z-20 ${c.ancho ?? "min-w-24"} whitespace-nowrap border-b border-r border-border bg-muted px-2.5 py-2 text-left font-semibold text-foreground`}
+              >
+                {c.titulo}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.id} className="hover:bg-accent/60">
+              <td className="sticky left-0 z-10 w-8 border-b border-r border-border bg-card px-1 text-center">
+                <ChevronRight className="mx-auto size-3.5 text-transparent" aria-hidden="true" />
+              </td>
+              {f.valores.map((v, i) => (
+                <td key={i} className="whitespace-nowrap border-b border-r border-border px-2.5 py-1.5 tabular-nums text-foreground">
+                  {v ?? <span className="text-muted-foreground/40">—</span>}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {filas.length === 0 && <div className="min-h-0 flex-1">{vacio}</div>}
+    </div>
+  )
+}
+
+/**
+ * Pestañas con su panel, como las del SIG anterior. Con el teclado: flechas
+ * para pasar de una a otra, Inicio y Fin para la primera y la última; solo la
+ * activa entra con Tab. El contenido nuevo aparece con un fundido corto.
+ */
+export function Pestanas<T extends string>({
+  etiqueta,
+  pestanas,
+  valor,
+  onChange,
+  children,
+}: {
+  etiqueta: string
+  pestanas: { id: T; titulo: string }[]
+  valor: T
+  onChange: (id: T) => void
+  children: React.ReactNode
+}) {
+  const idBase = useId()
+  const idPestana = (id: T) => `${idBase}-pestana-${id}`
+  const idPanel = `${idBase}-panel`
+
+  function alTeclear(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const actual = pestanas.findIndex((p) => p.id === valor)
+    const n = pestanas.length
+    const destino =
+      e.key === "ArrowRight"
+        ? (actual + 1) % n
+        : e.key === "ArrowLeft"
+          ? (actual - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : null
+    if (destino === null) return
+    e.preventDefault()
+    onChange(pestanas[destino].id)
+    document.getElementById(idPestana(pestanas[destino].id))?.focus()
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col">
+      <div role="tablist" aria-label={etiqueta} className="flex flex-wrap gap-1 border-b border-border">
+        {pestanas.map((p) => {
+          const activa = p.id === valor
+          return (
+            <button
+              key={p.id}
+              id={idPestana(p.id)}
+              type="button"
+              role="tab"
+              aria-selected={activa}
+              aria-controls={idPanel}
+              tabIndex={activa ? 0 : -1}
+              onKeyDown={alTeclear}
+              onClick={() => onChange(p.id)}
+              className={`-mb-px rounded-t-lg border px-3.5 py-1.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                activa
+                  ? "border-border border-t-2 border-t-primary border-b-card bg-card text-primary shadow-[0_-2px_6px_-4px_rgb(15_23_42/0.25)]"
+                  : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground"
+              }`}
+            >
+              {p.titulo}
+            </button>
+          )
+        })}
+      </div>
+      <div
+        role="tabpanel"
+        id={idPanel}
+        aria-labelledby={idPestana(valor)}
+        className="overflow-hidden rounded-b-xl border border-t-0 border-border bg-card shadow-sm"
+      >
+        <div key={valor} className="animate-in fade-in duration-200 motion-reduce:animate-none">
+          {children}
+        </div>
+      </div>
+    </div>
   )
 }
 
