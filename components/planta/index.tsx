@@ -2,8 +2,9 @@
 
 import { useImperativeHandle, useMemo, useState, type Ref } from "react"
 import type { AccesoAlMapa } from "@/components/network-map"
-import { nodosDeFibra } from "@/lib/map/red-de-fibra"
+import { cubiertasNivel1, nodosDeFibra } from "@/lib/map/red-de-fibra"
 import { VentanaOdfCables, VentanaOdfOdf, VentanaOltOdf } from "@/components/planta/conectividad"
+import { VentanaEnrutamiento } from "@/components/planta/enrutamiento"
 import { VentanaImportarExcel } from "@/components/planta/importar-excel"
 import { VentanaInventario } from "@/components/planta/inventario"
 import { VentanaOcupacionCables, VentanaOcupacionOdf, VentanaOcupacionOlt } from "@/components/planta/ocupacion"
@@ -24,6 +25,7 @@ import { VentanaPuertosDeEquipos } from "@/components/planta/puertos-equipos"
  * | Ocup. ODF    | Reporte de ocupación de ODF                                |
  * | Ocup. cables | Reporte gráfico de ocupación de cables de fibra en el nodo |
  * | Cross conn.  | Cargue y grabación de datos de un archivo Excel de conectividades |
+ * | Enrutamiento | Enrutamiento de hilos (grupo Consultas)                     |
  *
  * Qué botón abre cada una lo marcó el equipo en «Conectividad Fina (3).pptx».
  *
@@ -41,6 +43,7 @@ export type VentanaDePlanta =
   | "ocupacionOdf"
   | "ocupacionCables"
   | "importarExcel"
+  | "enrutamiento"
 
 /** Lo que el tablero puede hacer con estas ventanas: abrir una. */
 export type ManejadorDeVentanasDePlanta = { abrir: (ventana: VentanaDePlanta) => void }
@@ -58,8 +61,10 @@ export function VentanasDePlanta({ ref, mapa }: { ref?: Ref<ManejadorDeVentanasD
     }),
     [mapa.api],
   )
-  // Inventario y Ocup. cables eligen el nodo de las cabeceras del mapa.
+  // Inventario, Ocup. cables y Enrutamiento eligen el nodo de las cabeceras
+  // del mapa; Enrutamiento, además, el arpón de las cubiertas de primer nivel.
   const nodos = useMemo(() => nodosDeFibra(mapa.indice), [mapa.indice])
+  const arpones = useMemo(() => cubiertasNivel1(mapa.indice), [mapa.indice])
 
   const props = (ventana: VentanaDePlanta) => ({
     open: abierta === ventana,
@@ -79,6 +84,7 @@ export function VentanasDePlanta({ ref, mapa }: { ref?: Ref<ManejadorDeVentanasD
       <VentanaOcupacionOdf {...props("ocupacionOdf")} />
       <VentanaOcupacionCables {...props("ocupacionCables")} nodos={nodos} />
       <VentanaImportarExcel {...props("importarExcel")} />
+      <VentanaEnrutamiento {...props("enrutamiento")} nodos={nodos} arpones={arpones} />
     </>
   )
 }

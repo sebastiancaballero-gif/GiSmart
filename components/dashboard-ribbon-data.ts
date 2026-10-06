@@ -199,7 +199,7 @@ export const RIBBON_TABS: RibbonTab[] = [
           { icon: Cable, label: "Hilos", accion: "hilos", tooltip: "Gestión de hilos de un cable" },
           { icon: Wifi, label: "GPON", accion: "gpon", tooltip: "Elementos alimentados por fibra óptica" },
           { icon: Server, label: "Redes/Nodo", accion: "redesNodo", tooltip: "Consulta de redes por nodo de fibra óptica" },
-          { icon: Route, label: "Enrutamiento" },
+          { icon: Route, label: "Enrutamiento", accion: "ventana", ventana: "enrutamiento", tooltip: "Enrutamiento de hilos" },
         ],
       },
       {
