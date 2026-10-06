@@ -31,6 +31,8 @@ export type RibbonActions = {
   onGpon?: () => void
   /** Planta interna y externa (Red de fibra): abre la ventana del botón. */
   onVentana?: (ventana: VentanaDePlanta) => void
+  /** «Trace» (Red de fibra): abre «Recorrido del trace». */
+  onTrace?: () => void
   /** Consulta de conectividad de una cubierta (Consultas → Red). */
   onConnectivity?: () => void
   /** Pinta los cables de entrada y salida de una mufa (Consultas → Red). */
@@ -134,6 +136,9 @@ export function DashboardRibbon({
         return
       case "ventana":
         if (item.ventana) actions?.onVentana?.(item.ventana)
+        return
+      case "trace":
+        actions?.onTrace?.()
         return
       case "buscar":
         actions?.onBuscar?.()

@@ -381,6 +381,7 @@ cabeceras del mapa, como Redes/Nodo.
 | Ocup. OLT / Ocup. ODF | Reporte de ocupación de OLT / de ODF | Puertos ocupados con su arpón y su divisor. |
 | Ocup. cables | Reporte gráfico de ocupación de cables de fibra en el nodo | Hilos libres, conectados y ocupados de cada cable, con sus porcentajes. |
 | Cross conn. | Cargue y grabación de datos de un archivo Excel de conectividades | Elemento y archivo; tipo de conectividad (empalme, OLT-ODF, ODF-ODF, ODF-CAB); validar, importar y exportar; pestañas Archivo y Errores. |
+| Trace (Reportes) | Recorrido del trace | Ventana pequeña que **no oscurece ni bloquea el mapa** (el recorrido se pinta en él; un click en el mapa no la cierra, Esc sí): longitud y los botones Hacia arriba / Hacia abajo, que llamarán a la función del recorrido cuando llegue. |
 | Enrutamiento (Consultas) | Enrutamiento de hilos | Nodo de fibra (cabeceras del mapa) y arpón (cubiertas de primer nivel) con sus herramientas; potencia máxima de salida OLT, margen de guarda y a qué elemento va el hilo más bajo; siete pestañas. Por ahora todas llevan las columnas de «OLTs» (Identificador, Cod Rack, Código OLT, Fecha Presup, Observación) hasta que se confirmen las demás. |
 
 Las funciones que devuelven filas se leen de forma tolerante: los nombres de campo se

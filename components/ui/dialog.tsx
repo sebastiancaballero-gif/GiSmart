@@ -29,11 +29,20 @@ function DialogContent({
   children,
   showClose = true,
   large = false,
+  sinFondo = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Popup> & { showClose?: boolean; large?: boolean }) {
+}: React.ComponentProps<typeof DialogPrimitive.Popup> & {
+  showClose?: boolean
+  large?: boolean
+  /**
+   * Sin el fondo oscuro: para ventanas que acompañan al mapa (con `modal` en
+   * falso en la raíz) y tienen que dejar ver lo que se pinta en él.
+   */
+  sinFondo?: boolean
+}) {
   return (
     <DialogPrimitive.Portal>
-      <DialogBackdrop />
+      {!sinFondo && <DialogBackdrop />}
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

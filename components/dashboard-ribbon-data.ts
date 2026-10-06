@@ -36,6 +36,7 @@ export type AccionDeRibbon =
   | "medir"
   /** Abre una de las ventanas de planta (ver `ventana`). */
   | "ventana"
+  | "trace"
 
 export type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
@@ -218,7 +219,7 @@ export const RIBBON_TABS: RibbonTab[] = [
         label: "Reportes",
         items: [
           { icon: ClipboardList, label: "Auditoría" },
-          { icon: Activity, label: "Trace" },
+          { icon: Activity, label: "Trace", accion: "trace", tooltip: "Recorrido del trace hacia arriba o hacia abajo" },
           { icon: Box, label: "Inventario", accion: "ventana", ventana: "inventario", tooltip: "Reporte de inventario de red de fibra óptica" },
         ],
       },
