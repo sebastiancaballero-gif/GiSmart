@@ -47,8 +47,11 @@ import { nodosDeFibra, type NodoDeFibra } from "@/lib/map/red-de-fibra"
  *
  * Por ahora es solo la vista: la lista de nodos sale de las cabeceras cargadas
  * en el mapa y «Ubicar en el mapa» funciona; lo demás espera las funciones de
- * la base y lo dice al pulsarlo. Las columnas de cada pestaña son provisionales
- * y se ajustan a lo que devuelvan esas funciones.
+ * la base y lo dice al pulsarlo. Las columnas de cada pestaña son las del SIG
+ * anterior, tal como las marcó el equipo (Cables salientes y entrantes:
+ * identificador, código y longitud; Primer nivel: identificador, código y
+ * dirección). La de Nivel 2 no venía en la captura y lleva las de Primer
+ * nivel, porque las dos son listas de cubiertas.
  */
 
 type PestanaId = "salientes" | "entrantes" | "primer-nivel" | "nivel-2"
@@ -59,12 +62,9 @@ const PESTANAS: { id: PestanaId; titulo: string; queMuestra: string; columnas: {
     titulo: "Cables salientes",
     queMuestra: "los cables que salen del nodo",
     columnas: [
-      { titulo: "Identificador", ancho: "min-w-32" },
-      { titulo: "Código", ancho: "min-w-24" },
-      { titulo: "Hilos", ancho: "min-w-16" },
-      { titulo: "Tipo de cable", ancho: "min-w-28" },
-      { titulo: "Hacia", ancho: "min-w-32" },
-      { titulo: "Longitud (m)", ancho: "min-w-24" },
+      { titulo: "Identificador", ancho: "min-w-40" },
+      { titulo: "Código", ancho: "min-w-64" },
+      { titulo: "Longitud (mts)", ancho: "min-w-32" },
     ],
   },
   {
@@ -72,12 +72,9 @@ const PESTANAS: { id: PestanaId; titulo: string; queMuestra: string; columnas: {
     titulo: "Cables entrantes",
     queMuestra: "los cables que llegan al nodo",
     columnas: [
-      { titulo: "Identificador", ancho: "min-w-32" },
-      { titulo: "Código", ancho: "min-w-24" },
-      { titulo: "Hilos", ancho: "min-w-16" },
-      { titulo: "Tipo de cable", ancho: "min-w-28" },
-      { titulo: "Desde", ancho: "min-w-32" },
-      { titulo: "Longitud (m)", ancho: "min-w-24" },
+      { titulo: "Identificador", ancho: "min-w-40" },
+      { titulo: "Código", ancho: "min-w-64" },
+      { titulo: "Longitud (mts)", ancho: "min-w-32" },
     ],
   },
   {
@@ -85,12 +82,9 @@ const PESTANAS: { id: PestanaId; titulo: string; queMuestra: string; columnas: {
     titulo: "Primer nivel",
     queMuestra: "las cubiertas de primer nivel",
     columnas: [
-      { titulo: "Identificador", ancho: "min-w-32" },
-      { titulo: "Cubierta", ancho: "min-w-28" },
-      { titulo: "Tipo", ancho: "min-w-24" },
-      { titulo: "Dirección", ancho: "min-w-44" },
-      { titulo: "Cables", ancho: "min-w-16" },
-      { titulo: "Estado", ancho: "min-w-24" },
+      { titulo: "Identificador", ancho: "min-w-40" },
+      { titulo: "Código", ancho: "min-w-40" },
+      { titulo: "Dirección", ancho: "min-w-72" },
     ],
   },
   {
@@ -98,12 +92,9 @@ const PESTANAS: { id: PestanaId; titulo: string; queMuestra: string; columnas: {
     titulo: "Nivel 2",
     queMuestra: "las cubiertas de nivel 2",
     columnas: [
-      { titulo: "Identificador", ancho: "min-w-32" },
-      { titulo: "Cubierta", ancho: "min-w-28" },
-      { titulo: "Tipo", ancho: "min-w-24" },
-      { titulo: "Dirección", ancho: "min-w-44" },
-      { titulo: "Cables", ancho: "min-w-16" },
-      { titulo: "Estado", ancho: "min-w-24" },
+      { titulo: "Identificador", ancho: "min-w-40" },
+      { titulo: "Código", ancho: "min-w-40" },
+      { titulo: "Dirección", ancho: "min-w-72" },
     ],
   },
 ]

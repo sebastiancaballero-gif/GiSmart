@@ -361,7 +361,7 @@ estado), así que se ven iguales.
 | --- | --- | --- |
 | **Gestión de hilos** (`gestion-hilos-dialog.tsx`) | Se elige el cable en el mapa (o abre con el seleccionado) y lista sus hilos con `tab_fiber.fn_obtener_hilos_cable_json(p_id_cable)`: número con su color, buffer, colores, tecnología y estado, agrupados por buffer, con filtro por buffer y buscador. Al elegir un hilo muestra su UUID. | Rack, ODF, puertos, equipo, tarjeta, transporte y destino (columnas «pendiente»); simulación de corte y recorridos. |
 | **Elementos alimentados por fibra óptica** (`elementos-alimentados-dialog.tsx`) | Nodo origen: lista de cabeceras, búsqueda por caracteres, elegir el nodo en el mapa y ubicarlo. «Cod. Nivel 1 totales»: las cubiertas de primer nivel del mapa, con flechas y ubicar. | «Cod. Nivel 1 de la cabecera», puertos nivel 2, NAP conectada y recorridos. |
-| **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña (columnas provisionales). |
+| **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña. Columnas como en el SIG anterior: cables con identificador, código y longitud; cubiertas con identificador, código y dirección. |
 
 **Planta interna y externa** (`components/planta/`). Nueve ventanas tomadas de las pantallas del
 SIG anterior que llegaron en «Conectividad Fina.pptx»; qué botón abre cada una lo marcó el equipo
