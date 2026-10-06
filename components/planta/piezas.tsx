@@ -17,8 +17,10 @@ import {
 } from "@/components/ventana-sig"
 
 /**
- * Piezas que repiten las ventanas de planta interna y externa (Red de fibra →
- * Puertos OLT, Inventario, OLT-ODF, ODF-ODF, ODF-Cables y las de ocupación).
+ * Piezas que repiten las ventanas de Red de fibra hechas a partir de las
+ * pantallas del SIG anterior: planta interna y externa (Puertos OLT,
+ * Inventario, OLT-ODF, ODF-ODF, ODF-Cables, las de ocupación y Cross conn.) y
+ * Enrutamiento.
  *
  * Por ahora todas son solo la vista, como se pidió: los racks, las OLT y los
  * ODF no están cargados en el mapa y las consultas esperan sus funciones en la

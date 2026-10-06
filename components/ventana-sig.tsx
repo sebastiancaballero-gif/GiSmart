@@ -408,6 +408,8 @@ export function Grilla({
  * Pestañas con su panel, como las del SIG anterior. Con el teclado: flechas
  * para pasar de una a otra, Inicio y Fin para la primera y la última; solo la
  * activa entra con Tab. El contenido nuevo aparece con un fundido corto.
+ * `min-w-0`: dentro de una grilla de columnas, una tabla ancha estiraba la
+ * columna y la ventana entera quedaba más ancha que la pantalla del celular.
  */
 export function Pestanas<T extends string>({
   etiqueta,
@@ -446,7 +448,7 @@ export function Pestanas<T extends string>({
   }
 
   return (
-    <div className="flex shrink-0 flex-col">
+    <div className="flex min-w-0 shrink-0 flex-col">
       <div role="tablist" aria-label={etiqueta} className="flex flex-wrap gap-1 border-b border-border">
         {pestanas.map((p) => {
           const activa = p.id === valor
@@ -534,7 +536,9 @@ export function BarraDeEstado({
           {accion.texto}
         </button>
       )}
-      {children}
+      {/* En el celular no cabe junto al aviso, que quedaba en una columna
+          angosta: se oculta (hoy es una barra que todavía no mide nada). */}
+      {children && <div className="shrink-0 max-sm:hidden">{children}</div>}
     </div>
   )
 }

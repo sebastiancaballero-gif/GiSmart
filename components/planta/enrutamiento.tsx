@@ -237,7 +237,7 @@ export function VentanaEnrutamiento({
       </div>
 
       <Pestanas etiqueta="Enrutamiento" valor={pestana} onChange={setPestana} pestanas={PESTANAS}>
-        <Grilla marco={false} etiqueta={actual.titulo} columnas={COLUMNAS} alto="h-[min(16rem,28vh)]" />
+        <Grilla marco={false} etiqueta={actual.titulo} columnas={COLUMNAS} alto="h-[min(16rem,25vh)]" />
       </Pestanas>
 
       <div className="flex flex-wrap items-center gap-1.5">
