@@ -237,7 +237,13 @@ export const RIBBON_TABS: RibbonTab[] = [
         items: [
           { icon: Cable, label: "Ocup. cables", accion: "ventana", ventana: "ocupacionCables", tooltip: "Ocupación de cables de fibra en el nodo" },
           { icon: Box, label: "Inventario ext." },
-          { icon: Grid3x3, label: "Cross conn." },
+          {
+            icon: Grid3x3,
+            label: "Cross conn.",
+            accion: "ventana",
+            ventana: "importarExcel",
+            tooltip: "Cargue de un archivo Excel de conectividades",
+          },
           { icon: MapPin, label: "Ocup. NAPs" },
         ],
       },

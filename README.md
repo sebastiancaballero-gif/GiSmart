@@ -363,8 +363,9 @@ estado), así que se ven iguales.
 | **Elementos alimentados por fibra óptica** (`elementos-alimentados-dialog.tsx`) | Nodo origen: lista de cabeceras, búsqueda por caracteres, elegir el nodo en el mapa y ubicarlo. «Cod. Nivel 1 totales»: las cubiertas de primer nivel del mapa, con flechas y ubicar. | «Cod. Nivel 1 de la cabecera», puertos nivel 2, NAP conectada y recorridos. |
 | **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña (columnas provisionales). |
 
-**Planta interna y externa** (`components/planta/`). Ocho ventanas tomadas de las pantallas del
-SIG anterior que llegaron en «Conectividad Fina.pptx». Por ahora son **solo la vista**: botones,
+**Planta interna y externa** (`components/planta/`). Nueve ventanas tomadas de las pantallas del
+SIG anterior que llegaron en «Conectividad Fina.pptx»; qué botón abre cada una lo marcó el equipo
+en la versión 3 de esa presentación. Por ahora son **solo la vista**: botones,
 grillas con sus columnas, pestañas y el recuadro de modificación, apagado hasta elegir una fila.
 Los racks, las OLT y los ODF no están en el mapa, así que todo lo que consulta o guarda espera
 su función en la base y lo dice al pulsarlo. Inventario y Ocup. cables eligen el nodo de las
@@ -379,6 +380,7 @@ cabeceras del mapa, como Redes/Nodo.
 | ODF-Cables | Conectividad de puertos entre ODF y cables de salida | Cable e hilo que salen de cada puerto del ODF. |
 | Ocup. OLT / Ocup. ODF | Reporte de ocupación de OLT / de ODF | Puertos ocupados con su arpón y su divisor. |
 | Ocup. cables | Reporte gráfico de ocupación de cables de fibra en el nodo | Hilos libres, conectados y ocupados de cada cable, con sus porcentajes. |
+| Cross conn. | Cargue y grabación de datos de un archivo Excel de conectividades | Elemento y archivo; tipo de conectividad (empalme, OLT-ODF, ODF-ODF, ODF-CAB); validar, importar y exportar; pestañas Archivo y Errores. |
 
 Las funciones que devuelven filas se leen de forma tolerante: los nombres de campo se
 comparan sin mayúsculas, tildes ni guiones, así que un cambio de nombre en la función

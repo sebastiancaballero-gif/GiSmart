@@ -4,6 +4,7 @@ import { useImperativeHandle, useMemo, useState, type Ref } from "react"
 import type { AccesoAlMapa } from "@/components/network-map"
 import { nodosDeFibra } from "@/lib/map/red-de-fibra"
 import { VentanaOdfCables, VentanaOdfOdf, VentanaOltOdf } from "@/components/planta/conectividad"
+import { VentanaImportarExcel } from "@/components/planta/importar-excel"
 import { VentanaInventario } from "@/components/planta/inventario"
 import { VentanaOcupacionCables, VentanaOcupacionOdf, VentanaOcupacionOlt } from "@/components/planta/ocupacion"
 import { VentanaPuertosDeEquipos } from "@/components/planta/puertos-equipos"
@@ -22,6 +23,9 @@ import { VentanaPuertosDeEquipos } from "@/components/planta/puertos-equipos"
  * | Ocup. OLT    | Reporte de ocupación de OLT                                |
  * | Ocup. ODF    | Reporte de ocupación de ODF                                |
  * | Ocup. cables | Reporte gráfico de ocupación de cables de fibra en el nodo |
+ * | Cross conn.  | Cargue y grabación de datos de un archivo Excel de conectividades |
+ *
+ * Qué botón abre cada una lo marcó el equipo en «Conectividad Fina (3).pptx».
  *
  * Por ahora son solo la vista: botones, grillas y pestañas. Lo que consulta o
  * guarda espera sus funciones en la base y lo dice al pulsarlo.
@@ -36,6 +40,7 @@ export type VentanaDePlanta =
   | "ocupacionOlt"
   | "ocupacionOdf"
   | "ocupacionCables"
+  | "importarExcel"
 
 /** Lo que el tablero puede hacer con estas ventanas: abrir una. */
 export type ManejadorDeVentanasDePlanta = { abrir: (ventana: VentanaDePlanta) => void }
@@ -73,6 +78,7 @@ export function VentanasDePlanta({ ref, mapa }: { ref?: Ref<ManejadorDeVentanasD
       <VentanaOcupacionOlt {...props("ocupacionOlt")} />
       <VentanaOcupacionOdf {...props("ocupacionOdf")} />
       <VentanaOcupacionCables {...props("ocupacionCables")} nodos={nodos} />
+      <VentanaImportarExcel {...props("importarExcel")} />
     </>
   )
 }
