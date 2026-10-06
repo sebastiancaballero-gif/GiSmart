@@ -324,7 +324,7 @@ botones son todavía la maqueta heredada. Los que ya ejecutan una acción real s
 | --- | --- |
 | Inicio → Mapa de red | Reencuadra el mapa sobre la red cargada. |
 | Inicio → Extensión | Pantalla completa del panel del mapa. |
-| Inicio → Actualizar | Vuelve a pedir las tres capas a los endpoints. |
+| Inicio → Actualizar | Vuelve a pedir las tres capas a los endpoints. Lo que estaba seleccionado se vuelve a elegir al terminar, si sigue en la base. |
 | Inicio → Identificar / Consultas → Atributos | Activa la herramienta de selección para consultar atributos. |
 | Proyectos → Acercar ext. | Reencuadra sobre la red. |
 | Edición → Crear / Borrar / Mover vértice / Editar atributos | Activan la herramienta correspondiente del mapa. |
@@ -406,8 +406,12 @@ El campo de la cabecera busca en dos sitios a la vez:
 - **Elementos de la red** (cubiertas, cables, cabeceras y zonas) por nombre, código o el
   principio del UUID, desde la primera letra y sin preguntar a ningún servidor: el mapa
   publica un índice de lo que tiene cargado (`lib/map/busqueda.ts`). Al elegir uno, el mapa
-  lo centra y abre su ficha; si su capa estaba oculta, la muestra.
-- **Municipios y zonas** contra Nominatim, desde la tercera letra.
+  lo centra y abre su ficha; si su capa estaba oculta, la muestra, y si el filtro de
+  categorías del panel lo dejaba fuera, le suma su categoría.
+- **Municipios y zonas** contra Nominatim, **solo al pedirlo**: desde la tercera letra, la
+  última opción de la lista es «Buscar … en direcciones» (Enter la elige cuando es la única).
+  La política de uso de Nominatim prohíbe consultar mientras se escribe, y como todas las
+  búsquedas salen del servidor de la empresa, un bloqueo dejaría sin direcciones a todos.
 - **Coordenadas** escritas como latitud, longitud: «4.5333, -76.0883», «4.5333 -76.0883»
   o con coma decimal, «4,5333; -76,0883». No se le preguntan a Nominatim. Si el primer
   número no cabe como latitud (más de 90) y el segundo sí, se entiende al revés.

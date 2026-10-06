@@ -34,11 +34,15 @@ import { Tooltip } from "@/components/ui/tooltip"
 
 type SearchResult = { label: string; lat: number; lon: number }
 
-/** Lo que se puede elegir en la lista: una coordenada, un elemento de la red o una dirección. */
+/**
+ * Lo que se puede elegir en la lista: una coordenada, un elemento de la red,
+ * una dirección o la opción de buscar el texto en direcciones.
+ */
 type Opcion =
   | { tipo: "coordenada"; coordenada: Coordenada }
   | { tipo: "elemento"; elemento: ElementoBuscable }
   | { tipo: "direccion"; resultado: SearchResult }
+  | { tipo: "buscarDirecciones"; texto: string }
 
 const ICONO_DE_TIPO: Record<TipoBuscable, { icono: typeof Box; color: string }> = {
   node: { icono: Box, color: LAYER_COLORS.node },
@@ -93,6 +97,10 @@ export function DashboardHeader({
   const [searching, setSearching] = useState(false)
   const [openResults, setOpenResults] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  // Texto que se buscó en direcciones; los resultados valen mientras el campo
+  // diga lo mismo. Cada consulta lleva un número para descartar la anterior.
+  const [buscadoEn, setBuscadoEn] = useState<string | null>(null)
+  const consultaRef = useRef(0)
   // Opción resaltada con las flechas; Enter elige esa.
   const [activa, setActiva] = useState(0)
   const searchBoxRef = useRef<HTMLDivElement>(null)
@@ -121,66 +129,58 @@ export function DashboardHeader({
     setNombreUsuario(nombre && nombre.trim() ? nombre.trim() : null)
   }, [])
 
-  // Busca direcciones mientras se escribe, con retardo para no consultar en
-  // cada tecla. Todo el trabajo ocurre dentro del temporizador, incluido
-  // limpiar los resultados: así teclear no provoca renders extra en cada
-  // pulsación.
-  useEffect(() => {
-    let cancelled = false
-
-    const timeout = setTimeout(async () => {
-      const term = query.trim()
-      // Una coordenada no se le pregunta a Nominatim: ya se sabe dónde es.
-      if (term.length < 3 || leerCoordenada(term)) {
-        setResults([])
-        setSearchError(null)
-        setSearching(false)
-        return
-      }
-
-      setSearching(true)
-      try {
-        const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(term)}`)
-        const data = await res.json().catch(() => null)
-        if (cancelled) return
-        // Antes un fallo del servicio se leía como «Sin resultados.».
-        if (!res.ok) {
-          setResults([])
-          setSearchError(`No se pudo buscar direcciones: ${data?.message ?? `el servidor respondió ${res.status}`}`)
-          return
-        }
-        const found = (data?.results ?? []) as SearchResult[]
-        setResults(found)
-        setSearchError(found.length === 0 ? "Sin resultados." : null)
-      } catch {
-        if (!cancelled) setSearchError("No se pudo buscar direcciones. Revisa la conexión.")
-      } finally {
-        if (!cancelled) setSearching(false)
-      }
-    }, 450)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timeout)
-    }
-  }, [query])
-
   // Elementos de la red: se filtran aquí mismo, sin esperar ni preguntar a
   // nadie, así que aparecen desde la primera letra («3/4», «CO01»).
   const enLaRed = useMemo(() => buscarElementos(elementos ?? [], query), [elementos, query])
   const coordenada = useMemo(() => leerCoordenada(query), [query])
+  const texto = query.trim()
 
+  // Direcciones: solo al pedirlas, con la última opción de la lista («Buscar
+  // … en direcciones») o con Enter cuando es la única. Antes se consultaban
+  // mientras se escribía, y la política de uso de Nominatim lo prohíbe: como
+  // todas las búsquedas salen del servidor de la empresa, un bloqueo dejaba sin
+  // direcciones a todos. Una coordenada no se le pregunta: ya se sabe dónde es.
+  async function buscarDirecciones(termino: string) {
+    const consulta = ++consultaRef.current
+    setBuscadoEn(termino)
+    setResults([])
+    setSearchError(null)
+    setSearching(true)
+    try {
+      const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(termino)}`)
+      const data = await res.json().catch(() => null)
+      if (consulta !== consultaRef.current) return
+      // Antes un fallo del servicio se leía como «Sin resultados.».
+      if (!res.ok) {
+        setSearchError(`No se pudo buscar direcciones: ${data?.message ?? `el servidor respondió ${res.status}`}`)
+        return
+      }
+      const encontradas = (data?.results ?? []) as SearchResult[]
+      setResults(encontradas)
+      setSearchError(encontradas.length === 0 ? `Sin direcciones para «${termino}».` : null)
+      // La primera dirección queda resaltada: Enter la elige.
+      if (encontradas.length > 0) setActiva(enLaRed.length)
+    } catch {
+      if (consulta === consultaRef.current) setSearchError("No se pudo buscar direcciones. Revisa la conexión.")
+    } finally {
+      if (consulta === consultaRef.current) setSearching(false)
+    }
+  }
+
+  const ofrecerDirecciones = texto.length >= 3 && !coordenada && buscadoEn !== texto
   const opciones: Opcion[] = useMemo(
     () => [
       ...(coordenada ? [{ tipo: "coordenada" as const, coordenada }] : []),
       ...enLaRed.map((elemento) => ({ tipo: "elemento" as const, elemento })),
       ...results.map((resultado) => ({ tipo: "direccion" as const, resultado })),
+      ...(ofrecerDirecciones ? [{ tipo: "buscarDirecciones" as const, texto }] : []),
     ],
-    [coordenada, enLaRed, results],
+    [coordenada, enLaRed, results, ofrecerDirecciones, texto],
   )
-  // Con elementos de la red a la vista, «Sin resultados» de direcciones sobra.
-  const mensaje = !coordenada && enLaRed.length === 0 && results.length === 0 ? searchError : null
-  const listaAbierta = openResults && query.trim() !== "" && (opciones.length > 0 || mensaje !== null)
+  // El aviso de la búsqueda de direcciones (sin resultados o con error) solo
+  // tiene sentido para el texto que se buscó.
+  const mensaje = buscadoEn === texto ? searchError : null
+  const listaAbierta = openResults && texto !== "" && (opciones.length > 0 || mensaje !== null || searching)
 
   // Cierra la lista (y el buscador en pantallas angostas) al hacer click fuera.
   useEffect(() => {
@@ -222,6 +222,12 @@ export function DashboardHeader({
   }, [buscadorMovil])
 
   function elegir(opcion: Opcion) {
+    // Buscar en direcciones no cierra la lista: los resultados llegan en ella.
+    if (opcion.tipo === "buscarDirecciones") {
+      void buscarDirecciones(opcion.texto)
+      inputRef.current?.focus()
+      return
+    }
     if (opcion.tipo === "elemento") {
       onElegirElemento?.(opcion.elemento)
       setQuery(opcion.elemento.nombre)
@@ -289,6 +295,14 @@ export function DashboardHeader({
               setQuery(e.target.value)
               setActiva(0)
               setOpenResults(true)
+              // Otro texto: las direcciones encontradas eran para el anterior.
+              if (buscadoEn !== null) {
+                consultaRef.current++
+                setBuscadoEn(null)
+                setResults([])
+                setSearchError(null)
+                setSearching(false)
+              }
             }}
             onFocus={() => setOpenResults(true)}
             onKeyDown={(e) => {
@@ -344,14 +358,17 @@ export function DashboardHeader({
             <div className="absolute right-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none md:w-96">
               <ul id="buscador-lista" role="listbox" aria-label="Resultados de la búsqueda" className="max-h-96 overflow-y-auto py-1">
                 {opciones.map((opcion, i) => {
-                  const primeraDireccion = opcion.tipo === "direccion" && (i === 0 || opciones[i - 1].tipo !== "direccion")
+                  const esDireccion = (o: Opcion) => o.tipo === "direccion" || o.tipo === "buscarDirecciones"
+                  const primeraDireccion = esDireccion(opcion) && (i === 0 || !esDireccion(opciones[i - 1]))
                   const primerElemento = opcion.tipo === "elemento" && (i === 0 || opciones[i - 1].tipo !== "elemento")
                   const clave =
                     opcion.tipo === "elemento"
                       ? opcion.elemento.clave
                       : opcion.tipo === "coordenada"
                         ? "coordenada"
-                        : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`
+                        : opcion.tipo === "buscarDirecciones"
+                          ? "buscar-direcciones"
+                          : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`
                   return (
                     <li key={clave}>
                       {opcion.tipo === "coordenada" && (
@@ -410,6 +427,14 @@ export function DashboardHeader({
                               </>
                             )
                           })()
+                        ) : opcion.tipo === "buscarDirecciones" ? (
+                          <>
+                            <Search className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate font-semibold">Buscar «{opcion.texto}» en direcciones</span>
+                              <span className="truncate text-[11px] text-muted-foreground">Municipios y zonas de OpenStreetMap</span>
+                            </span>
+                          </>
                         ) : (
                           <>
                             <MapPin className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
@@ -422,7 +447,7 @@ export function DashboardHeader({
                 })}
               </ul>
               {mensaje && <p className="px-3 py-2.5 text-xs text-muted-foreground">{mensaje}</p>}
-              {searching && opciones.length > 0 && (
+              {searching && (
                 <p className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
                   <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                   Buscando direcciones…

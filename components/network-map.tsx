@@ -603,6 +603,7 @@ function MapaDeRed({
             "fiber",
             typeof hilos === "number" && hilos > 0 ? `Cable · ${hilos} hilos` : "Cable",
             textos(f, ["codigo", "nombre", "id"]),
+            categoriaDeCable(f),
           )
         }),
         ...cabeceraSource
@@ -804,6 +805,13 @@ function MapaDeRed({
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
   useEffect(() => () => cancelarEleccionRef.current?.("abandonada"), [])
 
+  // Elegir otra herramienta mientras una ventana espera un click también la
+  // deja sin efecto. Antes la espera seguía activa y el click de la herramienta
+  // nueva (medir, dibujar…) elegía además el elemento para la ventana.
+  useEffect(() => {
+    if (tool !== "pan") cancelarEleccionRef.current?.("abandonada")
+  }, [tool])
+
   // Extensión combinada de las capas con datos de red.
   const extensionDeRed = useCallback(() => {
     const juntas = createEmpty()
@@ -840,6 +848,12 @@ function MapaDeRed({
     encuadrarEn(extensionDeRed())
   }, [encuadrarEn, extensionDeRed])
 
+  // Lo seleccionado, para leerlo desde la carga sin rehacerla en cada selección.
+  const selectedRef = useRef(selected)
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
+
   // Carga (o recarga) las tres capas reales. `encuadrar` solo se pide en el
   // arranque: al actualizar manualmente conviene respetar la vista del usuario.
   const cargarDatosReales = useCallback(
@@ -857,8 +871,17 @@ function MapaDeRed({
       setConectividades({})
       // Los elementos se reemplazan por los que lleguen, así que lo que
       // estuviera seleccionado ya no existe: el panel se quedaba abierto sobre
-      // una mufa fantasma, y el punto rojo marcándola.
+      // una mufa fantasma, y el punto rojo marcándola. Se vacía mientras carga
+      // y al terminar se vuelve a elegir el mismo, buscado por su id de la base
+      // (la clave de OpenLayers cambia al recargar). Antes «Actualizar» cerraba
+      // el panel de lo que se estaba mirando.
+      const seleccionPrevia = selectedRef.current
+      const idPrevio = seleccionPrevia?.feature.get("id")
       setSelected(null)
+      // También la referencia, ya: si la carga termina antes de que React
+      // aplique el cambio, seguiría con lo anterior y parecería que se eligió
+      // otra cosa mientras cargaba.
+      selectedRef.current = null
       editSelectRef.current?.getFeatures().clear()
       setLoadingData(true)
       onLoadingChangeRef.current?.(true)
@@ -885,9 +908,18 @@ function MapaDeRed({
         setLoadingData(false)
         setFirstLoadDone(true)
         onLoadingChangeRef.current?.(false)
+        // Solo si mientras cargaba no se eligió otra cosa.
+        if (seleccionPrevia && typeof idPrevio === "string" && selectedRef.current === null) {
+          const fuente = { node: nodeSource, fiber: fiberSource, cabecera: cabeceraSource, zone: zoneSource }[seleccionPrevia.type]
+          const misma = fuente.getFeatures().find((f) => f.get("id") === idPrevio)
+          if (misma) {
+            setSelected({ feature: misma, type: seleccionPrevia.type })
+            setNameDraft((misma.get(NOMBRE_VISIBLE) as string) ?? "")
+          }
+        }
       })
     },
-    [nodeSource, fiberSource, cabeceraSource, encuadrarEnDatos],
+    [nodeSource, fiberSource, cabeceraSource, zoneSource, encuadrarEnDatos],
   )
 
   useEffect(() => {

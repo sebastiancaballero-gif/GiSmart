@@ -86,10 +86,19 @@ export default function DashboardPage() {
   const plantaRef = useRef<ManejadorDeVentanasDePlanta>(null)
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
-  // estaba oculta se muestra: si no, se enfocaría algo que no se ve.
+  // estaba oculta se muestra: si no, se enfocaría algo que no se ve. Lo mismo
+  // con el filtro de categorías del panel: si lo deja fuera, se le suma su
+  // categoría. Antes «Ubicar» en GPON iba hasta una cubierta de primer nivel
+  // que no se veía porque el filtro mostraba solo las de segundo.
   const handleElegirElemento = useCallback((elemento: ElementoBuscable) => {
     const capa = ({ node: "nodes", fiber: "fibers", cabecera: "cabeceras", zone: "zones" } as const)[elemento.tipo]
     setVisible((prev) => ({ ...prev, [capa]: true }))
+    const categoria = elemento.categoria
+    if ((capa === "nodes" || capa === "fibers") && categoria) {
+      setFilters((prev) =>
+        prev[capa].length > 0 && !prev[capa].includes(categoria) ? { ...prev, [capa]: [...prev[capa], categoria] } : prev,
+      )
+    }
     mapaApiRef.current?.enfocarElemento(elemento.clave)
   }, [])
 

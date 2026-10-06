@@ -25,7 +25,11 @@ export type ElementoBuscable = {
   detalle: string
   /** Otros textos por los que también se encuentra (código, UUID…). */
   alias?: string[]
-  /** Nivel de la cubierta (Primer nivel, Segundo nivel…), para las listas por nivel. */
+  /**
+   * Categoría con que se filtra su capa en el panel: el nivel de la cubierta
+   * (Primer nivel, Segundo nivel…) o los hilos del cable («48 hilos»). Sirve
+   * para las listas por nivel y para mostrar el elemento si el filtro lo oculta.
+   */
   categoria?: string
 }
 
