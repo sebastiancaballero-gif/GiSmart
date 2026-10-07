@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { FileDown, FileUp, FolderOpen, Grid3x3, Highlighter, ListChecks, Pin, ZoomIn } from "lucide-react"
-import { Boton, BotonIcono, Campo, Grilla, Opciones, Pestanas, Rotulo, type Columna } from "@/components/ventana-sig"
+import { BarraDeAvance, Boton, BotonIcono, Campo, Grilla, Opciones, Pestanas, Rotulo, type Columna } from "@/components/ventana-sig"
 import { MarcoDePlanta, useVentana, type PropsDeVentana } from "@/components/planta/piezas"
 
 /**
@@ -50,16 +50,7 @@ export function VentanaImportarExcel({ open, onOpenChange }: PropsDeVentana) {
       descripcion="Importa desde Excel la conectividad de un elemento: empalmes, OLT-ODF, ODF-ODF u ODF-cable."
       ancho="62rem"
       barra={v.barra}
-      pie={
-        // Todavía no mide nada: se ve como en el SIG anterior, pero los
-        // lectores de pantalla no la anuncian.
-        <span aria-hidden="true" className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
-          Avance
-          <span className="h-2 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-border">
-            <span className="block h-full w-0 rounded-full bg-primary" />
-          </span>
-        </span>
-      }
+      pie={<BarraDeAvance />}
     >
       {/* Elemento y archivo */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3.5 py-3 shadow-sm">

@@ -8,7 +8,6 @@ import {
   Clock,
   Download,
   FileSpreadsheet,
-  Layers,
   MapPinned,
   Network,
   Router,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
+  BarraDeAvance,
   BarraDeEstado,
   Boton,
   BotonIcono,
@@ -459,17 +459,7 @@ function VentanaRedesNodo({
 
         {/* Barra de estado con el avance, como la del SIG anterior */}
         <BarraDeEstado mensaje={barra}>
-          {/* Todavía no mide nada (no hay proceso que avance): se ve como en
-              el SIG anterior, pero los lectores de pantalla no la anuncian. */}
-          <span aria-hidden="true" className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
-            <Layers className="size-3.5" />
-            Avance
-            <span
-              className="h-2 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-border"
-            >
-              <span className="block h-full w-0 rounded-full bg-primary transition-[width]" />
-            </span>
-          </span>
+          <BarraDeAvance />
         </BarraDeEstado>
       </DialogContent>
     </Dialog>

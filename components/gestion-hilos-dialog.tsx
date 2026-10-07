@@ -452,7 +452,9 @@ function VentanaHilos({
                 {/* El ID es el UUID del cable en la base, el mismo de su ficha
                     de información y con el que se buscan sus hilos. El código
                     es el número con que se conoce el cable. */}
-                <Dato etiqueta="ID" ancho="w-[19.5rem]" valor={cable.id} guia="sin ID en la base" />
+                {/* En el celular el UUID no cabe entero: se corta con puntos suspensivos
+                    (se puede seleccionar y copiar igual). */}
+                <Dato etiqueta="ID" ancho="w-[min(19.5rem,calc(100vw-6rem))]" valor={cable.id} guia="sin ID en la base" />
                 <Dato etiqueta="Código" valor={cable.codigo} />
                 <Dato etiqueta="Hilos" ancho="w-16" valor={cable.hilos ? String(cable.hilos) : hilos.length ? String(hilos.length) : null} />
                 <div className="flex flex-col gap-1">
@@ -808,7 +810,7 @@ function VentanaHilos({
 
           {/* Simulación de corte y recorridos: botones puestos, sin función todavía. */}
           <div className={`grid gap-3 transition-opacity lg:grid-cols-[1.35fr_1fr] ${vista === "datos" ? "" : "opacity-60"}`}>
-            <section className="rounded-xl border border-border bg-card p-3.5 shadow-sm" aria-labelledby="titulo-corte">
+            <section className="min-w-0 rounded-xl border border-border bg-card p-3.5 shadow-sm" aria-labelledby="titulo-corte">
               <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 id="titulo-corte" className="flex items-center gap-2 text-xs font-bold text-foreground">
                   <span className="flex size-6 items-center justify-center rounded-md bg-destructive/10 text-destructive">
@@ -824,7 +826,7 @@ function VentanaHilos({
                     <Campo
                       etiqueta="ID del hilo seleccionado"
                       chico
-                      ancho="w-[19.5rem]"
+                      ancho="w-[min(19.5rem,calc(100vw-8rem))]"
                       valor={hiloElegido ? (hiloElegido.uuid ?? null) : null}
                       guia={hiloElegido ? "sin ID en la base" : "Selecciona un hilo en la tabla"}
                     />
@@ -867,7 +869,7 @@ function VentanaHilos({
               </div>
             </section>
 
-            <section className="rounded-xl border border-border bg-card p-3.5 shadow-sm" aria-labelledby="titulo-recorrido">
+            <section className="min-w-0 rounded-xl border border-border bg-card p-3.5 shadow-sm" aria-labelledby="titulo-recorrido">
               <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 id="titulo-recorrido" className="flex items-center gap-2 text-xs font-bold text-foreground">
                   <span className="flex size-6 items-center justify-center rounded-md bg-emerald-500/12 text-emerald-600">

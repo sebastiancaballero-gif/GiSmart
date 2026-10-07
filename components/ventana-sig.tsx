@@ -301,9 +301,11 @@ export function BotonIcono({
         }`}
       >
         <Icono className={`size-4 ${pendiente ? "text-muted-foreground/60" : (color ?? "text-primary")}`} aria-hidden="true" />
+        {/* Pegado a la esquina: más afuera invadía el botón de al lado en
+            las filas de iconos (Enrutamiento, GPON). */}
         {pendiente && (
           <Clock
-            className="absolute -right-1 -top-1 size-3 rounded-full bg-card text-muted-foreground"
+            className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-card text-muted-foreground"
             aria-hidden="true"
           />
         )}
@@ -330,6 +332,19 @@ export function Grupo({ titulo, children }: { titulo: string; children: React.Re
       {children}
     </fieldset>
   )
+}
+
+/**
+ * Franjas del alto de una fila (29 px: `py-1.5`, una línea de `text-xs` y el
+ * borde) que empiezan debajo de los encabezados (33 px). Una grilla vacía se
+ * lee así como una tabla sin datos y no como un recuadro en blanco.
+ */
+const FILAS_VACIAS: React.CSSProperties = {
+  backgroundImage:
+    "repeating-linear-gradient(to bottom, transparent 0 29px, color-mix(in oklch, var(--foreground) 3.5%, transparent) 29px 58px)",
+  backgroundPosition: "0 33px",
+  // Con la grilla desplazada a lo ancho, las franjas la siguen hasta el final.
+  backgroundAttachment: "local",
 }
 
 /** Una columna de una grilla: su título y, si hace falta, un ancho mínimo. */
@@ -368,6 +383,7 @@ export function Grilla({
       className={`flex ${alto} flex-col overflow-auto bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
         marco ? "rounded-xl border border-border shadow-sm" : ""
       }`}
+      style={filas.length === 0 && !vacio ? FILAS_VACIAS : undefined}
     >
       <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
         <thead>
@@ -485,6 +501,22 @@ export function Pestanas<T extends string>({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * La barra de avance que va a la derecha de `BarraDeEstado`, como la del SIG
+ * anterior. Todavía no mide nada (no hay proceso que avance): se ve, pero los
+ * lectores de pantalla no la anuncian.
+ */
+export function BarraDeAvance({ texto = "Avance" }: { texto?: string }) {
+  return (
+    <span aria-hidden="true" className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+      {texto}
+      <span className="h-2 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-border">
+        <span className="block h-full w-0 rounded-full bg-primary" />
+      </span>
+    </span>
   )
 }
 

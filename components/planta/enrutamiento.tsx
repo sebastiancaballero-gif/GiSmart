@@ -14,7 +14,7 @@ import {
   ZoomIn,
   type LucideIcon,
 } from "lucide-react"
-import { BotonIcono, claseSelect, Grilla, Opciones, Pestanas, type Columna } from "@/components/ventana-sig"
+import { BarraDeAvance, BotonIcono, claseSelect, Grilla, Opciones, Pestanas, type Columna } from "@/components/ventana-sig"
 import { MarcoDePlanta, useVentana, type PropsDeVentana } from "@/components/planta/piezas"
 import type { CubiertaNivel1, NodoDeFibra } from "@/lib/map/red-de-fibra"
 
@@ -145,16 +145,7 @@ export function VentanaEnrutamiento({
       descripcion={nodo ? `Nodo ${nodo.nombre} · red existente` : "Elige un nodo de fibra para enrutar sus hilos."}
       ancho="60rem"
       barra={v.barra}
-      pie={
-        // Todavía no mide nada: se ve como en el SIG anterior, pero los
-        // lectores de pantalla no la anuncian.
-        <span aria-hidden="true" className="flex shrink-0 items-center gap-2 text-[11px] font-semibold text-muted-foreground">
-          Avance
-          <span className="h-2 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-border">
-            <span className="block h-full w-0 rounded-full bg-primary" />
-          </span>
-        </span>
-      }
+      pie={<BarraDeAvance />}
     >
       {/* En un div: suelto en la columna se estiraba a todo el ancho. */}
       <div>
