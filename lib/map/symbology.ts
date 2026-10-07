@@ -540,6 +540,22 @@ export function sentidoStyle(feature: Feature<Geometry>) {
 }
 
 /**
+ * Recorrido del trace (Red de fibra → Trace): magenta, el color que propuso el
+ * equipo para que resalte sobre el mapa base y sobre el tendido azul, con el
+ * mismo borde oscuro de «Entradas y salidas». Es fijo: se crea una vez.
+ */
+export const TRACE_COLOR = "#ff0055"
+
+const estiloTrace = [
+  new Style({ stroke: new Stroke({ color: "rgba(15, 23, 42, 0.6)", width: 11, lineCap: "round", lineJoin: "round" }) }),
+  new Style({ stroke: new Stroke({ color: TRACE_COLOR, width: 6, lineCap: "round", lineJoin: "round" }) }),
+]
+
+export function traceStyle() {
+  return estiloTrace
+}
+
+/**
  * Marca roja sobre el elemento activo: el seleccionado o el que se está
  * consultando. Entre 185 mufas juntas, y con cables que se cruzan, el resalte
  * de selección no bastaba para saber de un vistazo cuál era.

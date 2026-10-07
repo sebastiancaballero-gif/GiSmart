@@ -8,6 +8,7 @@ import TileLayer from "ol/layer/Tile"
 import VectorLayer from "ol/layer/Vector"
 import VectorSource from "ol/source/Vector"
 import Feature from "ol/Feature"
+import GeoJSON from "ol/format/GeoJSON"
 import Collection from "ol/Collection"
 import Point from "ol/geom/Point"
 import type Overlay from "ol/Overlay"
@@ -25,7 +26,8 @@ import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, sentidoStyle } from "@/lib/map/symbology"
+import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, sentidoStyle, traceStyle } from "@/lib/map/symbology"
+import type { GeometriaDeTramo } from "@/lib/map/trace"
 import {
   CABECERA_FIELD_LABELS,
   FIBER_FIELD_LABELS,
@@ -130,6 +132,29 @@ export type MapaApi = {
    * vieja no la vuelva a abrir ni deje el aviso del mapa colgado.
    */
   abandonarEleccion: () => void
+  /**
+   * Pinta el recorrido de un trace: resalta los cables del mapa con esos UUID
+   * y las geometrías que mande la función (GeoJSON en EPSG:4326), y encuadra
+   * el recorrido. Reemplaza el anterior. `despejarDesde` es el borde de arriba
+   * (en píxeles de pantalla) de una ventana que tapa la parte baja del mapa:
+   * el encuadre deja ese espacio libre. Devuelve cuántos cables se pintaron,
+   * cuáles no están en el mapa y el largo total en metros.
+   */
+  pintarRecorrido: (recorrido: { cables: string[]; geometrias: GeometriaDeTramo[]; despejarDesde?: number }) => {
+    pintados: number
+    faltan: string[]
+    largoM: number
+  }
+  /** Quita del mapa el recorrido pintado. */
+  limpiarRecorrido: () => void
+}
+
+/** El largo de un cable en metros: el medido en campo si la base lo tiene; si no, el de su línea. */
+function largoDeCableM(f: Feature<Geometry>): number {
+  const medido = f.get("longitud_medida")
+  return typeof medido === "number" && medido > 0
+    ? Math.round(medido * 100) / 100
+    : Math.round(largoEnKm(f.getGeometry()) * 1000)
 }
 
 /**
@@ -237,6 +262,8 @@ function MapaDeRed({
   const [extremosSource] = useState(() => new VectorSource())
   // Pin del punto buscado (dirección o coordenada).
   const [destinoSource] = useState(() => new VectorSource())
+  // Recorrido del trace: copias de los cables por donde pasa (ver pintarRecorrido).
+  const [traceSource] = useState(() => new VectorSource())
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
   const [baseMapSource] = useState(fuenteDelMapaBase)
 
@@ -249,6 +276,7 @@ function MapaDeRed({
   const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const traceLayer = useRef<VectorLayer<VectorSource> | null>(null)
   /** Corta el destello en curso si se pide otro antes de que termine. */
   const detenerDestelloRef = useRef<(() => void) | null>(null)
   const drawRef = useRef<Draw | null>(null)
@@ -707,11 +735,7 @@ function MapaDeRed({
         id: typeof id === "string" ? id : null,
         codigo: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? (f.get("codigo") as string | undefined) ?? "Cable").trim(),
         hilos: typeof hilos === "number" && hilos > 0 ? hilos : null,
-        // La longitud medida en campo si la base la tiene; si no, la de la línea del mapa.
-        largoM:
-          typeof f.get("longitud_medida") === "number" && f.get("longitud_medida") > 0
-            ? Math.round(f.get("longitud_medida") * 100) / 100
-            : Math.round(largoEnKm(f.getGeometry()) * 1000),
+        largoM: largoDeCableM(f),
         origen: typeof desde === "string" ? nombreDeElemento(desde) : null,
         destino: typeof hasta === "string" ? nombreDeElemento(hasta) : null,
       }
@@ -794,13 +818,68 @@ function MapaDeRed({
 
   const abandonarEleccion = useCallback(() => cancelarEleccionRef.current?.("abandonada"), [])
 
+  const pintarRecorrido = useCallback(
+    ({ cables, geometrias, despejarDesde }: { cables: string[]; geometrias: GeometriaDeTramo[]; despejarDesde?: number }) => {
+      traceSource.clear()
+      const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
+      const faltan: string[] = []
+      let largoM = 0
+      for (const id of cables) {
+        const cable = porId.get(id)
+        const linea = cable?.getGeometry()
+        if (!cable || !linea) {
+          faltan.push(id)
+          continue
+        }
+        // Una copia: el cable real no se toca, y el recorrido sigue en pie
+        // aunque se actualicen las capas.
+        traceSource.addFeature(new Feature({ geometry: linea.clone() }))
+        largoM += largoDeCableM(cable)
+      }
+      const formato = new GeoJSON()
+      for (const g of geometrias) {
+        try {
+          const tramo = formato.readGeometry(g, { dataProjection: "EPSG:4326", featureProjection: "EPSG:3857" })
+          traceSource.addFeature(new Feature({ geometry: tramo }))
+          // Si llegan cables, el largo ya salió de ellos.
+          if (cables.length === 0) largoM += largoEnKm(tramo) * 1000
+        } catch {
+          // Una geometría que no se puede leer no impide pintar las demás.
+        }
+      }
+
+      // El margen de abajo deja libre lo que tapa la ventana del trace, sin
+      // comerse más de lo que deja al recorrido unos 120 px de alto.
+      const view = mapRef.current?.getView()
+      const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
+      const extent = traceSource.getExtent()
+      if (view && caja && extent && traceSource.getFeatures().length > 0 && extent.every((v) => Number.isFinite(v))) {
+        const tapado = despejarDesde === undefined ? 0 : caja.bottom - despejarDesde + 24
+        const abajo = Math.round(Math.max(60, Math.min(tapado, caja.height - 40 - 120)))
+        view.fit(extent, { padding: [40, 60, abajo, 60], maxZoom: 18, duration: 500 })
+      }
+      return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
+    },
+    [traceSource, fiberSource],
+  )
+
+  const limpiarRecorrido = useCallback(() => traceSource.clear(), [traceSource])
+
   useEffect(() => {
     if (!apiRef) return
-    apiRef.current = { enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion }
+    apiRef.current = {
+      enfocarElemento,
+      cableSeleccionado,
+      elegirCable,
+      elegirElemento,
+      abandonarEleccion,
+      pintarRecorrido,
+      limpiarRecorrido,
+    }
     return () => {
       apiRef.current = null
     }
-  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion])
+  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion, pintarRecorrido, limpiarRecorrido])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
   useEffect(() => () => cancelarEleccionRef.current?.("abandonada"), [])
@@ -965,6 +1044,7 @@ function MapaDeRed({
     marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
     extremosLayer.current = new VectorLayer({ source: extremosSource, style: extremoStyle as never })
     destinoLayer.current = new VectorLayer({ source: destinoSource, style: destinoStyle as never })
+    traceLayer.current = new VectorLayer({ source: traceSource, style: traceStyle as never })
 
     const map = new Map({
       target: containerRef.current,
@@ -978,6 +1058,9 @@ function MapaDeRed({
         // Encima del tendido, para taparlo mientras dura, y debajo de las
         // mufas, para que la mufa pulsada se siga viendo.
         sentidoLayer.current,
+        // El recorrido del trace, igual: sobre los cables y bajo las cubiertas,
+        // que siguen viéndose (y se pueden pulsar) encima de la línea.
+        traceLayer.current,
         nodeLayer.current,
         // La cabecera va encima de las mufas: es el elemento jerárquicamente
         // más importante y no debe quedar tapada.

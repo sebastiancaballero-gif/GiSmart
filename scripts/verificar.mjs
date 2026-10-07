@@ -24,6 +24,7 @@ const PASOS = [
   ["Sesión en cookie", `${PRUEBAS} scripts/probar-sesion.mjs`],
   ["Gestión de hilos", `${PRUEBAS} scripts/probar-hilos.mjs`],
   ["Redes/Nodo y GPON", `${PRUEBAS} scripts/probar-red-de-fibra.mjs`],
+  ["Recorrido del trace", `${PRUEBAS} scripts/probar-trace.mjs`],
 ]
 
 const resultados = []
