@@ -258,7 +258,7 @@ export function DashboardRibbon({
           onClick={() => alternarColapso(!colapsado)}
           aria-expanded={!colapsado}
           aria-label={colapsado ? "Desplegar la barra de herramientas" : "Plegar la barra de herramientas"}
-          className="mb-1 ml-auto mr-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="sticky right-1 mb-1 ml-auto mr-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-card text-muted-foreground shadow-[-10px_0_8px_-2px_var(--card)] outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <ChevronUp className={`size-4 transition-transform ${colapsado ? "rotate-180" : ""}`} />
         </button>
@@ -320,8 +320,12 @@ export function DashboardRibbon({
                           }
                           aria-disabled={proximamente ? true : undefined}
                           aria-pressed={isExtension ? isFullscreen : isActivo ? true : undefined}
+                          // Todos del mismo alto y con el icono arriba: con alturas
+                          // distintas (texto de uno o dos renglones) cada grupo se
+                          // centraba a su manera, y los iconos y los nombres de los
+                          // grupos quedaban a distinta altura a lo largo del ribbon.
                           className={`
-                            group relative flex flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1.5 outline-none transition
+                            group relative flex h-[54px] flex-col items-center justify-start gap-0.5 rounded-md px-1.5 pb-1 pt-2 outline-none transition
                             focus-visible:ring-2 focus-visible:ring-ring/50
                             ${proximamente
                               ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
@@ -371,10 +375,12 @@ export function DashboardRibbon({
         </div>
       </div>
 
+      {/* Por encima de la barra de estado del mapa: más abajo le tapaba las
+          coordenadas y el nombre de la herramienta. */}
       {aviso && (
         <div
           role="status"
-          className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-gismart-fade-in rounded-lg bg-foreground/90 px-4 py-2 text-xs font-medium text-background shadow-lg"
+          className="pointer-events-none fixed bottom-16 left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-gismart-fade-in rounded-lg bg-foreground/90 px-4 py-2 text-center text-xs font-medium text-background shadow-lg"
         >
           {aviso}
         </div>

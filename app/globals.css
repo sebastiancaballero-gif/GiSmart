@@ -594,6 +594,15 @@
   backdrop-filter: blur(8px);
 }
 
+/* En pantallas bajas (un portátil de 1366×768 con el navegador deja unos 650 px)
+   la barra de herramientas del mapa llegaba hasta la escala y se montaban: ahí
+   la escala se corre a la derecha de la barra. */
+@media (max-height: 760px) {
+  .gismart-mapa .ol-scale-bar {
+    left: 68px;
+  }
+}
+
 /* Así la proporción, las marcas y los textos se ubican respecto de la barra y
    no de la tarjeta. */
 .gismart-mapa .ol-scale-bar-inner {

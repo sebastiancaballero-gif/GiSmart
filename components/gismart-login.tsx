@@ -8,7 +8,6 @@ import {
   Lock,
   Sun,
   Moon,
-  X,
   ArrowRight,
   Eye,
   EyeOff,
@@ -96,7 +95,6 @@ export function GiSmartLogin() {
     register,
     control,
     handleSubmit,
-    reset,
     setError,
     formState: { errors, isSubmitting, dirtyFields },
   } = useForm<FormValues>({
@@ -172,26 +170,29 @@ export function GiSmartLogin() {
 
         <div className="px-7 pb-7 pt-6">
           {/* Encabezado sobrio: la marca identifica sin acaparar la pantalla. */}
-          <div className="mb-7 flex items-start justify-between gap-3">
-            <div>
+          {/* El botón del tema va en la fila del logo: al lado de todo el
+              bloque, en el celular le quitaba ancho al saludo y lo partía en
+              dos renglones. */}
+          <div className="mb-7">
+            <div className="flex items-center justify-between gap-3">
               <GismartLogo tamanoMarca="h-10" tamanoNombre="text-[26px]" />
-              <h1 className="mt-4 text-xl font-bold tracking-tight text-foreground">
-                Bienvenido
-              </h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Ingresa tus credenciales para continuar
-              </p>
+              <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="left">
+                <button
+                  type="button"
+                  onClick={handleToggleTheme}
+                  className="-mr-1.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                  aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+                >
+                  {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                </button>
+              </Tooltip>
             </div>
-            <Tooltip label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"} side="left">
-              <button
-                type="button"
-                onClick={handleToggleTheme}
-                className="-mr-1.5 -mt-1.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-                aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              >
-                {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-              </button>
-            </Tooltip>
+            <h1 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+              Bienvenido
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Ingresa tus credenciales para continuar
+            </p>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -281,7 +282,7 @@ export function GiSmartLogin() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="rounded p-1 text-muted-foreground transition hover:text-primary"
+                    className="rounded p-1 text-muted-foreground outline-none transition hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
                     aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -294,7 +295,7 @@ export function GiSmartLogin() {
                 </p>
               )}
               {capsLock && !errors.contrasena && (
-                <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-600">
+                <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
                   <ShieldAlert className="size-3.5" aria-hidden="true" />
                   Bloq Mayús activado.
                 </p>

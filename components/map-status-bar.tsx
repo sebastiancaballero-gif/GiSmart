@@ -25,7 +25,7 @@ export function MapStatusBar({
   herramienta: string
 }) {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur">
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 whitespace-nowrap rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:gap-2 max-sm:px-2.5">
       <span>
         Lon:{" "}
         <span ref={lonRef} className="tabular-nums text-primary">
@@ -46,14 +46,15 @@ export function MapStatusBar({
           {zoom}
         </span>
       </span>
-      <Separador />
       {/* Qué herramienta está activa: con ocho en la barra y atajos de teclado,
-          conviene poder confirmarlo sin mirar los iconos. */}
-      <span className="text-muted-foreground">{herramienta}</span>
+          conviene poder confirmarlo sin mirar los iconos. En el celular no
+          cabe: partía cada dato en dos renglones. */}
+      <Separador className="max-sm:hidden" />
+      <span className="text-muted-foreground max-sm:hidden">{herramienta}</span>
     </div>
   )
 }
 
-function Separador() {
-  return <span className="h-3 w-px bg-border" aria-hidden="true" />
+function Separador({ className = "" }: { className?: string }) {
+  return <span className={`h-3 w-px bg-border ${className}`} aria-hidden="true" />
 }

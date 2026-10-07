@@ -53,9 +53,13 @@ function DialogContent({
           "transition-[opacity,scale,translate] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           "data-[starting-style]:translate-y-[calc(-50%_+_10px)] data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
           "data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[ending-style]:duration-120 data-[ending-style]:ease-in",
+          // Los pequeños (confirmar, ayuda, ficha de información) llevan
+          // arriba la franja de la marca, como el login y las ventanas con
+          // `EncabezadoVentana`, que pintan la suya en el mismo lugar. Va de
+          // fondo para que la recorte la esquina redondeada.
           large
             ? "h-[70vh] w-[70vw] min-h-[460px] min-w-[560px] overflow-hidden"
-            : "w-full max-w-sm p-6",
+            : "w-full max-w-sm bg-[linear-gradient(90deg,#2a9bc4,#6fc5df,#2f6d9e)] bg-[length:100%_4px] bg-no-repeat p-6",
           className,
         )}
         {...props}
