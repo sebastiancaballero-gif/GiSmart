@@ -21,7 +21,7 @@ import DoubleClickZoom from "ol/interaction/DoubleClickZoom"
 import { defaults as defaultControls } from "ol/control"
 import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry } from "ol/geom"
-import { createEmpty, extend, isEmpty } from "ol/extent"
+import { createEmpty, extend, getCenter, isEmpty } from "ol/extent"
 import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
@@ -134,19 +134,32 @@ export type MapaApi = {
   abandonarEleccion: () => void
   /**
    * Pinta el recorrido de un trace: resalta los cables del mapa con esos UUID
-   * y las geometrías que mande la función (GeoJSON en EPSG:4326), y encuadra
-   * el recorrido. Reemplaza el anterior. `despejarDesde` es el borde de arriba
-   * (en píxeles de pantalla) de una ventana que tapa la parte baja del mapa:
-   * el encuadre deja ese espacio libre. Devuelve cuántos cables se pintaron,
-   * cuáles no están en el mapa y el largo total en metros.
+   * y las geometrías que lleguen (GeoJSON en EPSG:4326), marca con un punto las
+   * `cubiertas` (UUID) por donde pasa, y encuadra el recorrido. Reemplaza el
+   * anterior. `despejarDesde` es el borde de arriba (en píxeles de pantalla) de
+   * una ventana que tapa la parte baja del mapa: el encuadre deja ese espacio
+   * libre. Devuelve cuántos cables se pintaron, cuáles no están en el mapa y el
+   * largo total en metros.
    */
-  pintarRecorrido: (recorrido: { cables: string[]; geometrias: GeometriaDeTramo[]; despejarDesde?: number }) => {
+  pintarRecorrido: (recorrido: {
+    cables: string[]
+    geometrias: GeometriaDeTramo[]
+    cubiertas?: string[]
+    despejarDesde?: number
+  }) => {
     pintados: number
     faltan: string[]
     largoM: number
   }
   /** Quita del mapa el recorrido pintado. */
   limpiarRecorrido: () => void
+  /**
+   * Lleva el mapa a la cubierta con ese UUID y la destella, sin seleccionarla.
+   * `ventana` es el recuadro (en píxeles de pantalla) de una ventana que tapa
+   * parte del mapa: la cubierta queda en el centro del espacio libre más grande
+   * que deja (arriba o a un costado), no debajo de ella. `false` si no está.
+   */
+  mostrarCubierta: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
 }
 
 /** El largo de un cable en metros: el medido en campo si la base lo tiene; si no, el de su línea. */
@@ -264,6 +277,8 @@ function MapaDeRed({
   const [destinoSource] = useState(() => new VectorSource())
   // Recorrido del trace: copias de los cables por donde pasa (ver pintarRecorrido).
   const [traceSource] = useState(() => new VectorSource())
+  // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
+  const [hayRecorrido, setHayRecorrido] = useState(false)
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
   const [baseMapSource] = useState(fuenteDelMapaBase)
 
@@ -819,7 +834,17 @@ function MapaDeRed({
   const abandonarEleccion = useCallback(() => cancelarEleccionRef.current?.("abandonada"), [])
 
   const pintarRecorrido = useCallback(
-    ({ cables, geometrias, despejarDesde }: { cables: string[]; geometrias: GeometriaDeTramo[]; despejarDesde?: number }) => {
+    ({
+      cables,
+      geometrias,
+      cubiertas = [],
+      despejarDesde,
+    }: {
+      cables: string[]
+      geometrias: GeometriaDeTramo[]
+      cubiertas?: string[]
+      despejarDesde?: number
+    }) => {
       traceSource.clear()
       const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
       const faltan: string[] = []
@@ -847,6 +872,14 @@ function MapaDeRed({
           // Una geometría que no se puede leer no impide pintar las demás.
         }
       }
+      // Las cubiertas del recorrido, con el punto rojo del estilo del trace.
+      // Van después de las líneas para quedar encima de ellas.
+      const nodos = new globalThis.Map<unknown, Feature<Geometry>>(nodeSource.getFeatures().map((f) => [f.get("id"), f]))
+      for (const id of cubiertas) {
+        const punto = nodos.get(id)?.getGeometry()
+        if (punto) traceSource.addFeature(new Feature({ geometry: punto.clone() }))
+      }
+      setHayRecorrido(traceSource.getFeatures().length > 0)
 
       // Encuadre como lo definió el ingeniero: 50 px de margen y 400 ms. Abajo
       // el margen crece hasta dejar libre lo que tapa la ventana del trace,
@@ -861,10 +894,44 @@ function MapaDeRed({
       }
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
-    [traceSource, fiberSource],
+    [traceSource, fiberSource, nodeSource],
   )
 
-  const limpiarRecorrido = useCallback(() => traceSource.clear(), [traceSource])
+  const limpiarRecorrido = useCallback(() => {
+    traceSource.clear()
+    setHayRecorrido(false)
+  }, [traceSource])
+
+  const mostrarCubierta = useCallback(
+    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+      const mapa = mapRef.current
+      const geometria = nodeSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
+      const caja = mapa?.getTargetElement()?.getBoundingClientRect()
+      const view = mapa?.getView()
+      const resolucion = view?.getResolution()
+      if (!mapa || !geometria || !caja || !view || !resolucion) return false
+
+      // Dónde debe quedar la cubierta, en píxeles del mapa: al centro, o al
+      // centro del espacio más grande que deja libre la ventana.
+      let destino = [caja.width / 2, caja.height / 2]
+      if (ventana) {
+        const libres = [
+          { x0: 0, y0: 0, x1: caja.width, y1: ventana.top - caja.top },
+          { x0: 0, y0: 0, x1: ventana.left - caja.left, y1: caja.height },
+          { x0: ventana.right - caja.left, y0: 0, x1: caja.width, y1: caja.height },
+        ].filter((r) => r.x1 - r.x0 > 60 && r.y1 - r.y0 > 60)
+        const mayor = libres.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0))[0]
+        if (mayor) destino = [(mayor.x0 + mayor.x1) / 2, (mayor.y0 + mayor.y1) / 2]
+      }
+      const [x, y] = getCenter(geometria.getExtent())
+      const dx = destino[0] - caja.width / 2
+      const dy = destino[1] - caja.height / 2
+      view.animate({ center: [x - dx * resolucion, y + dy * resolucion], duration: 400 })
+      destellarEn(geometria, DESTELLO_ELEMENTO)
+      return true
+    },
+    [nodeSource, destellarEn],
+  )
 
   useEffect(() => {
     if (!apiRef) return
@@ -876,11 +943,22 @@ function MapaDeRed({
       abandonarEleccion,
       pintarRecorrido,
       limpiarRecorrido,
+      mostrarCubierta,
     }
     return () => {
       apiRef.current = null
     }
-  }, [apiRef, enfocarElemento, cableSeleccionado, elegirCable, elegirElemento, abandonarEleccion, pintarRecorrido, limpiarRecorrido])
+  }, [
+    apiRef,
+    enfocarElemento,
+    cableSeleccionado,
+    elegirCable,
+    elegirElemento,
+    abandonarEleccion,
+    pintarRecorrido,
+    limpiarRecorrido,
+    mostrarCubierta,
+  ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
   useEffect(() => () => cancelarEleccionRef.current?.("abandonada"), [])
@@ -1736,7 +1814,7 @@ function MapaDeRed({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} />
+      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} trace={hayRecorrido} />
 
       {/* Panel del elemento seleccionado (components/mapa/panel-seleccion.tsx). */}
       {selected && (

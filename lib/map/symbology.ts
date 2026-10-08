@@ -546,12 +546,14 @@ export function sentidoStyle(feature: Feature<Geometry>) {
  * fijo: se crea una vez.
  */
 export const TRACE_COLOR = "#00e5ff"
+/** Los puntos del recorrido (las cubiertas por donde pasa). */
+export const TRACE_PUNTO_COLOR = "#ff1744"
 
 const estiloTrace = new Style({
   stroke: new Stroke({ color: TRACE_COLOR, width: 5, lineCap: "round", lineJoin: "round" }),
   image: new CircleStyle({
     radius: 6,
-    fill: new Fill({ color: "#ff1744" }),
+    fill: new Fill({ color: TRACE_PUNTO_COLOR }),
     stroke: new Stroke({ color: "#ffffff", width: 2 }),
   }),
 })

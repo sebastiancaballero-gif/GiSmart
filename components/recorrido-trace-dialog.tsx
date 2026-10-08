@@ -1,7 +1,7 @@
 "use client"
 
 import { useImperativeHandle, useRef, useState, type Ref } from "react"
-import { Activity, ArrowDown, ArrowUp, Loader2, Ruler } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, ChevronDown, Loader2, MapPin, Ruler } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
@@ -32,7 +32,20 @@ function limpiarUuid(valor: string): string {
 
 const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWNSTREAM: "hacia abajo" }
 
-type Resumen = { direccion: DireccionTrace; pasos: number; atenuacionDb: number | null; largoM: number | null }
+type Resumen = {
+  direccion: DireccionTrace
+  pasos: number
+  atenuacionDb: number | null
+  largoM: number | null
+  /** Los pasos tal como vienen de la caché, para la lista de la ventana. */
+  lista: PasoDeTrace[]
+}
+
+/** Cómo se lee el tipo de conexión de un paso. */
+const CONEXION: Record<string, string> = { PATCHCORD: "Patchcord", PIGTAIL: "Pigtail", FUSION: "Fusión" }
+
+/** `PUERTO` → «puerto», `HILO` → «hilo». */
+const minuscula = (texto: string | null) => (texto ? texto.toLowerCase() : "—")
 
 /** «8 oct, 8:48 a. m.»: cuándo se calculó el recorrido guardado en la caché. */
 function textoDeFecha(iso: string | null) {
@@ -53,6 +66,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
   const [cargando, setCargando] = useState<DireccionTrace | null>(null)
   const [resumen, setResumen] = useState<Resumen | null>(null)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
+  const [verPasos, setVerPasos] = useState(false)
   // Si se pide otro recorrido (o se cierra) antes de que llegue el anterior,
   // la respuesta vieja se descarta.
   const consultaRef = useRef(0)
@@ -70,12 +84,16 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     [mapa.api],
   )
 
+  /** La cubierta del mapa donde ocurre un paso, si está cargada. */
+  function cubiertaDe(contenedor: PasoDeTrace["contenedor"]) {
+    const id = contenedor.id
+    return contenedor.tipo === "CUB" && id ? mapa.indice.find((e) => e.tipo === "node" && e.alias?.includes(id)) : undefined
+  }
+
   /** El nombre del equipo donde ocurre un paso: la cubierta del mapa, o OLT / ODF. */
   function nombreDe(contenedor: PasoDeTrace["contenedor"]) {
     if (contenedor.tipo !== "CUB") return contenedor.tipo ?? "un equipo"
-    const id = contenedor.id
-    const enMapa = id ? mapa.indice.find((e) => e.tipo === "node" && e.alias?.includes(id)) : undefined
-    return enMapa?.nombre || "una cubierta fuera del mapa"
+    return cubiertaDe(contenedor)?.nombre || "una cubierta fuera del mapa"
   }
 
   async function recorrer(direccion: DireccionTrace) {
@@ -120,17 +138,23 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     // La geometría del recorrido entero si la caché la trae; si no, la de cada
     // paso (si llegara), y los cables de sus hilos.
     const geometrias = r.geometria ? [r.geometria] : r.pasos.flatMap((p) => (p.geometria ? [p.geometria] : []))
+    const cubiertas = [
+      ...new Set(r.pasos.flatMap((p) => (p.contenedor.tipo === "CUB" && p.contenedor.id ? [p.contenedor.id] : []))),
+    ]
     const pintado = api.pintarRecorrido({
       cables: r.cables,
       geometrias,
+      cubiertas,
       despejarDesde: ventanaRef.current?.getBoundingClientRect().top,
     })
+    setVerPasos(false)
     const hayLinea = pintado.pintados > 0 || geometrias.length > 0
     setResumen({
       direccion,
       pasos: r.totalPasos,
       atenuacionDb: r.atenuacionTotal,
       largoM: hayLinea ? pintado.largoM : null,
+      lista: r.pasos,
     })
 
     const calculado = textoDeFecha(r.calculadoEn)
@@ -155,6 +179,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     setCargando(null)
     mapa.api.current?.limpiarRecorrido()
     setResumen(null)
+    setVerPasos(false)
     setMensaje(null)
   }
 
@@ -249,6 +274,66 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
               )}
             </output>
           </div>
+
+          {/* Los pasos que guarda la caché, como pide el ingeniero que se
+              muestren. Una cubierta del mapa se puede pulsar: el mapa la lleva
+              al espacio que deja libre la ventana y la destella. */}
+          {resumen && (
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setVerPasos((v) => !v)}
+                aria-expanded={verPasos}
+                className="flex items-center gap-1.5 self-start rounded-md px-1 text-[11px] font-semibold text-primary outline-none transition hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <ChevronDown className={`size-3.5 transition-transform ${verPasos ? "" : "-rotate-90"}`} aria-hidden="true" />
+                {verPasos ? "Ocultar los pasos" : `Ver los ${resumen.pasos} ${resumen.pasos === 1 ? "paso" : "pasos"}`}
+              </button>
+              {verPasos && (
+                <ol className="max-h-[min(13rem,30vh)] divide-y divide-border overflow-y-auto rounded-xl border border-border bg-card text-[11px] shadow-sm animate-in fade-in duration-200 motion-reduce:animate-none">
+                  {resumen.lista.map((p, i) => {
+                    const cubierta = cubiertaDe(p.contenedor)
+                    const contenido = (
+                      <>
+                        <span className="w-5 shrink-0 text-right font-semibold tabular-nums text-muted-foreground">{p.paso}</span>
+                        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                          <span className="flex items-center gap-1 truncate font-semibold text-foreground">
+                            {cubierta && <MapPin className="size-3 shrink-0 text-primary" aria-hidden="true" />}
+                            {nombreDe(p.contenedor)}
+                          </span>
+                          <span className="truncate text-[10px] text-muted-foreground">
+                            {(p.conexion && CONEXION[p.conexion]) ?? p.conexion ?? "Conexión"} · {minuscula(p.origen.tipo)} → {minuscula(p.destino.tipo)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {p.atenuacionAcumulada !== null ? `${p.atenuacionAcumulada.toLocaleString("es-CO", { minimumFractionDigits: 2 })} dB` : "—"}
+                        </span>
+                      </>
+                    )
+                    return (
+                      <li key={`${p.paso}-${i}`}>
+                        {cubierta ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              p.contenedor.id &&
+                              mapa.api.current?.mostrarCubierta(p.contenedor.id, ventanaRef.current?.getBoundingClientRect())
+                            }
+                            title={`Ver ${cubierta.nombre} en el mapa`}
+                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left outline-none transition hover:bg-accent focus-visible:bg-accent"
+                          >
+                            {contenido}
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2 px-2.5 py-1.5">{contenido}</div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
+            </div>
+          )}
         </div>
         <BarraDeEstado
           mensaje={barra}

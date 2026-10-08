@@ -10,6 +10,8 @@ import {
   FUNCION_CUB_COLORS,
   FUNCION_CUB_DEFAULT_COLOR,
   SENTIDO_COLORS,
+  TRACE_COLOR,
+  TRACE_PUNTO_COLOR,
 } from "@/lib/map/symbology"
 import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
 
@@ -25,9 +27,18 @@ import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbol
  *
  * `sentido` y `extremos` agregan los colores de «Entradas y salidas» y de
  * «Cable» mientras esas herramientas están activas: son los únicos momentos en
- * que aparecen en el mapa.
+ * que aparecen en el mapa. `trace`, lo mismo con el recorrido del trace mientras
+ * está pintado.
  */
-export function MapLegend({ sentido = false, extremos = false }: { sentido?: boolean; extremos?: boolean }) {
+export function MapLegend({
+  sentido = false,
+  extremos = false,
+  trace = false,
+}: {
+  sentido?: boolean
+  extremos?: boolean
+  trace?: boolean
+}) {
   // En el celular empieza plegada: abierta ocupaba media pantalla y tapaba la
   // escala y la barra de estado. El mapa solo se dibuja en el navegador (el
   // tablero espera a confirmar la sesión), así que aquí ya hay `window`.
@@ -122,6 +133,27 @@ export function MapLegend({ sentido = false, extremos = false }: { sentido?: boo
                   aria-hidden="true"
                 />
                 Salida (cubierta hija)
+              </span>
+            </>
+          )}
+
+          {/* Los mismos colores del estilo del trace (ver traceStyle). */}
+          {trace && (
+            <>
+              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Recorrido del trace
+              </span>
+              <span className="flex items-center gap-2">
+                <FiberSymbol color={TRACE_COLOR} width={4} size={14} />
+                Recorrido
+              </span>
+              <span className="flex items-center gap-2">
+                <span
+                  className="size-3.5 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(15_23_42/0.25)]"
+                  style={{ backgroundColor: TRACE_PUNTO_COLOR }}
+                  aria-hidden="true"
+                />
+                Cubierta del recorrido
               </span>
             </>
           )}
