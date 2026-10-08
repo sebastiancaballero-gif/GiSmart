@@ -5,14 +5,14 @@ import { Activity, ArrowDown, ArrowUp, Loader2, Ruler } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
-import { atenuacionTotal, obtenerTrace, type DireccionTrace, type PasoDeTrace } from "@/lib/map/trace"
+import { obtenerTrace, type DireccionTrace, type PasoDeTrace } from "@/lib/map/trace"
 
 /**
  * «Recorrido del trace» (ribbon: Red de fibra → Trace). Se pega el UUID de un
  * puerto o de un hilo y se recorre hacia arriba (hacia la OLT) o hacia abajo
- * (hacia el usuario) con `tab_fiber.fn_trace_conectividad_fina` (ver
- * lib/map/trace.ts). El recorrido se pinta en el mapa y la ventana dice su
- * largo, la atenuación y los pasos.
+ * (hacia el usuario). El recorrido sale ya calculado de la tabla de caché
+ * `tab_fiber.element_connection` (ver lib/map/trace.ts), se pinta en el mapa
+ * y la ventana dice su largo, la atenuación, los pasos y cuándo se calculó.
  *
  * No oscurece el fondo ni bloquea el mapa (`modal` en falso): lo que se
  * pinta tiene que verse, y un click en el mapa no la cierra. Esc sí. Al
@@ -33,6 +33,15 @@ function limpiarUuid(valor: string): string {
 const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWNSTREAM: "hacia abajo" }
 
 type Resumen = { direccion: DireccionTrace; pasos: number; atenuacionDb: number | null; largoM: number | null }
+
+/** «8 oct, 8:48 a. m.»: cuándo se calculó el recorrido guardado en la caché. */
+function textoDeFecha(iso: string | null) {
+  if (!iso) return null
+  const fecha = new Date(iso)
+  return Number.isNaN(fecha.getTime())
+    ? null
+    : fecha.toLocaleString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+}
 
 function textoDeLargo(m: number) {
   return m >= 1000 ? `${(m / 1000).toLocaleString("es-CO", { maximumFractionDigits: 2 })} km` : `${Math.round(m)} m`
@@ -92,21 +101,25 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
       setMensaje({
         texto: r.mensaje,
         tono: "error",
-        detalle: `tab_fiber.fn_trace_conectividad_fina${r.detalle ? ` → ${r.detalle}` : ""}`,
+        detalle: `tab_fiber.element_connection${r.detalle ? ` → ${r.detalle}` : ""}`,
       })
       return
     }
-    if (r.pasos.length === 0) {
+    if (!r.encontrado || r.pasos.length === 0) {
       api.limpiarRecorrido()
       setResumen(null)
       setMensaje({
-        texto: `La función no devolvió pasos ${SENTIDO[direccion]} desde ese origen: el UUID no existe o no hay conectividad en ese sentido.`,
+        texto: r.encontrado
+          ? `El recorrido calculado ${SENTIDO[direccion]} desde ese origen no tiene pasos.`
+          : `No hay un recorrido ${SENTIDO[direccion]} calculado para ese origen: el UUID no existe o no tiene conectividad en ese sentido.`,
         tono: "aviso",
       })
       return
     }
 
-    const geometrias = r.pasos.flatMap((p) => (p.geometria ? [p.geometria] : []))
+    // La geometría del recorrido entero si la caché la trae; si no, la de cada
+    // paso (si llegara), y los cables de sus hilos.
+    const geometrias = r.geometria ? [r.geometria] : r.pasos.flatMap((p) => (p.geometria ? [p.geometria] : []))
     const pintado = api.pintarRecorrido({
       cables: r.cables,
       geometrias,
@@ -116,11 +129,12 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     setResumen({
       direccion,
       pasos: r.pasos.length,
-      atenuacionDb: atenuacionTotal(r.pasos),
+      atenuacionDb: r.atenuacionTotal,
       largoM: hayLinea ? pintado.largoM : null,
     })
 
-    const recorrido = `${r.pasos.length} ${r.pasos.length === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(r.pasos[0].contenedor)} a ${nombreDe(r.pasos[r.pasos.length - 1].contenedor)}`
+    const calculado = textoDeFecha(r.calculadoEn)
+    const recorrido = `${r.pasos.length} ${r.pasos.length === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(r.pasos[0].contenedor)} a ${nombreDe(r.pasos[r.pasos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`
     if (!hayLinea) {
       setMensaje({
         texto: `${recorrido}, pero ninguno de sus cables está en el mapa: no hay línea que pintar.`,
