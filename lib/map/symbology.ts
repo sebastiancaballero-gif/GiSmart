@@ -540,16 +540,21 @@ export function sentidoStyle(feature: Feature<Geometry>) {
 }
 
 /**
- * Recorrido del trace (Red de fibra → Trace): magenta, el color que propuso el
- * equipo para que resalte sobre el mapa base y sobre el tendido azul, con el
- * mismo borde oscuro de «Entradas y salidas». Es fijo: se crea una vez.
+ * Recorrido del trace (Red de fibra → Trace), con el estilo que definió el
+ * ingeniero: línea cian neón de 5 px con puntas y uniones redondeadas, y los
+ * puntos (si la geometría trae alguno) en un círculo rojo con borde blanco. Es
+ * fijo: se crea una vez.
  */
-export const TRACE_COLOR = "#ff0055"
+export const TRACE_COLOR = "#00e5ff"
 
-const estiloTrace = [
-  new Style({ stroke: new Stroke({ color: "rgba(15, 23, 42, 0.6)", width: 11, lineCap: "round", lineJoin: "round" }) }),
-  new Style({ stroke: new Stroke({ color: TRACE_COLOR, width: 6, lineCap: "round", lineJoin: "round" }) }),
-]
+const estiloTrace = new Style({
+  stroke: new Stroke({ color: TRACE_COLOR, width: 5, lineCap: "round", lineJoin: "round" }),
+  image: new CircleStyle({
+    radius: 6,
+    fill: new Fill({ color: "#ff1744" }),
+    stroke: new Stroke({ color: "#ffffff", width: 2 }),
+  }),
+})
 
 export function traceStyle() {
   return estiloTrace

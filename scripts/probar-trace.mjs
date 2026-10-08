@@ -1,16 +1,19 @@
 /**
  * Pruebas del «Recorrido del trace» (lib/map/trace.ts y la ruta GET
- * /api/trace, que lee la caché tab_fiber.element_connection) que no necesitan
- * la base. Se corre con `pnpm run trace`.
+ * /api/traces/{downstream|upstream}/{id}, que lee la caché
+ * tab_fiber.element_connection) que no necesitan la base. Se corre con
+ * `pnpm run trace`.
  */
 process.env.AUTH_JWT_SECRET = "secreto-solo-para-las-pruebas-del-trace-0123456789"
 // Sin Supabase: lo que pase las validaciones se detiene antes de la base.
 delete process.env.SUPABASE_URL
 delete process.env.SUPABASE_SECRET_KEY
 
-const { normalizarPasos, hilosDelRecorrido, atenuacionTotal, clasificarRespuestaTrace, geometria } = await import("../lib/map/trace.ts")
+const { normalizarPasos, hilosDelRecorrido, atenuacionTotal, clasificarRespuestaTrace, geometria, direccionDeUrl } = await import(
+  "../lib/map/trace.ts"
+)
 const { emitirToken } = await import("../lib/auth-server.ts")
-const { GET } = await import("../app/api/trace/route.ts")
+const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
 
 let fallos = 0
 let pruebas = 0
@@ -91,14 +94,30 @@ console.log("\n2) GEOMETRÍA (geom_path)\n")
 console.log("\n3) RESPUESTA DE LA RUTA\n")
 {
   const ok = clasificarRespuestaTrace(200, {
-    encontrado: true, pasos: normalizarPasos(CACHE), cables: ["cab1", 7, "cab2"],
-    geometria: null, atenuacionTotal: "0.9", calculadoEn: "2026-10-08T08:48:45-05:00",
+    encontrado: true, pasos: normalizarPasos(CACHE), totalPasos: 3, cables: ["cab1", 7, "cab2"],
+    geomPath: null, atenuacionTotal: "0.9", calculadoEn: "2026-10-08T08:48:45-05:00",
   })
   comprobar(
-    "200: pasos, cables (solo texto), atenuación de la tabla y fecha",
-    ok.estado === "ok" && ok.encontrado && ok.pasos.length === 3 && ok.cables.join(",") === "cab1,cab2" && ok.atenuacionTotal === 0.9 && ok.calculadoEn?.startsWith("2026-10-08"),
+    "200: pasos, total, cables (solo texto), atenuación de la tabla y fecha",
+    ok.estado === "ok" && ok.encontrado && ok.pasos.length === 3 && ok.totalPasos === 3 && ok.cables.join(",") === "cab1,cab2" &&
+      ok.atenuacionTotal === 0.9 && ok.calculadoEn?.startsWith("2026-10-08"),
   )
-  const noEsta = clasificarRespuestaTrace(200, { encontrado: false, pasos: [], cables: [], geometria: null })
+  const conGeom = clasificarRespuestaTrace(200, {
+    encontrado: true,
+    pasos: normalizarPasos(CACHE),
+    geomPath: { type: "MultiLineString", coordinates: [[[-76.1, 4.5], [-76.2, 4.6]]] },
+  })
+  comprobar("la geometría llega en geomPath, como en el ejemplo del ingeniero", conGeom.estado === "ok" && conGeom.geometria?.type === "MultiLineString")
+  // 52 filas de la caché repiten el último número de paso: total_pasos manda.
+  const repetido = [...CACHE, { ...CACHE[2], hilo_destino: "h3" }]
+  const conRepetido = clasificarRespuestaTrace(200, { encontrado: true, pasos: normalizarPasos(repetido), totalPasos: 3 })
+  comprobar(
+    "último paso repetido: se cuentan los pasos de total_pasos",
+    conRepetido.estado === "ok" && conRepetido.pasos.length === 4 && conRepetido.totalPasos === 3,
+  )
+  const sinTotal = clasificarRespuestaTrace(200, { encontrado: true, pasos: normalizarPasos(repetido) })
+  comprobar("sin total_pasos: los números de paso distintos", sinTotal.estado === "ok" && sinTotal.totalPasos === 3)
+  const noEsta = clasificarRespuestaTrace(200, { encontrado: false, pasos: [], totalPasos: 0, cables: [], geomPath: null })
   comprobar("200 sin recorrido en la caché: encontrado en falso", noEsta.estado === "ok" && !noEsta.encontrado && noEsta.pasos.length === 0)
   const sinAtenuacion = clasificarRespuestaTrace(200, { encontrado: true, pasos: normalizarPasos(CACHE) })
   comprobar("sin atenuación de la tabla: la del último paso", sinAtenuacion.estado === "ok" && sinAtenuacion.atenuacionTotal === 0.15)
@@ -108,23 +127,31 @@ console.log("\n3) RESPUESTA DE LA RUTA\n")
   comprobar("error sin cuerpo: un mensaje con el código HTTP", sinCuerpo.estado === "error" && sinCuerpo.mensaje.includes("HTTP 500"))
 }
 
-console.log("\n4) LA RUTA GET /api/trace\n")
+console.log("\n4) LA RUTA GET /api/traces/{downstream|upstream}/{id}\n")
 {
+  comprobar(
+    "dirección en la URL: downstream/upstream, en minúsculas o mayúsculas",
+    direccionDeUrl("downstream") === "DOWNSTREAM" && direccionDeUrl("UPSTREAM") === "UPSTREAM",
+  )
+  comprobar("dirección inválida en la URL: nula", direccionDeUrl("abajo") === null && direccionDeUrl(undefined) === null)
   const token = emitirToken("Prueba", "usuario")
   const pedir = (id, direccion, conSesion = true) =>
     GET(
-      new Request(`http://local/api/trace?${new URLSearchParams({ id, direccion })}`, {
+      new Request(`http://local/api/traces/${direccion}/${encodeURIComponent(id)}`, {
         headers: conSesion ? { authorization: `Bearer ${token}` } : {},
       }),
+      { params: Promise.resolve({ direccion, id: encodeURIComponent(id) }) },
     )
   const UUID_BUENO = "01a0f9bf-be88-7b80-9c77-2219b25fb611"
-  comprobar("sin sesión: 401", (await pedir(UUID_BUENO, "DOWNSTREAM", false)).status === 401)
-  comprobar("origen que no es UUID: 400", (await pedir("no-es-un-uuid", "DOWNSTREAM")).status === 400)
-  comprobar("inyección SQL en el origen: 400", (await pedir(`${UUID_BUENO}' OR 1=1 --`, "UPSTREAM")).status === 400)
-  comprobar("dirección que no es UPSTREAM ni DOWNSTREAM: 400", (await pedir(UUID_BUENO, "DOWN; DROP TABLE x")).status === 400)
-  comprobar("dirección en minúsculas: 400 (la tabla guarda mayúsculas)", (await pedir(UUID_BUENO, "downstream")).status === 400)
-  comprobar("sin parámetros: 400", (await GET(new Request("http://local/api/trace", { headers: { authorization: `Bearer ${token}` } }))).status === 400)
-  const valida = await pedir(` ${UUID_BUENO} `, "UPSTREAM")
+  comprobar("sin sesión: 401", (await pedir(UUID_BUENO, "downstream", false)).status === 401)
+  comprobar("origen que no es UUID: 400", (await pedir("no-es-un-uuid", "downstream")).status === 400)
+  comprobar("inyección SQL en el origen: 400", (await pedir(`${UUID_BUENO}' OR 1=1 --`, "upstream")).status === 400)
+  comprobar("dirección que no es downstream ni upstream: 400", (await pedir(UUID_BUENO, "down; DROP TABLE x")).status === 400)
+  const malCodificado = await GET(new Request("http://local/api/traces/downstream/x", { headers: { authorization: `Bearer ${token}` } }), {
+    params: Promise.resolve({ direccion: "downstream", id: "%E0%A4%A" }),
+  })
+  comprobar("UUID mal codificado en la URL: 400", malCodificado.status === 400)
+  const valida = await pedir(` ${UUID_BUENO} `, "upstream")
   comprobar("petición válida pasa las validaciones (sin Supabase: 500)", valida.status === 500, `HTTP ${valida.status}`)
 }
 

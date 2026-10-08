@@ -128,13 +128,13 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     const hayLinea = pintado.pintados > 0 || geometrias.length > 0
     setResumen({
       direccion,
-      pasos: r.pasos.length,
+      pasos: r.totalPasos,
       atenuacionDb: r.atenuacionTotal,
       largoM: hayLinea ? pintado.largoM : null,
     })
 
     const calculado = textoDeFecha(r.calculadoEn)
-    const recorrido = `${r.pasos.length} ${r.pasos.length === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(r.pasos[0].contenedor)} a ${nombreDe(r.pasos[r.pasos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`
+    const recorrido = `${r.totalPasos} ${r.totalPasos === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(r.pasos[0].contenedor)} a ${nombreDe(r.pasos[r.pasos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`
     if (!hayLinea) {
       setMensaje({
         texto: `${recorrido}, pero ninguno de sus cables está en el mapa: no hay línea que pintar.`,

@@ -848,15 +848,16 @@ function MapaDeRed({
         }
       }
 
-      // El margen de abajo deja libre lo que tapa la ventana del trace, sin
-      // comerse más de lo que deja al recorrido unos 120 px de alto.
+      // Encuadre como lo definió el ingeniero: 50 px de margen y 400 ms. Abajo
+      // el margen crece hasta dejar libre lo que tapa la ventana del trace,
+      // sin comerse más de lo que deja al recorrido unos 120 px de alto.
       const view = mapRef.current?.getView()
       const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
       const extent = traceSource.getExtent()
       if (view && caja && extent && traceSource.getFeatures().length > 0 && extent.every((v) => Number.isFinite(v))) {
         const tapado = despejarDesde === undefined ? 0 : caja.bottom - despejarDesde + 24
-        const abajo = Math.round(Math.max(60, Math.min(tapado, caja.height - 40 - 120)))
-        view.fit(extent, { padding: [40, 60, abajo, 60], maxZoom: 18, duration: 500 })
+        const abajo = Math.round(Math.max(50, Math.min(tapado, caja.height - 50 - 120)))
+        view.fit(extent, { padding: [50, 50, abajo, 50], maxZoom: 18, duration: 400 })
       }
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
@@ -1044,7 +1045,9 @@ function MapaDeRed({
     marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
     extremosLayer.current = new VectorLayer({ source: extremosSource, style: extremoStyle as never })
     destinoLayer.current = new VectorLayer({ source: destinoSource, style: destinoStyle as never })
-    traceLayer.current = new VectorLayer({ source: traceSource, style: traceStyle as never })
+    // `zIndex: 10`, como en el código del ingeniero: el recorrido queda por
+    // encima de toda la red.
+    traceLayer.current = new VectorLayer({ source: traceSource, style: traceStyle as never, zIndex: 10 })
 
     const map = new Map({
       target: containerRef.current,
@@ -1058,8 +1061,7 @@ function MapaDeRed({
         // Encima del tendido, para taparlo mientras dura, y debajo de las
         // mufas, para que la mufa pulsada se siga viendo.
         sentidoLayer.current,
-        // El recorrido del trace, igual: sobre los cables y bajo las cubiertas,
-        // que siguen viéndose (y se pueden pulsar) encima de la línea.
+        // El recorrido del trace (con zIndex 10 se dibuja encima de todo).
         traceLayer.current,
         nodeLayer.current,
         // La cabecera va encima de las mufas: es el elemento jerárquicamente

@@ -1,13 +1,6 @@
 import { NextResponse } from "next/server"
 import { exigirSesion } from "@/lib/auth-server"
-import {
-  DIRECCIONES_TRACE,
-  geometria,
-  hilosDelRecorrido,
-  normalizarPasos,
-  numero,
-  type DireccionTrace,
-} from "@/lib/map/trace"
+import { direccionDeUrl, geometria, hilosDelRecorrido, normalizarPasos, numero } from "@/lib/map/trace"
 import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion } from "@/lib/supabase-servidor"
 
 /** Lo que se le dice a quien usa el mapa cuando la tabla de caché no se puede leer. */
@@ -26,30 +19,36 @@ function mensajeDeCache(codigo: string | undefined): string {
 }
 
 /**
- * Recorrido del trace desde un puerto o un hilo, hacia arriba (`UPSTREAM`,
- * hacia la OLT) o hacia abajo (`DOWNSTREAM`, hacia el usuario):
- * `GET /api/trace?id=<uuid>&direccion=UPSTREAM|DOWNSTREAM`.
+ * Recorrido del trace desde un puerto o un hilo, como lo planteó el ingeniero:
+ * `GET /api/traces/downstream/{id}` (hacia el usuario) o
+ * `GET /api/traces/upstream/{id}` (hacia la OLT).
  *
  * No calcula nada: lee el recorrido ya calculado en la tabla de caché
- * `tab_fiber.element_connection` (ver lib/map/trace.ts). Así no se llama la
- * función del trace cada vez, que es pesada.
+ * `tab_fiber.element_connection` (ver lib/map/trace.ts), así no se llama la
+ * función del trace cada vez. Devuelve la geometría del recorrido en `geomPath`
+ * (la columna `geom_path`, GeoJSON en EPSG:4326), los pasos, el total de pasos,
+ * la atenuación total y cuándo se calculó.
  *
- * Además de los pasos devuelve la geometría del recorrido (`geom_path`) y,
- * mientras esa columna llegue vacía, los cables del recorrido: el cable de
- * cada hilo según `tab_fiber.hilo_cable`, que el mapa resalta.
+ * Mientras `geom_path` llegue vacía devuelve además los cables del recorrido:
+ * el cable de cada hilo según `tab_fiber.hilo_cable`, que el mapa resalta.
  */
-export async function GET(request: Request) {
+export async function GET(request: Request, { params }: { params: Promise<{ direccion: string; id: string }> }) {
   const sinSesion = exigirSesion(request)
   if (sinSesion) return sinSesion
 
-  const parametros = new URL(request.url).searchParams
-  const id = (parametros.get("id") ?? "").trim()
+  const { direccion: enUrl, id: crudo } = await params
+  const direccion = direccionDeUrl(enUrl)
+  if (!direccion) {
+    return NextResponse.json({ message: "La dirección del trace tiene que ser downstream o upstream." }, { status: 400 })
+  }
+  let id = ""
+  try {
+    id = decodeURIComponent(crudo).trim()
+  } catch {
+    // Un % suelto en la URL: no es un UUID.
+  }
   if (!UUID.test(id)) {
     return NextResponse.json({ message: "El origen tiene que ser el UUID de un puerto o de un hilo." }, { status: 400 })
-  }
-  const direccion = parametros.get("direccion")
-  if (!DIRECCIONES_TRACE.includes(direccion as DireccionTrace)) {
-    return NextResponse.json({ message: "La dirección del trace tiene que ser UPSTREAM o DOWNSTREAM." }, { status: 400 })
   }
 
   const cliente = clienteSupabase("tab_fiber")
@@ -61,7 +60,7 @@ export async function GET(request: Request) {
       .from("element_connection")
       .select("id_destino, total_pasos, atenuacion_total_db, path_secuencia, geom_path, fecha_calculo")
       .eq("id_origen", id)
-      .eq("direccion", direccion as DireccionTrace)
+      .eq("direccion", direccion)
       .order("fecha_calculo", { ascending: false })
       .limit(1)
     if (error) {
@@ -77,14 +76,22 @@ export async function GET(request: Request) {
 
     const fila = filas?.[0]
     if (!fila) {
-      return NextResponse.json({ encontrado: false, pasos: [], cables: [], geometria: null, atenuacionTotal: null, calculadoEn: null })
+      return NextResponse.json({
+        encontrado: false,
+        geomPath: null,
+        pasos: [],
+        totalPasos: 0,
+        cables: [],
+        atenuacionTotal: null,
+        calculadoEn: null,
+      })
     }
 
     const pasos = normalizarPasos(fila.path_secuencia)
-    const recorrido = geometria(fila.geom_path)
+    const geomPath = geometria(fila.geom_path)
     const cables: string[] = []
     // Sin la geometría de la tabla, se pinta con los cables de los hilos.
-    const hilos = recorrido ? [] : hilosDelRecorrido(pasos)
+    const hilos = geomPath ? [] : hilosDelRecorrido(pasos)
     if (hilos.length > 0) {
       const { data: hilosCable, error: errorHilos } = await cliente.from("hilo_cable").select("id, id_cable").in("id", hilos)
       if (errorHilos) {
@@ -106,9 +113,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       encontrado: true,
+      geomPath,
       pasos,
+      totalPasos: numero(fila.total_pasos) ?? new Set(pasos.map((p) => p.paso)).size,
       cables,
-      geometria: recorrido,
       atenuacionTotal: numero(fila.atenuacion_total_db),
       calculadoEn: typeof fila.fecha_calculo === "string" ? fila.fecha_calculo : null,
     })

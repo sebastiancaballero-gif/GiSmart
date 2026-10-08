@@ -6,10 +6,11 @@ import { fetchConSesion } from "@/lib/auth"
  * El origen es el UUID de un puerto o de un hilo. `DOWNSTREAM` recorre hacia
  * el usuario y `UPSTREAM` hacia la OLT. Los recorridos ya vienen calculados en
  * la tabla de caché `tab_fiber.element_connection` (una fila por origen y
- * sentido): la ruta solo la consulta, sin llamar la función del trace
- * (`fn_trace_conectividad_fina`), que es pesada. Cada fila trae los pasos
- * (`path_secuencia`), el total de pasos, la atenuación total, la geometría del
- * recorrido (`geom_path`) y cuándo se calculó.
+ * sentido): la ruta `GET /api/traces/{downstream|upstream}/{id}` solo la
+ * consulta, sin llamar la función del trace (`fn_trace_conectividad_fina`),
+ * que es pesada. Cada fila trae los pasos (`path_secuencia`), el total de
+ * pasos, la atenuación total, la geometría del recorrido (`geom_path`, que la
+ * ruta entrega como `geomPath`) y cuándo se calculó.
  *
  * Hoy `geom_path` llega vacío. Mientras tanto la ruta busca el cable de cada
  * hilo del recorrido (`tab_fiber.hilo_cable`): esos cables son justo los que
@@ -19,6 +20,15 @@ import { fetchConSesion } from "@/lib/auth"
 
 export type DireccionTrace = "UPSTREAM" | "DOWNSTREAM"
 export const DIRECCIONES_TRACE: readonly DireccionTrace[] = ["UPSTREAM", "DOWNSTREAM"]
+
+/** La dirección como va en la URL (`/api/traces/downstream/…`) y como la guarda la tabla. */
+export const DIRECCION_EN_URL: Record<DireccionTrace, string> = { UPSTREAM: "upstream", DOWNSTREAM: "downstream" }
+
+/** `downstream` o `upstream` (en minúsculas o mayúsculas) → la dirección de la tabla; otra cosa → `null`. */
+export function direccionDeUrl(valor: string | null | undefined): DireccionTrace | null {
+  const d = (valor ?? "").trim().toUpperCase()
+  return DIRECCIONES_TRACE.includes(d as DireccionTrace) ? (d as DireccionTrace) : null
+}
 
 /** Lo que entra o sale en un paso: un puerto o un hilo. */
 export type ExtremoDePaso = { tipo: string | null; id: string | null }
@@ -43,6 +53,11 @@ export type ResultadoTrace =
       /** Si la caché tiene un recorrido para ese origen y sentido. */
       encontrado: boolean
       pasos: PasoDeTrace[]
+      /**
+       * Los pasos del recorrido según la tabla (`total_pasos`). Puede ser menos
+       * que `pasos.length`: hay recorridos que repiten el último número de paso.
+       */
+      totalPasos: number
       /** UUID de los cables por donde va el recorrido, en orden y sin repetir. */
       cables: string[]
       /** La geometría del recorrido entero (`geom_path`), si la tabla la trae. */
@@ -162,7 +177,7 @@ export function atenuacionTotal(pasos: PasoDeTrace[]): number | null {
   return null
 }
 
-/** Clasifica lo que responde `GET /api/trace`. */
+/** Clasifica lo que responde `GET /api/traces/{direccion}/{id}`. */
 export function clasificarRespuestaTrace(status: number, cuerpo: unknown): ResultadoTrace {
   if (status < 200 || status >= 300) {
     const { message: mensaje, detalle } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown }
@@ -179,8 +194,9 @@ export function clasificarRespuestaTrace(status: number, cuerpo: unknown): Resul
     // Una respuesta sin el dato se toma por encontrada si trae pasos.
     encontrado: typeof c.encontrado === "boolean" ? c.encontrado : pasos.length > 0,
     pasos,
+    totalPasos: numero(c.totalPasos) ?? new Set(pasos.map((p) => p.paso)).size,
     cables: Array.isArray(c.cables) ? c.cables.filter((x): x is string => typeof x === "string") : [],
-    geometria: geometria(c.geometria),
+    geometria: geometria(c.geomPath),
     atenuacionTotal: numero(c.atenuacionTotal) ?? atenuacionTotal(pasos),
     calculadoEn: texto(c.calculadoEn),
   }
@@ -193,8 +209,8 @@ export async function obtenerTrace(
   esperaMaxima = ESPERA_MAXIMA_TRACE_MS,
 ): Promise<ResultadoTrace> {
   try {
-    const consulta = new URLSearchParams({ id: idOrigen, direccion })
-    const res = await fetchConSesion(`/api/trace?${consulta}`, { signal: AbortSignal.timeout(esperaMaxima) })
+    const url = `/api/traces/${DIRECCION_EN_URL[direccion]}/${encodeURIComponent(idOrigen)}`
+    const res = await fetchConSesion(url, { signal: AbortSignal.timeout(esperaMaxima) })
     const cuerpo: unknown = await res.json().catch(() => null)
     return clasificarRespuestaTrace(res.status, cuerpo)
   } catch (error) {
