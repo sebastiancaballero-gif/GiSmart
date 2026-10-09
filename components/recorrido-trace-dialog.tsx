@@ -17,7 +17,16 @@ import { obtenerTrace, type DireccionTrace, type PasoDeTrace } from "@/lib/map/t
  * No oscurece el fondo ni bloquea el mapa (`modal` en falso): lo que se
  * pinta tiene que verse, y un click en el mapa no la cierra. Esc sí. Al
  * cerrarla el recorrido sigue pintado; se quita con «Quitar del mapa».
+ *
+ * «Gestión de hilos» la abre con `recorrer` para el hilo seleccionado en su
+ * tabla (sus botones «Hacia la fuente» y «Hacia abajo»).
  */
+
+/** Lo que el tablero puede hacer con la ventana: abrirla, o abrirla ya recorriendo desde un origen. */
+export type ManejadorDelTrace = ManejadorDeVentana & {
+  /** Abre la ventana con ese origen y recorre en ese sentido. `etiqueta` dice qué es el origen («Hilo 13 del cable …»). */
+  recorrer: (id: string, direccion: DireccionTrace, etiqueta?: string) => void
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -60,9 +69,11 @@ function textoDeLargo(m: number) {
   return m >= 1000 ? `${(m / 1000).toLocaleString("es-CO", { maximumFractionDigits: 2 })} km` : `${Math.round(m)} m`
 }
 
-export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
+export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrace>; mapa: AccesoAlMapa }) {
   const [abierta, setAbierta] = useState(false)
   const [origen, setOrigen] = useState("")
+  /** Qué es el origen, cuando llega de otra ventana (p. ej. «Hilo 13 del cable 2100555»). */
+  const [etiqueta, setEtiqueta] = useState<string | null>(null)
   const [cargando, setCargando] = useState<DireccionTrace | null>(null)
   const [resumen, setResumen] = useState<Resumen | null>(null)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
@@ -71,18 +82,6 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
   // la respuesta vieja se descarta.
   const consultaRef = useRef(0)
   const ventanaRef = useRef<HTMLDivElement>(null)
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      abrir: () => {
-        // Una elección en el mapa que siguiera esperando ya no vale.
-        mapa.api.current?.abandonarEleccion()
-        setAbierta(true)
-      },
-    }),
-    [mapa.api],
-  )
 
   /** La cubierta del mapa donde ocurre un paso, si está cargada. */
   function cubiertaDe(contenedor: PasoDeTrace["contenedor"]) {
@@ -96,8 +95,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     return cubiertaDe(contenedor)?.nombre || "una cubierta fuera del mapa"
   }
 
-  async function recorrer(direccion: DireccionTrace) {
-    const id = limpiarUuid(origen)
+  async function recorrer(pegado: string, direccion: DireccionTrace) {
+    const id = limpiarUuid(pegado)
     if (!UUID.test(id)) {
       setMensaje({ texto: "Pega el UUID de un puerto o de un hilo: 36 caracteres con guiones.", tono: "aviso" })
       return
@@ -183,11 +182,31 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
     setMensaje(null)
   }
 
+  // Sin lista de dependencias: `recorrer` usa la función de este render.
+  useImperativeHandle(ref, () => ({
+    abrir: () => {
+      // Una elección en el mapa que siguiera esperando ya no vale.
+      mapa.api.current?.abandonarEleccion()
+      setAbierta(true)
+    },
+    recorrer: (id, direccion, etiquetaDeOrigen) => {
+      mapa.api.current?.abandonarEleccion()
+      setOrigen(id)
+      setEtiqueta(etiquetaDeOrigen ?? null)
+      setAbierta(true)
+      // Un momento después de abrir: el encuadre necesita la ventana ya
+      // dibujada para dejarle libre su espacio.
+      window.setTimeout(() => void recorrer(id, direccion), 80)
+    },
+  }))
+
   const barra: Mensaje =
     mensaje ??
     (cargando
       ? { texto: `Calculando el recorrido ${SENTIDO[cargando]}…`, tono: "info" }
-      : { texto: "Pega el UUID de origen y elige hacia dónde recorrer.", tono: "info" })
+      : resumen
+        ? { texto: "Recorrido pintado en el mapa. Puedes cambiar el sentido o pegar otro origen.", tono: "info" }
+        : { texto: "Pega el UUID de origen y elige hacia dónde recorrer.", tono: "info" })
 
   return (
     <Dialog
@@ -228,13 +247,17 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
             <input
               type="text"
               value={origen}
-              onChange={(e) => setOrigen(e.target.value)}
+              onChange={(e) => {
+                setOrigen(e.target.value)
+                setEtiqueta(null)
+              }}
               placeholder="01a0f9bf-be88-7b80-9c77-2219b25fb611"
               spellCheck={false}
               autoComplete="off"
               aria-invalid={mensaje?.tono === "aviso" && !UUID.test(limpiarUuid(origen)) ? true : undefined}
               className="h-8 w-full rounded-lg border border-input bg-card px-2.5 font-mono text-[11.5px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-amber-500"
             />
+            {etiqueta && <span className="text-[11px] font-medium text-muted-foreground">{etiqueta}</span>}
           </label>
 
           <div className="grid grid-cols-2 gap-2">
@@ -243,14 +266,14 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVenta
               detalle="Hacia la OLT"
               cargando={cargando === "UPSTREAM"}
               deshabilitado={cargando !== null}
-              onClick={() => void recorrer("UPSTREAM")}
+              onClick={() => void recorrer(origen, "UPSTREAM")}
             />
             <BotonDeSentido
               sentido="abajo"
               detalle="Hacia el usuario"
               cargando={cargando === "DOWNSTREAM"}
               deshabilitado={cargando !== null}
-              onClick={() => void recorrer("DOWNSTREAM")}
+              onClick={() => void recorrer(origen, "DOWNSTREAM")}
             />
           </div>
 

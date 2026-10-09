@@ -36,6 +36,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip"
 import type { AccesoAlMapa, CableElegido } from "@/components/network-map"
 import { colorParaMostrar, obtenerHilosDeCable, type HiloDeCable, type ResultadoHilos } from "@/lib/map/hilos-cable"
+import type { DireccionTrace } from "@/lib/map/trace"
 
 /**
  * «Gestión de hilos de cable de fibra óptica» (ribbon: Red de fibra → Hilos).
@@ -212,7 +213,19 @@ type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
  * seleccionado en el mapa se abre con ese; si no, se elige con el botón de
  * selección. El tablero solo la abre (ver `ManejadorDeVentana`).
  */
-export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana>; mapa: AccesoAlMapa }) {
+export function GestionHilosDialog({
+  ref,
+  mapa,
+  onRecorrerHilo,
+}: {
+  ref?: Ref<ManejadorDeVentana>
+  mapa: AccesoAlMapa
+  /**
+   * «Recorrido del hilo»: el tablero abre «Recorrido del trace» desde ese hilo.
+   * Esta ventana se cierra antes, porque tapa el mapa donde se pinta.
+   */
+  onRecorrerHilo?: (idHilo: string, direccion: DireccionTrace, etiqueta: string) => void
+}) {
   const [abierta, setAbierta] = useState(false)
   const [cable, setCable] = useState<CableElegido | null>(null)
 
@@ -243,7 +256,20 @@ export function GestionHilosDialog({ ref, mapa }: { ref?: Ref<ManejadorDeVentana
     setAbierta(true)
   }
 
-  return <VentanaHilos open={abierta} onOpenChange={setAbierta} cable={cable} onElegirCable={elegirCable} />
+  function recorrerHilo(idHilo: string, direccion: DireccionTrace, etiqueta: string) {
+    setAbierta(false)
+    onRecorrerHilo?.(idHilo, direccion, etiqueta)
+  }
+
+  return (
+    <VentanaHilos
+      open={abierta}
+      onOpenChange={setAbierta}
+      cable={cable}
+      onElegirCable={elegirCable}
+      onRecorrer={onRecorrerHilo ? recorrerHilo : undefined}
+    />
+  )
 }
 
 function VentanaHilos({
@@ -251,6 +277,7 @@ function VentanaHilos({
   onOpenChange,
   cable,
   onElegirCable,
+  onRecorrer,
 }: {
   open: boolean
   onOpenChange: (abierto: boolean) => void
@@ -258,6 +285,8 @@ function VentanaHilos({
   cable: CableElegido | null
   /** El botón de selección: cierra la ventana para elegir el cable en el mapa. */
   onElegirCable: () => void
+  /** «Hacia la fuente» / «Hacia abajo» con el hilo seleccionado. */
+  onRecorrer?: (idHilo: string, direccion: DireccionTrace, etiqueta: string) => void
 }) {
   // El resultado se guarda con el UUID del cable al que pertenece: así no hace
   // falta un «cargando» aparte, cargando es no tener aún el de este cable.
@@ -282,6 +311,17 @@ function VentanaHilos({
       vigente = false
     }
   }, [open, idCable, intento])
+
+  // Al volver a abrir (por ejemplo después de ver el recorrido de un hilo), la
+  // grilla baja hasta el hilo que seguía seleccionado.
+  useEffect(() => {
+    if (!open || !seleccion) return
+    const espera = window.setTimeout(
+      () => document.getElementById(`hilo-${seleccion.hilo}`)?.scrollIntoView({ block: "nearest" }),
+      150,
+    )
+    return () => window.clearTimeout(espera)
+  }, [open, seleccion])
 
   const actual = idCable && resultado?.id === idCable ? resultado.r : null
   const hilos = useMemo(() => (actual?.estado === "ok" ? actual.hilos : []), [actual])
@@ -376,6 +416,25 @@ function VentanaHilos({
   function reintentar() {
     setResultado(null)
     setIntento((n) => n + 1)
+  }
+
+  /**
+   * «Recorrido del hilo»: el recorrido sale de la caché del trace con el UUID
+   * del hilo seleccionado (el mismo que se ve en «ID»), hacia la fuente (la
+   * OLT) o hacia abajo (el usuario).
+   */
+  function recorrer(direccion: DireccionTrace) {
+    if (!cable) {
+      setMensaje({ texto: "Primero elige un cable con el botón de selección.", tono: "aviso" })
+    } else if (!hiloElegido) {
+      setMensaje({ texto: "Primero selecciona un hilo de la tabla.", tono: "aviso" })
+    } else if (!hiloElegido.uuid) {
+      setMensaje({ texto: `El hilo ${hiloElegido.numero ?? ""} no tiene ID en la base: no se puede recorrer.`, tono: "aviso" })
+    } else if (!onRecorrer) {
+      setMensaje({ texto: PENDIENTE(direccion === "UPSTREAM" ? "Hacia la fuente" : "Hacia abajo"), tono: "info" })
+    } else {
+      onRecorrer(hiloElegido.uuid, direccion, `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.codigo}`)
+    }
   }
 
   /** Los botones que todavía no tienen función en la base. */
@@ -890,10 +949,21 @@ function VentanaHilos({
                 </span>
               </header>
               <div className="flex flex-wrap items-center gap-2">
-                <Boton pendiente icono={ArrowLeft} onClick={() => pendiente("Recorrido hacia la fuente")} colorIcono="text-emerald-600">
+                <Boton
+                  icono={ArrowLeft}
+                  onClick={() => recorrer("UPSTREAM")}
+                  colorIcono="text-emerald-600"
+                  titulo="Recorrido desde el hilo seleccionado hacia la OLT"
+                >
                   Hacia la fuente
                 </Boton>
-                <Boton pendiente icono={ArrowRight} onClick={() => pendiente("Recorrido hacia abajo")} colorIcono="text-emerald-600" derecha>
+                <Boton
+                  icono={ArrowRight}
+                  onClick={() => recorrer("DOWNSTREAM")}
+                  colorIcono="text-emerald-600"
+                  derecha
+                  titulo="Recorrido desde el hilo seleccionado hacia el usuario"
+                >
                   Hacia abajo
                 </Boton>
                 <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-foreground">

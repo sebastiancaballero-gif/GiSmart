@@ -9,7 +9,7 @@ import { GestionHilosDialog } from "@/components/gestion-hilos-dialog"
 import { RedesNodoDialog } from "@/components/redes-nodo-dialog"
 import { ElementosAlimentadosDialog } from "@/components/elementos-alimentados-dialog"
 import { VentanasDePlanta, type ManejadorDeVentanasDePlanta, type VentanaDePlanta } from "@/components/planta"
-import { RecorridoTraceDialog } from "@/components/recorrido-trace-dialog"
+import { RecorridoTraceDialog, type ManejadorDelTrace } from "@/components/recorrido-trace-dialog"
 import type { ManejadorDeVentana } from "@/components/ventana-sig"
 import { AuthGuard } from "@/components/auth-guard"
 import type { MapTool } from "@/lib/map/herramientas"
@@ -85,7 +85,7 @@ export default function DashboardPage() {
   // Las de planta interna y externa (Puertos OLT, Inventario, OLT-ODF…) van
   // juntas: el ribbon dice cuál abrir.
   const plantaRef = useRef<ManejadorDeVentanasDePlanta>(null)
-  const traceRef = useRef<ManejadorDeVentana>(null)
+  const traceRef = useRef<ManejadorDelTrace>(null)
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
   // estaba oculta se muestra: si no, se enfocaría algo que no se ve. Lo mismo
@@ -353,7 +353,11 @@ export default function DashboardPage() {
               onIndiceChange={setIndice}
               apiRef={mapaApiRef}
             />
-            <GestionHilosDialog ref={hilosRef} mapa={accesoAlMapa} />
+            <GestionHilosDialog
+              ref={hilosRef}
+              mapa={accesoAlMapa}
+              onRecorrerHilo={(idHilo, direccion, etiqueta) => traceRef.current?.recorrer(idHilo, direccion, etiqueta)}
+            />
             <RedesNodoDialog ref={redesRef} mapa={accesoAlMapa} />
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
             <VentanasDePlanta ref={plantaRef} mapa={accesoAlMapa} />
