@@ -237,7 +237,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       cables: r.cables,
       geometrias,
       cubiertas,
-      ventana: ventanaRef.current?.getBoundingClientRect(),
+      // Se encuadra después, con la ventana ya en su tamaño: el mapa se mueve una vez.
+      encuadrar: false,
     })
     setVerPasos(false)
     setRuta(0)
@@ -256,9 +257,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       tabla: direccion === "UPSTREAM" ? r.tabla : null,
       errorTabla: direccion === "UPSTREAM" ? r.errorTabla : null,
     })
-    // Con la tabla la ventana crece: se vuelve a encuadrar cuando ya tiene su
-    // tamaño, para que no tape el recorrido.
-    reencuadrar()
+    // Con la tabla la ventana crece: se encuadra cuando ya tiene su tamaño,
+    // para que no tape el recorrido.
+    reencuadrar(60)
 
     const calculado = textoDeFecha(r.calculadoEn)
     const recorrido = `${totalPasos} ${totalPasos === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(todos[0].contenedor)} a ${nombreDe(todos[todos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`

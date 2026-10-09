@@ -139,14 +139,17 @@ export type MapaApi = {
    * `cubiertas` (UUID) por donde pasa, y encuadra el recorrido. Reemplaza el
    * anterior. `ventana` es el recuadro (en píxeles de pantalla) de la ventana
    * del trace: el recorrido se encuadra en el espacio libre más grande que deja
-   * alrededor, esté donde esté. Devuelve cuántos cables se pintaron, cuáles no
-   * están en el mapa y el largo total en metros.
+   * alrededor, esté donde esté. Con `encuadrar` en falso no mueve el mapa
+   * (quien pinta encuadra después, con `encuadrarRecorrido`, cuando su ventana
+   * ya tiene su tamaño: así el mapa se mueve una sola vez). Devuelve cuántos
+   * cables se pintaron, cuáles no están en el mapa y el largo total en metros.
    */
   pintarRecorrido: (recorrido: {
     cables: string[]
     geometrias: GeometriaDeTramo[]
     cubiertas?: string[]
     ventana?: Recuadro
+    encuadrar?: boolean
   }) => {
     pintados: number
     faltan: string[]
@@ -869,11 +872,13 @@ function MapaDeRed({
       geometrias,
       cubiertas = [],
       ventana,
+      encuadrar = true,
     }: {
       cables: string[]
       geometrias: GeometriaDeTramo[]
       cubiertas?: string[]
       ventana?: Recuadro
+      encuadrar?: boolean
     }) => {
       traceSource.clear()
       const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
@@ -911,7 +916,7 @@ function MapaDeRed({
       }
       setHayRecorrido(traceSource.getFeatures().length > 0)
 
-      encuadrarRecorrido(ventana)
+      if (encuadrar) encuadrarRecorrido(ventana)
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
     [traceSource, fiberSource, nodeSource, encuadrarRecorrido],
