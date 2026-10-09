@@ -1,7 +1,7 @@
 "use client"
 
 import { useImperativeHandle, useRef, useState, type Ref } from "react"
-import { Activity, ArrowDown, ArrowUp, ChevronDown, Loader2, MapPin, Ruler } from "lucide-react"
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, Cable, ChevronDown, Loader2, MapPin, Ruler } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
@@ -19,13 +19,24 @@ import { obtenerTrace, type DireccionTrace, type PasoDeTrace } from "@/lib/map/t
  * cerrarla el recorrido sigue pintado; se quita con «Quitar del mapa».
  *
  * «Gestión de hilos» la abre con `recorrer` para el hilo seleccionado en su
- * tabla (sus botones «Hacia la fuente» y «Hacia abajo»).
+ * tabla (sus botones «Hacia la fuente» y «Hacia abajo»). La ventana muestra
+ * ese hilo y, al cerrarla, se vuelve a Gestión de hilos.
  */
+
+/** De dónde viene el origen cuando lo elige otra ventana. */
+export type OrigenElegido = {
+  /** Qué es: «Hilo 13 del cable 2100555». */
+  etiqueta: string
+  /** El color del hilo, para su muestra. */
+  color?: string | null
+  /** Al cerrar la ventana se vuelve ahí (p. ej. a Gestión de hilos). */
+  volver?: () => void
+}
 
 /** Lo que el tablero puede hacer con la ventana: abrirla, o abrirla ya recorriendo desde un origen. */
 export type ManejadorDelTrace = ManejadorDeVentana & {
-  /** Abre la ventana con ese origen y recorre en ese sentido. `etiqueta` dice qué es el origen («Hilo 13 del cable …»). */
-  recorrer: (id: string, direccion: DireccionTrace, etiqueta?: string) => void
+  /** Abre la ventana con ese origen y recorre en ese sentido. */
+  recorrer: (id: string, direccion: DireccionTrace, desde?: OrigenElegido) => void
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -72,8 +83,8 @@ function textoDeLargo(m: number) {
 export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrace>; mapa: AccesoAlMapa }) {
   const [abierta, setAbierta] = useState(false)
   const [origen, setOrigen] = useState("")
-  /** Qué es el origen, cuando llega de otra ventana (p. ej. «Hilo 13 del cable 2100555»). */
-  const [etiqueta, setEtiqueta] = useState<string | null>(null)
+  /** El origen, cuando llega elegido desde otra ventana (Gestión de hilos). */
+  const [desde, setDesde] = useState<OrigenElegido | null>(null)
   const [cargando, setCargando] = useState<DireccionTrace | null>(null)
   const [resumen, setResumen] = useState<Resumen | null>(null)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
@@ -182,17 +193,34 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     setMensaje(null)
   }
 
+  /**
+   * Cierra la ventana (la equis, Esc o «Volver a los hilos»). Si el origen se
+   * eligió en otra ventana, se vuelve a ella; el recorrido sigue pintado.
+   */
+  function cerrar() {
+    // Lo que estuviera en camino ya no se pinta: la ventana se cerró.
+    consultaRef.current++
+    setCargando(null)
+    setMensaje(null)
+    setAbierta(false)
+    const volver = desde?.volver
+    setDesde(null)
+    // Después de cerrar esta, para que la otra tome el foco.
+    if (volver) window.setTimeout(volver, 0)
+  }
+
   // Sin lista de dependencias: `recorrer` usa la función de este render.
   useImperativeHandle(ref, () => ({
     abrir: () => {
       // Una elección en el mapa que siguiera esperando ya no vale.
       mapa.api.current?.abandonarEleccion()
+      setDesde(null)
       setAbierta(true)
     },
-    recorrer: (id, direccion, etiquetaDeOrigen) => {
+    recorrer: (id, direccion, elegido) => {
       mapa.api.current?.abandonarEleccion()
       setOrigen(id)
-      setEtiqueta(etiquetaDeOrigen ?? null)
+      setDesde(elegido ?? null)
       setAbierta(true)
       // Un momento después de abrir: el encuadre necesita la ventana ya
       // dibujada para dejarle libre su espacio.
@@ -211,15 +239,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
   return (
     <Dialog
       open={abierta}
-      onOpenChange={(abierto) => {
-        setAbierta(abierto)
-        if (!abierto) {
-          // Lo que estuviera en camino ya no se pinta: la ventana se cerró.
-          consultaRef.current++
-          setCargando(null)
-          setMensaje(null)
-        }
-      }}
+      onOpenChange={(abierto) => (abierto ? setAbierta(true) : cerrar())}
       modal={false}
       disablePointerDismissal
     >
@@ -242,6 +262,32 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
           }
         />
         <div className="flex flex-col gap-3 bg-muted/20 p-4">
+          {/* El hilo que se eligió en Gestión de hilos, a la vista, y cómo volver. */}
+          {desde && (
+            <div data-origen-elegido className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2">
+              {desde.color ? (
+                <span
+                  className="size-3 shrink-0 rounded-full ring-1 ring-foreground/20"
+                  style={{ backgroundColor: desde.color }}
+                  aria-hidden="true"
+                />
+              ) : (
+                <Cable className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{desde.etiqueta}</span>
+              {desde.volver && (
+                <button
+                  type="button"
+                  onClick={cerrar}
+                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-primary outline-none transition hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <ArrowLeft className="size-3" aria-hidden="true" />
+                  Volver a los hilos
+                </button>
+              )}
+            </div>
+          )}
+
           <label className="flex flex-col gap-1">
             <Rotulo>Origen · UUID de un puerto o de un hilo</Rotulo>
             <input
@@ -249,7 +295,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               value={origen}
               onChange={(e) => {
                 setOrigen(e.target.value)
-                setEtiqueta(null)
+                // Otro origen ya no es el hilo elegido; al cerrar se sigue
+                // volviendo a Gestión de hilos.
+                setDesde((d) => (d?.volver ? { etiqueta: "Origen escrito a mano", volver: d.volver } : null))
               }}
               placeholder="01a0f9bf-be88-7b80-9c77-2219b25fb611"
               spellCheck={false}
@@ -257,7 +305,6 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               aria-invalid={mensaje?.tono === "aviso" && !UUID.test(limpiarUuid(origen)) ? true : undefined}
               className="h-8 w-full rounded-lg border border-input bg-card px-2.5 font-mono text-[11.5px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-amber-500"
             />
-            {etiqueta && <span className="text-[11px] font-medium text-muted-foreground">{etiqueta}</span>}
           </label>
 
           <div className="grid grid-cols-2 gap-2">

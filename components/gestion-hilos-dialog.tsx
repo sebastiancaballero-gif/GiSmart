@@ -208,6 +208,9 @@ const clave = (g: string, c: string) => `${g}-${c}`
 
 type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
 
+/** Cómo se presenta el hilo en «Recorrido del trace»: su nombre y su color. */
+export type HiloParaRecorrer = { etiqueta: string; color: string | null }
+
 /**
  * La ventana con su estado: abierta o no y el cable elegido. Si hay un cable
  * seleccionado en el mapa se abre con ese; si no, se elige con el botón de
@@ -224,7 +227,7 @@ export function GestionHilosDialog({
    * «Recorrido del hilo»: el tablero abre «Recorrido del trace» desde ese hilo.
    * Esta ventana se cierra antes, porque tapa el mapa donde se pinta.
    */
-  onRecorrerHilo?: (idHilo: string, direccion: DireccionTrace, etiqueta: string) => void
+  onRecorrerHilo?: (idHilo: string, direccion: DireccionTrace, hilo: HiloParaRecorrer) => void
 }) {
   const [abierta, setAbierta] = useState(false)
   const [cable, setCable] = useState<CableElegido | null>(null)
@@ -256,9 +259,9 @@ export function GestionHilosDialog({
     setAbierta(true)
   }
 
-  function recorrerHilo(idHilo: string, direccion: DireccionTrace, etiqueta: string) {
+  function recorrerHilo(idHilo: string, direccion: DireccionTrace, hilo: HiloParaRecorrer) {
     setAbierta(false)
-    onRecorrerHilo?.(idHilo, direccion, etiqueta)
+    onRecorrerHilo?.(idHilo, direccion, hilo)
   }
 
   return (
@@ -286,7 +289,7 @@ function VentanaHilos({
   /** El botón de selección: cierra la ventana para elegir el cable en el mapa. */
   onElegirCable: () => void
   /** «Hacia la fuente» / «Hacia abajo» con el hilo seleccionado. */
-  onRecorrer?: (idHilo: string, direccion: DireccionTrace, etiqueta: string) => void
+  onRecorrer?: (idHilo: string, direccion: DireccionTrace, hilo: HiloParaRecorrer) => void
 }) {
   // El resultado se guarda con el UUID del cable al que pertenece: así no hace
   // falta un «cargando» aparte, cargando es no tener aún el de este cable.
@@ -433,7 +436,10 @@ function VentanaHilos({
     } else if (!onRecorrer) {
       setMensaje({ texto: PENDIENTE(direccion === "UPSTREAM" ? "Hacia la fuente" : "Hacia abajo"), tono: "info" })
     } else {
-      onRecorrer(hiloElegido.uuid, direccion, `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.codigo}`)
+      onRecorrer(hiloElegido.uuid, direccion, {
+        etiqueta: `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.codigo}`,
+        color: colorElegido,
+      })
     }
   }
 

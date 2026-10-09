@@ -356,7 +356,11 @@ export default function DashboardPage() {
             <GestionHilosDialog
               ref={hilosRef}
               mapa={accesoAlMapa}
-              onRecorrerHilo={(idHilo, direccion, etiqueta) => traceRef.current?.recorrer(idHilo, direccion, etiqueta)}
+              // Al cerrar el recorrido se vuelve a Gestión de hilos, con el
+              // mismo cable y el mismo hilo.
+              onRecorrerHilo={(idHilo, direccion, hilo) =>
+                traceRef.current?.recorrer(idHilo, direccion, { ...hilo, volver: () => hilosRef.current?.abrir() })
+              }
             />
             <RedesNodoDialog ref={redesRef} mapa={accesoAlMapa} />
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
