@@ -1,7 +1,20 @@
 "use client"
 
-import { useImperativeHandle, useRef, useState, type Ref } from "react"
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, Cable, ChevronDown, Loader2, MapPin, Ruler } from "lucide-react"
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react"
+import {
+  Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Cable,
+  ChevronDown,
+  Loader2,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  Move,
+  Ruler,
+} from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
@@ -30,6 +43,11 @@ import { hojaDelTraceHaciaArriba, origenDeLaRuta } from "@/lib/map/trace-excel"
  * «Gestión de hilos» la abre con `recorrer` para el hilo seleccionado en su
  * tabla (sus botones «Hacia la fuente» y «Hacia abajo»). La ventana muestra
  * ese hilo y, al cerrarla, se vuelve a Gestión de hilos.
+ *
+ * Lo importante es ver el trace: la ventana se mueve arrastrando la cabecera
+ * (o con las flechas desde su botón de mover; doble clic o Inicio la devuelven
+ * a su lugar), se minimiza a la cabecera, y el mapa encuadra el recorrido en
+ * el espacio libre más grande que ella deja, esté donde esté.
  */
 
 /** De dónde viene el origen cuando lo elige otra ventana. */
@@ -102,6 +120,15 @@ function textoDeFecha(iso: string | null) {
     : fecha.toLocaleString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
 }
 
+/** Cuánto puede moverse la ventana (de `caja`) sin salirse de la pantalla: 8 px de borde. */
+function dentroDeLaPantalla(caja: DOMRect, dx: number, dy: number) {
+  const borde = 8
+  return {
+    dx: Math.min(Math.max(dx, borde - caja.left), window.innerWidth - borde - caja.right),
+    dy: Math.min(Math.max(dy, borde - caja.top), window.innerHeight - borde - caja.bottom),
+  }
+}
+
 function textoDeLargo(m: number) {
   return m >= 1000 ? `${(m / 1000).toLocaleString("es-CO", { maximumFractionDigits: 2 })} km` : `${Math.round(m)} m`
 }
@@ -121,6 +148,18 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
   const [ubicada, setUbicada] = useState<number | null>(null)
   /** La tabla se pliega para ver más mapa. */
   const [verTabla, setVerTabla] = useState(true)
+  /** Minimizada solo queda la cabecera: el recorrido se ve entero. */
+  const [minimizada, setMinimizada] = useState(false)
+  /**
+   * Cuánto está corrida la ventana desde su lugar (abajo y al centro). Es lo
+   * que pidió quien la movió (`deseadoRef`) ajustado a la pantalla de ahora: si
+   * la pantalla se achica la ventana se corre, y si vuelve a crecer, regresa.
+   */
+  const [desplazamiento, setDesplazamiento] = useState({ x: 0, y: 0 })
+  const deseadoRef = useRef({ x: 0, y: 0 })
+  const aplicadoRef = useRef({ x: 0, y: 0 })
+  const arrastreRef = useRef<{ x0: number; y0: number; base: { x: number; y: number }; caja: DOMRect } | null>(null)
+  const reencuadreRef = useRef<number | undefined>(undefined)
   // Si se pide otro recorrido (o se cierra) antes de que llegue el anterior,
   // la respuesta vieja se descarta.
   const consultaRef = useRef(0)
@@ -198,7 +237,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       cables: r.cables,
       geometrias,
       cubiertas,
-      despejarDesde: ventanaRef.current?.getBoundingClientRect().top,
+      ventana: ventanaRef.current?.getBoundingClientRect(),
     })
     setVerPasos(false)
     setRuta(0)
@@ -219,7 +258,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     })
     // Con la tabla la ventana crece: se vuelve a encuadrar cuando ya tiene su
     // tamaño, para que no tape el recorrido.
-    window.setTimeout(() => api.encuadrarRecorrido(ventanaRef.current?.getBoundingClientRect().top), 120)
+    reencuadrar()
 
     const calculado = textoDeFecha(r.calculadoEn)
     const recorrido = `${totalPasos} ${totalPasos === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(todos[0].contenedor)} a ${nombreDe(todos[todos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`
@@ -288,11 +327,127 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     })
   }
 
+  /**
+   * Vuelve a encuadrar el recorrido en el espacio que deja la ventana, cuando
+   * ya cambió de tamaño o de lugar (si se piden varios seguidos, vale el último).
+   */
+  function reencuadrar(espera = 120) {
+    window.clearTimeout(reencuadreRef.current)
+    reencuadreRef.current = window.setTimeout(
+      () => mapa.api.current?.encuadrarRecorrido(ventanaRef.current?.getBoundingClientRect()),
+      espera,
+    )
+  }
+
   /** Pliega o abre la tabla; la ventana cambia de alto, así que se vuelve a encuadrar. */
   function alternarTabla() {
     setVerTabla((v) => !v)
-    window.setTimeout(() => mapa.api.current?.encuadrarRecorrido(ventanaRef.current?.getBoundingClientRect().top), 80)
+    reencuadrar(80)
   }
+
+  function alternarMinimizada() {
+    setMinimizada((m) => !m)
+    reencuadrar(80)
+  }
+
+  /** Corre la ventana a ese lugar, que pasa a ser donde se quiere. */
+  function moverA(lugar: { x: number; y: number }) {
+    deseadoRef.current = lugar
+    aplicadoRef.current = lugar
+    setDesplazamiento(lugar)
+  }
+
+  /** Doble clic en la cabecera o Inicio: la ventana vuelve abajo y al centro. */
+  function volverASuLugar() {
+    moverA({ x: 0, y: 0 })
+    reencuadrar(80)
+  }
+
+  // Arrastre desde la cabecera, con el mouse o el dedo. Mientras se arrastra se
+  // mueve el estilo directo (sin volver a dibujar la ventana con su tabla en
+  // cada movimiento); al soltar queda en el estado y se reencuadra el trace.
+  function empezarArrastre(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return
+    const objetivo = e.target as HTMLElement
+    if (objetivo.closest("button") && !objetivo.closest("[data-asa]")) return
+    const caja = ventanaRef.current?.getBoundingClientRect()
+    if (!caja) return
+    arrastreRef.current = { x0: e.clientX, y0: e.clientY, base: aplicadoRef.current, caja }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  }
+
+  function arrastrar(e: React.PointerEvent<HTMLDivElement>) {
+    const a = arrastreRef.current
+    const ventana = ventanaRef.current
+    if (!a || !ventana) return
+    const { dx, dy } = dentroDeLaPantalla(a.caja, e.clientX - a.x0, e.clientY - a.y0)
+    ventana.style.transform = `translate(${a.base.x + dx}px, ${a.base.y + dy}px)`
+  }
+
+  function soltar(e: React.PointerEvent<HTMLDivElement>) {
+    const a = arrastreRef.current
+    if (!a) return
+    arrastreRef.current = null
+    const { dx, dy } = dentroDeLaPantalla(a.caja, e.clientX - a.x0, e.clientY - a.y0)
+    if (dx === 0 && dy === 0) return
+    moverA({ x: a.base.x + dx, y: a.base.y + dy })
+    reencuadrar()
+  }
+
+  /** Con el foco en el botón de mover: flechas de 24 px (con Mayús, 96), Inicio la devuelve. */
+  function moverConTeclado(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key === "Home") {
+      e.preventDefault()
+      volverASuLugar()
+      return
+    }
+    const paso = e.shiftKey ? 96 : 24
+    const flechas: Record<string, [number, number]> = {
+      ArrowLeft: [-paso, 0],
+      ArrowRight: [paso, 0],
+      ArrowUp: [0, -paso],
+      ArrowDown: [0, paso],
+    }
+    const caja = ventanaRef.current?.getBoundingClientRect()
+    if (!flechas[e.key] || !caja) return
+    e.preventDefault()
+    const { dx, dy } = dentroDeLaPantalla(caja, ...flechas[e.key])
+    moverA({ x: aplicadoRef.current.x + dx, y: aplicadoRef.current.y + dy })
+    reencuadrar(300)
+  }
+
+  // Si la ventana cambia de tamaño (llega la tabla, se minimiza o se
+  // restaura) o la pantalla cambia, queda donde se quiso, corrida lo justo
+  // para no salirse.
+  useEffect(() => {
+    if (!abierta) return
+    const encajar = () => {
+      const caja = ventanaRef.current?.getBoundingClientRect()
+      if (!caja) return
+      const aplicado = aplicadoRef.current
+      const deseado = deseadoRef.current
+      // Dónde quedaría con lo que se pidió.
+      const pedida = new DOMRect(caja.x - aplicado.x + deseado.x, caja.y - aplicado.y + deseado.y, caja.width, caja.height)
+      const { dx, dy } = dentroDeLaPantalla(pedida, 0, 0)
+      const lugar = { x: deseado.x + dx, y: deseado.y + dy }
+      if (lugar.x !== aplicado.x || lugar.y !== aplicado.y) {
+        aplicadoRef.current = lugar
+        setDesplazamiento(lugar)
+      }
+    }
+    const observador = new ResizeObserver(encajar)
+    // La ventana se monta al abrir: un fotograma después ya está.
+    const cuadro = requestAnimationFrame(() => {
+      if (ventanaRef.current) observador.observe(ventanaRef.current)
+    })
+    window.addEventListener("resize", encajar)
+    return () => {
+      cancelAnimationFrame(cuadro)
+      observador.disconnect()
+      window.removeEventListener("resize", encajar)
+    }
+  }, [abierta])
 
   function quitarDelMapa() {
     consultaRef.current++
@@ -325,12 +480,14 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       // Una elección en el mapa que siguiera esperando ya no vale.
       mapa.api.current?.abandonarEleccion()
       setDesde(null)
+      setMinimizada(false)
       setAbierta(true)
     },
     recorrer: (id, direccion, elegido) => {
       mapa.api.current?.abandonarEleccion()
       setOrigen(id)
       setDesde(elegido ?? null)
+      setMinimizada(false)
       setAbierta(true)
       // Un momento después de abrir: el encuadre necesita la ventana ya
       // dibujada para dejarle libre su espacio.
@@ -359,25 +516,68 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       {/* Abajo y al centro, sobre el mapa: ahí no tapa la barra de
           herramientas, el panel del elemento ni la leyenda. En pantallas
           anchas baja hasta el borde (la barra de estado y la leyenda quedan a
-          los lados) y le deja más mapa al recorrido. */}
+          los lados) y le deja más mapa al recorrido. Se puede mover a otro
+          lado: el desplazamiento va en `transform`, aparte del `translate`
+          con que se centra y entra. */}
       <DialogContent
         ref={ventanaRef}
         sinFondo
+        style={desplazamiento.x || desplazamiento.y ? { transform: `translate(${desplazamiento.x}px, ${desplazamiento.y}px)` } : undefined}
         className={`left-1/2 top-auto bottom-28 flex xl:bottom-5 ${
-          ancha ? "w-[min(60rem,calc(100vw-1.5rem))]" : "w-[min(23rem,calc(100vw-1.5rem))]"
+          ancha && !minimizada ? "w-[min(60rem,calc(100vw-1.5rem))]" : "w-[min(23rem,calc(100vw-1.5rem))]"
         } max-h-[calc(100dvh-8rem)] max-w-none -translate-x-1/2 translate-y-0 flex-col overflow-hidden p-0 shadow-2xl data-[starting-style]:translate-y-2`}
       >
-        <EncabezadoVentana
-          icono={Activity}
-          titulo="Recorrido del trace"
-          descripcion={
-            resumen
-              ? `${resumen.pasos} ${resumen.pasos === 1 ? "paso" : "pasos"} ${SENTIDO[resumen.direccion]}, pintado en el mapa.`
-              : "Desde un puerto o un hilo; se pinta en el mapa."
-          }
-        />
-        {/* Con la tabla puede no caber en pantallas bajas: se desplaza por dentro. */}
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto bg-muted/20 p-4">
+        {/* La cabecera mueve la ventana: se arrastra con el mouse o el dedo a
+            donde no tape el recorrido; doble clic la devuelve a su lugar. */}
+        <div
+          onPointerDown={empezarArrastre}
+          onPointerMove={arrastrar}
+          onPointerUp={soltar}
+          onPointerCancel={soltar}
+          onDoubleClick={(e) => {
+            if (!(e.target as HTMLElement).closest("button")) volverASuLugar()
+          }}
+          className="cursor-grab touch-none select-none active:cursor-grabbing"
+        >
+          <EncabezadoVentana
+            icono={Activity}
+            titulo="Recorrido del trace"
+            descripcion={
+              resumen
+                ? `${resumen.pasos} ${resumen.pasos === 1 ? "paso" : "pasos"} ${SENTIDO[resumen.direccion]}${
+                    minimizada && largoVisible !== null ? ` · ${textoDeLargo(largoVisible)}` : ", pintado en el mapa."
+                  }`
+                : "Desde un puerto o un hilo; se pinta en el mapa."
+            }
+            acciones={
+              <>
+                <button
+                  type="button"
+                  data-asa
+                  onKeyDown={moverConTeclado}
+                  aria-label="Mover la ventana: arrástrala o usa las flechas; Inicio la devuelve a su lugar"
+                  title="Arrastra para mover la ventana · doble clic en la cabecera la devuelve a su lugar"
+                  className="flex size-7 cursor-grab items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
+                >
+                  <Move className="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={alternarMinimizada}
+                  aria-expanded={!minimizada}
+                  aria-label={minimizada ? "Restaurar la ventana" : "Minimizar la ventana para ver el recorrido"}
+                  title={minimizada ? "Restaurar la ventana" : "Minimizar para ver el recorrido"}
+                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  {minimizada ? <Maximize2 className="size-4" aria-hidden="true" /> : <Minimize2 className="size-4" aria-hidden="true" />}
+                </button>
+              </>
+            }
+          />
+        </div>
+        {/* Con la tabla puede no caber en pantallas bajas: se desplaza por dentro.
+            Minimizada se esconde sin perder lo que tenía. */}
+        <div className={`${minimizada ? "hidden" : "flex"} min-h-0 flex-col gap-3 overflow-y-auto bg-muted/20 p-4`}>
           {/* El hilo que se eligió en Gestión de hilos, a la vista, y cómo volver. */}
           {desde && (
             <div data-origen-elegido className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2">
@@ -570,11 +770,13 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
             </div>
           )}
         </div>
-        <BarraDeEstado
-          mensaje={barra}
-          cargando={cargando !== null && !mensaje}
-          accion={resumen ? { texto: "Quitar del mapa", onClick: quitarDelMapa } : undefined}
-        />
+        {!minimizada && (
+          <BarraDeEstado
+            mensaje={barra}
+            cargando={cargando !== null && !mensaje}
+            accion={resumen ? { texto: "Quitar del mapa", onClick: quitarDelMapa } : undefined}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -49,6 +49,7 @@ import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
 import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, destellar, type ColorRGB } from "@/lib/map/destello"
+import { espacioLibre, margenParaZona, type Recuadro } from "@/lib/map/espacio-libre"
 import { fuenteDelMapaBase } from "@/lib/map/mapa-base"
 import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
 import type { ElementoBuscable } from "@/lib/map/busqueda"
@@ -136,16 +137,16 @@ export type MapaApi = {
    * Pinta el recorrido de un trace: resalta los cables del mapa con esos UUID
    * y las geometrías que lleguen (GeoJSON en EPSG:4326), marca con un punto las
    * `cubiertas` (UUID) por donde pasa, y encuadra el recorrido. Reemplaza el
-   * anterior. `despejarDesde` es el borde de arriba (en píxeles de pantalla) de
-   * una ventana que tapa la parte baja del mapa: el encuadre deja ese espacio
-   * libre. Devuelve cuántos cables se pintaron, cuáles no están en el mapa y el
-   * largo total en metros.
+   * anterior. `ventana` es el recuadro (en píxeles de pantalla) de la ventana
+   * del trace: el recorrido se encuadra en el espacio libre más grande que deja
+   * alrededor, esté donde esté. Devuelve cuántos cables se pintaron, cuáles no
+   * están en el mapa y el largo total en metros.
    */
   pintarRecorrido: (recorrido: {
     cables: string[]
     geometrias: GeometriaDeTramo[]
     cubiertas?: string[]
-    despejarDesde?: number
+    ventana?: Recuadro
   }) => {
     pintados: number
     faltan: string[]
@@ -157,19 +158,19 @@ export type MapaApi = {
    * Lleva el mapa a la cubierta con ese UUID y la destella, sin seleccionarla.
    * `ventana` es el recuadro (en píxeles de pantalla) de una ventana que tapa
    * parte del mapa: la cubierta queda en el centro del espacio libre más grande
-   * que deja (arriba o a un costado), no debajo de ella. `false` si no está.
+   * que deja (arriba, abajo o a un costado), no debajo de ella. `false` si no está.
    */
-  mostrarCubierta: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
+  mostrarCubierta: (id: string, ventana?: Recuadro) => boolean
   /**
    * Lo mismo con el cable de ese UUID: queda entero en el espacio libre (si no
    * cabe, el mapa se aleja lo justo) y se destella su trazo. `false` si no está.
    */
-  mostrarCable: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
+  mostrarCable: (id: string, ventana?: Recuadro) => boolean
   /**
-   * Vuelve a encuadrar el recorrido pintado (por ejemplo, después de que la
-   * ventana del trace creció y lo tapa). `despejarDesde`, como en `pintarRecorrido`.
+   * Vuelve a encuadrar el recorrido pintado: después de que la ventana del
+   * trace cambió de tamaño o se movió. `ventana`, como en `pintarRecorrido`.
    */
-  encuadrarRecorrido: (despejarDesde?: number) => void
+  encuadrarRecorrido: (ventana?: Recuadro) => void
 }
 
 /** El largo de un cable en metros: el medido en campo si la base lo tiene; si no, el de su línea. */
@@ -845,18 +846,19 @@ function MapaDeRed({
 
   /**
    * Encuadre del recorrido como lo definió el ingeniero: 50 px de margen y
-   * 400 ms. Abajo el margen crece hasta dejar libre lo que tapa la ventana del
-   * trace, sin comerse más de lo que deja al recorrido unos 120 px de alto.
+   * 400 ms. Con la ventana del trace encima, el recorrido va al espacio libre
+   * más grande que ella deja (a 24 px de su borde); si ninguno alcanza para
+   * verlo (unos 180 × 140 px), al mapa entero, y la ventana se puede mover o
+   * minimizar.
    */
   const encuadrarRecorrido = useCallback(
-    (despejarDesde?: number) => {
+    (ventana?: Recuadro) => {
       const view = mapRef.current?.getView()
       const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
       const extent = traceSource.getExtent()
       if (!view || !caja || !extent || traceSource.getFeatures().length === 0 || !extent.every((v) => Number.isFinite(v))) return
-      const tapado = despejarDesde === undefined ? 0 : caja.bottom - despejarDesde + 24
-      const abajo = Math.round(Math.max(50, Math.min(tapado, caja.height - 50 - 120)))
-      view.fit(extent, { padding: [50, 50, abajo, 50], maxZoom: 18, duration: 400 })
+      const libre = espacioLibre(caja, ventana, { ancho: 180, alto: 140 })
+      view.fit(extent, { padding: margenParaZona(caja, libre), maxZoom: 18, duration: 400 })
     },
     [traceSource],
   )
@@ -866,12 +868,12 @@ function MapaDeRed({
       cables,
       geometrias,
       cubiertas = [],
-      despejarDesde,
+      ventana,
     }: {
       cables: string[]
       geometrias: GeometriaDeTramo[]
       cubiertas?: string[]
-      despejarDesde?: number
+      ventana?: Recuadro
     }) => {
       traceSource.clear()
       const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
@@ -909,7 +911,7 @@ function MapaDeRed({
       }
       setHayRecorrido(traceSource.getFeatures().length > 0)
 
-      encuadrarRecorrido(despejarDesde)
+      encuadrarRecorrido(ventana)
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
     [traceSource, fiberSource, nodeSource, encuadrarRecorrido],
@@ -922,30 +924,20 @@ function MapaDeRed({
 
   /**
    * Lleva el mapa a una geometría y la destella, sin seleccionar nada. Queda en
-   * el centro del espacio libre más grande que deja `ventana` (arriba o a un
-   * costado), no debajo de ella; una línea que no cabe en ese espacio se ve
-   * entera alejando el mapa lo justo.
+   * el centro del espacio libre más grande que deja `ventana` (arriba, abajo o
+   * a un costado), no debajo de ella; una línea que no cabe en ese espacio se
+   * ve entera alejando el mapa lo justo.
    */
   const llevarAlEspacioLibre = useCallback(
-    (geometria: Geometry, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+    (geometria: Geometry, ventana?: Recuadro) => {
       const mapa = mapRef.current
       const caja = mapa?.getTargetElement()?.getBoundingClientRect()
       const view = mapa?.getView()
       const actual = view?.getResolution()
       if (!mapa || !caja || !view || !actual) return false
 
-      // El espacio donde debe quedar, en píxeles del mapa: todo el mapa, o el
-      // más grande que deja libre la ventana.
-      let libre = { x0: 0, y0: 0, x1: caja.width, y1: caja.height }
-      if (ventana) {
-        const libres = [
-          { x0: 0, y0: 0, x1: caja.width, y1: ventana.top - caja.top },
-          { x0: 0, y0: 0, x1: ventana.left - caja.left, y1: caja.height },
-          { x0: ventana.right - caja.left, y0: 0, x1: caja.width, y1: caja.height },
-        ].filter((r) => r.x1 - r.x0 > 60 && r.y1 - r.y0 > 60)
-        const mayor = libres.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0))[0]
-        if (mayor) libre = mayor
-      }
+      // El espacio donde debe quedar, en píxeles del mapa.
+      const libre = espacioLibre(caja, ventana, { ancho: 60, alto: 60 })
       const extent = geometria.getExtent()
       // Con un margen del 20 %; un punto no cambia la resolución.
       const resolucion = Math.max(
@@ -964,7 +956,7 @@ function MapaDeRed({
   )
 
   const mostrarCubierta = useCallback(
-    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+    (id: string, ventana?: Recuadro) => {
       const geometria = nodeSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
       return geometria ? llevarAlEspacioLibre(geometria, ventana) : false
     },
@@ -972,7 +964,7 @@ function MapaDeRed({
   )
 
   const mostrarCable = useCallback(
-    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+    (id: string, ventana?: Recuadro) => {
       const geometria = fiberSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
       return geometria ? llevarAlEspacioLibre(geometria, ventana) : false
     },

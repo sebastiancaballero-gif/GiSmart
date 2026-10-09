@@ -24,6 +24,7 @@ const {
 } = await import("../lib/map/trace.ts")
 const { crearXlsx } = await import("../lib/excel.ts")
 const { hojaDelTraceHaciaArriba, origenDeLaRuta } = await import("../lib/map/trace-excel.ts")
+const { espacioLibre, margenParaZona } = await import("../lib/map/espacio-libre.ts")
 const { emitirToken } = await import("../lib/auth-server.ts")
 const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
 
@@ -451,6 +452,29 @@ console.log("\n6) EXCEL (.xlsx)\n")
       xlsx.includes('<autoFilter ref="A5:G8"/>') && xlsx.includes('<tableColumn id="4" name="Código ubica" totalsRowLabel="Suma"/>') &&
       xlsx.includes('<tableColumn id="5" name="Longitud (m)" totalsRowFunction="sum"/>'),
   )
+}
+
+console.log("\n7) DÓNDE SE VE EL TRACE CON LA VENTANA ENCIMA\n")
+{
+  // El mapa de un portátil de 1366 × 768: a la derecha del panel y debajo del ribbon.
+  const mapa = { left: 288, top: 190, width: 1078, height: 578 }
+  const MIN = { ancho: 180, alto: 140 }
+  const texto = (z) => [z.x0, z.y0, z.x1, z.y1].join(",")
+  comprobar("sin ventana: el mapa entero, 50 px de margen", texto(espacioLibre(mapa, undefined, MIN)) === "0,0,1078,578" &&
+    margenParaZona(mapa, espacioLibre(mapa, undefined, MIN)).join() === "50,50,50,50")
+  const abajoAlCentro = { left: 203, top: 180, right: 1163, bottom: 748 }
+  comprobar(
+    "ventana ancha abajo y al centro: la franja libre de la derecha",
+    texto(espacioLibre(mapa, abajoAlCentro, MIN)) === "875,0,1078,578",
+    texto(espacioLibre(mapa, abajoAlCentro, MIN)),
+  )
+  const arribaDerecha = { left: 398, top: 8, right: 1358, bottom: 583 }
+  const debajo = espacioLibre(mapa, arribaDerecha, MIN)
+  comprobar("ventana movida arriba: el espacio de abajo", texto(debajo) === "0,393,1078,578", texto(debajo))
+  comprobar("margen: 24 px bajo la ventana y 50 contra los bordes del mapa", margenParaZona(mapa, debajo).join() === "417,50,50,50", margenParaZona(mapa, debajo).join())
+  comprobar("ventana que no toca el mapa (sobre el ribbon): el mapa entero", texto(espacioLibre(mapa, { left: 300, top: 8, right: 700, bottom: 80 }, MIN)) === "0,0,1078,578")
+  comprobar("ventana que tapa casi todo: el mapa entero", texto(espacioLibre(mapa, { left: 300, top: 200, right: 1360, bottom: 760 }, MIN)) === "0,0,1078,578")
+  comprobar("para una cubierta basta un espacio chico (60 px)", texto(espacioLibre(mapa, { left: 300, top: 200, right: 1290, bottom: 760 }, { ancho: 60, alto: 60 })) === "1002,0,1078,578")
 }
 
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)

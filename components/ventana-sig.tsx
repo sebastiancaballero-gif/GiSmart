@@ -26,7 +26,18 @@ export type ManejadorDeVentana = { abrir: () => void }
 export const PENDIENTE = (nombre: string) => `«${nombre}» todavía no está disponible: falta la función en la base.`
 
 /** Franja de color, icono, título y una línea que resume lo que se está viendo. */
-export function EncabezadoVentana({ icono: Icono, titulo, descripcion }: { icono: LucideIcon; titulo: string; descripcion: string }) {
+export function EncabezadoVentana({
+  icono: Icono,
+  titulo,
+  descripcion,
+  acciones,
+}: {
+  icono: LucideIcon
+  titulo: string
+  descripcion: string
+  /** Botones a la derecha del título, antes de la equis (mover, minimizar…). */
+  acciones?: React.ReactNode
+}) {
   return (
     <>
       <div aria-hidden="true" className="h-1 shrink-0 bg-gradient-to-r from-[#2a9bc4] via-[#6fc5df] to-[#2f6d9e]" />
@@ -38,6 +49,7 @@ export function EncabezadoVentana({ icono: Icono, titulo, descripcion }: { icono
           <DialogTitle>{titulo}</DialogTitle>
           <DialogDescription className="mt-0.5 truncate text-xs">{descripcion}</DialogDescription>
         </div>
+        {acciones && <div className="ml-auto flex shrink-0 items-center gap-0.5">{acciones}</div>}
       </div>
     </>
   )
