@@ -21,7 +21,7 @@ import DoubleClickZoom from "ol/interaction/DoubleClickZoom"
 import { defaults as defaultControls } from "ol/control"
 import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry } from "ol/geom"
-import { createEmpty, extend, getCenter, isEmpty } from "ol/extent"
+import { createEmpty, extend, getCenter, getHeight, getWidth, isEmpty } from "ol/extent"
 import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
@@ -160,6 +160,11 @@ export type MapaApi = {
    * que deja (arriba o a un costado), no debajo de ella. `false` si no está.
    */
   mostrarCubierta: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
+  /**
+   * Lo mismo con el cable de ese UUID: queda entero en el espacio libre (si no
+   * cabe, el mapa se aleja lo justo) y se destella su trazo. `false` si no está.
+   */
+  mostrarCable: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
   /**
    * Vuelve a encuadrar el recorrido pintado (por ejemplo, después de que la
    * ventana del trace creció y lo tapa). `despejarDesde`, como en `pintarRecorrido`.
@@ -915,18 +920,23 @@ function MapaDeRed({
     setHayRecorrido(false)
   }, [traceSource])
 
-  const mostrarCubierta = useCallback(
-    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+  /**
+   * Lleva el mapa a una geometría y la destella, sin seleccionar nada. Queda en
+   * el centro del espacio libre más grande que deja `ventana` (arriba o a un
+   * costado), no debajo de ella; una línea que no cabe en ese espacio se ve
+   * entera alejando el mapa lo justo.
+   */
+  const llevarAlEspacioLibre = useCallback(
+    (geometria: Geometry, ventana?: { top: number; left: number; right: number; bottom: number }) => {
       const mapa = mapRef.current
-      const geometria = nodeSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
       const caja = mapa?.getTargetElement()?.getBoundingClientRect()
       const view = mapa?.getView()
-      const resolucion = view?.getResolution()
-      if (!mapa || !geometria || !caja || !view || !resolucion) return false
+      const actual = view?.getResolution()
+      if (!mapa || !caja || !view || !actual) return false
 
-      // Dónde debe quedar la cubierta, en píxeles del mapa: al centro, o al
-      // centro del espacio más grande que deja libre la ventana.
-      let destino = [caja.width / 2, caja.height / 2]
+      // El espacio donde debe quedar, en píxeles del mapa: todo el mapa, o el
+      // más grande que deja libre la ventana.
+      let libre = { x0: 0, y0: 0, x1: caja.width, y1: caja.height }
       if (ventana) {
         const libres = [
           { x0: 0, y0: 0, x1: caja.width, y1: ventana.top - caja.top },
@@ -934,16 +944,39 @@ function MapaDeRed({
           { x0: ventana.right - caja.left, y0: 0, x1: caja.width, y1: caja.height },
         ].filter((r) => r.x1 - r.x0 > 60 && r.y1 - r.y0 > 60)
         const mayor = libres.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0))[0]
-        if (mayor) destino = [(mayor.x0 + mayor.x1) / 2, (mayor.y0 + mayor.y1) / 2]
+        if (mayor) libre = mayor
       }
-      const [x, y] = getCenter(geometria.getExtent())
-      const dx = destino[0] - caja.width / 2
-      const dy = destino[1] - caja.height / 2
-      view.animate({ center: [x - dx * resolucion, y + dy * resolucion], duration: 400 })
+      const extent = geometria.getExtent()
+      // Con un margen del 20 %; un punto no cambia la resolución.
+      const resolucion = Math.max(
+        actual,
+        getWidth(extent) / ((libre.x1 - libre.x0) * 0.8),
+        getHeight(extent) / ((libre.y1 - libre.y0) * 0.8),
+      )
+      const [x, y] = getCenter(extent)
+      const dx = (libre.x0 + libre.x1) / 2 - caja.width / 2
+      const dy = (libre.y0 + libre.y1) / 2 - caja.height / 2
+      view.animate({ center: [x - dx * resolucion, y + dy * resolucion], resolution: resolucion, duration: 400 })
       destellarEn(geometria, DESTELLO_ELEMENTO)
       return true
     },
-    [nodeSource, destellarEn],
+    [destellarEn],
+  )
+
+  const mostrarCubierta = useCallback(
+    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+      const geometria = nodeSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
+      return geometria ? llevarAlEspacioLibre(geometria, ventana) : false
+    },
+    [nodeSource, llevarAlEspacioLibre],
+  )
+
+  const mostrarCable = useCallback(
+    (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => {
+      const geometria = fiberSource.getFeatures().find((f) => f.get("id") === id)?.getGeometry()
+      return geometria ? llevarAlEspacioLibre(geometria, ventana) : false
+    },
+    [fiberSource, llevarAlEspacioLibre],
   )
 
   useEffect(() => {
@@ -957,6 +990,7 @@ function MapaDeRed({
       pintarRecorrido,
       limpiarRecorrido,
       mostrarCubierta,
+      mostrarCable,
       encuadrarRecorrido,
     }
     return () => {
@@ -972,6 +1006,7 @@ function MapaDeRed({
     pintarRecorrido,
     limpiarRecorrido,
     mostrarCubierta,
+    mostrarCable,
     encuadrarRecorrido,
   ])
 

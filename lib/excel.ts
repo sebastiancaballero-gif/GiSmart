@@ -1,16 +1,27 @@
 /**
  * Un archivo de Excel (.xlsx) de una sola hoja, armado aquí mismo y sin
  * librerías: un .xlsx es un zip con unos XML. Alcanza para exportar tablas
- * (título, encabezados en negrita con fondo, datos con bordes y una fila de
- * totales). Los números van como números, para que Excel los pueda sumar.
+ * como se entregan: título, notas, encabezados en negrita con fondo y filtro
+ * (o una tabla de Excel con su fila de totales),
+ * datos con bordes, una fila de totales con su fórmula, las filas de arriba
+ * fijas al bajar y la hoja lista para imprimir. Los números van como números,
+ * para que Excel los pueda sumar.
  */
 
-export type CeldaXlsx = string | number | null
+/** Una fórmula de Excel (sin el «=») con el valor que ya da, para que se vea aunque no se recalcule. */
+export type FormulaXlsx = { formula: string; valor: number | null }
+
+export type CeldaXlsx = string | number | null | FormulaXlsx
 
 export type FilaXlsx = {
   celdas: CeldaXlsx[]
-  /** `titulo` en negrita sin bordes; `encabezado` en negrita con fondo; `total` en negrita. */
-  estilo?: "titulo" | "encabezado" | "dato" | "total"
+  /**
+   * `titulo` grande en negrita; `nota` en cursiva gris; `encabezado` en
+   * negrita con fondo; `dato` con bordes; `total` en negrita con fondo suave.
+   */
+  estilo?: "titulo" | "nota" | "encabezado" | "dato" | "total"
+  /** Alto de la fila en puntos (una nota larga en una celda combinada no crece sola). */
+  alto?: number
 }
 
 export type HojaXlsx = {
@@ -18,6 +29,32 @@ export type HojaXlsx = {
   /** Ancho de cada columna, en caracteres. */
   anchos?: number[]
   filas: FilaXlsx[]
+  /** Rangos que se combinan en una sola celda, como «A1:G1». */
+  combinar?: string[]
+  /** Cuántas filas de arriba quedan fijas al bajar (hasta el encabezado). */
+  filasFijas?: number
+  /** El rango con filtro en el encabezado, como «A4:G26». */
+  filtro?: string
+  /**
+   * Un rango como tabla de Excel: filtro y orden en el encabezado, filas en
+   * bandas y, con `totales`, una fila de totales que no se mezcla con los
+   * datos al filtrar ni al ordenar. Va en lugar de `filtro`.
+   */
+  tabla?: TablaXlsx
+  /** Para imprimir: horizontal y a lo ancho de una hoja. */
+  horizontal?: boolean
+}
+
+export type TablaXlsx = {
+  /** Sin espacios: «TraceHaciaArriba». Las fórmulas lo nombran así: `SUBTOTAL(109,TraceHaciaArriba[Longitud (m)])`. */
+  nombre: string
+  /** Del encabezado a la última fila (la de totales, si hay): «A5:G21». */
+  rango: string
+  /**
+   * Lo que va en la fila de totales, columna por columna: un texto (la
+   * etiqueta), `"suma"` (la celda lleva `SUBTOTAL(109,…)`) o nada.
+   */
+  totales?: (string | { suma: true } | null)[]
 }
 
 // Índices de los estilos de styles.xml (cellXfs).
@@ -29,6 +66,7 @@ const ESTILO = {
   datoNumero: 4,
   totalNumero: 5,
   totalTexto: 6,
+  nota: 7,
 } as const
 
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -46,7 +84,7 @@ const escapar = (texto: string) =>
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
 
 /** «A», «B», …, «Z», «AA»… */
-function columna(indice: number): string {
+export function columna(indice: number): string {
   let n = indice + 1
   let letras = ""
   while (n > 0) {
@@ -57,57 +95,132 @@ function columna(indice: number): string {
   return letras
 }
 
+const esFormula = (valor: CeldaXlsx): valor is FormulaXlsx => typeof valor === "object" && valor !== null
+
 function celda(valor: CeldaXlsx, ref: string, estilo: FilaXlsx["estilo"]): string {
-  const esNumero = typeof valor === "number" && Number.isFinite(valor)
+  const esNumero = (typeof valor === "number" && Number.isFinite(valor)) || esFormula(valor)
   const s =
     estilo === "titulo"
       ? ESTILO.titulo
-      : estilo === "encabezado"
-        ? ESTILO.encabezado
-        : estilo === "total"
-          ? esNumero
-            ? ESTILO.totalNumero
-            : ESTILO.totalTexto
-          : esNumero
-            ? ESTILO.datoNumero
-            : ESTILO.datoTexto
-  if (valor === null || valor === "") return estilo === "titulo" ? "" : `<c r="${ref}" s="${s}"/>`
-  if (esNumero) return `<c r="${ref}" s="${s}"><v>${valor}</v></c>`
+      : estilo === "nota"
+        ? ESTILO.nota
+        : estilo === "encabezado"
+          ? ESTILO.encabezado
+          : estilo === "total"
+            ? esNumero
+              ? ESTILO.totalNumero
+              : ESTILO.totalTexto
+            : esNumero
+              ? ESTILO.datoNumero
+              : ESTILO.datoTexto
+  const sinBordes = estilo === "titulo" || estilo === "nota"
+  if (esFormula(valor)) {
+    const cache = valor.valor !== null && Number.isFinite(valor.valor) ? `<v>${valor.valor}</v>` : ""
+    return `<c r="${ref}" s="${s}"><f>${escapar(valor.formula)}</f>${cache}</c>`
+  }
+  if (valor === null || valor === "") return sinBordes ? "" : `<c r="${ref}" s="${s}"/>`
+  if (typeof valor === "number") return Number.isFinite(valor) ? `<c r="${ref}" s="${s}"><v>${valor}</v></c>` : `<c r="${ref}" s="${s}"/>`
   return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapar(String(valor))}</t></is></c>`
 }
 
 function hojaXml(hoja: HojaXlsx): string {
+  const columnas = Math.max(1, hoja.anchos?.length ?? 0, ...hoja.filas.map((f) => f.celdas.length))
+  const dimension = `<dimension ref="A1:${columna(columnas - 1)}${Math.max(1, hoja.filas.length)}"/>`
+  const fijas = hoja.filasFijas ?? 0
+  const vista =
+    fijas > 0
+      ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${fijas}" topLeftCell="A${fijas + 1}" activePane="bottomLeft" state="frozen"/>` +
+        `<selection pane="bottomLeft" activeCell="A${fijas + 1}" sqref="A${fijas + 1}"/></sheetView></sheetViews>`
+      : `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`
   const cols = hoja.anchos?.length
     ? `<cols>${hoja.anchos.map((a, i) => `<col min="${i + 1}" max="${i + 1}" width="${a}" customWidth="1"/>`).join("")}</cols>`
     : ""
   const filas = hoja.filas
-    .map((f, i) => `<row r="${i + 1}">${f.celdas.map((v, j) => celda(v, `${columna(j)}${i + 1}`, f.estilo)).join("")}</row>`)
+    .map((f, i) => {
+      // El título, un poco más alto para su letra grande.
+      const puntos = f.alto ?? (f.estilo === "titulo" ? 21 : null)
+      const alto = puntos ? ` ht="${puntos}" customHeight="1"` : ""
+      return `<row r="${i + 1}"${alto}>${f.celdas.map((v, j) => celda(v, `${columna(j)}${i + 1}`, f.estilo)).join("")}</row>`
+    })
     .join("")
-  return `${XML}<worksheet xmlns="${NS}">${cols}<sheetData>${filas}</sheetData></worksheet>`
+  const filtro = hoja.filtro ? `<autoFilter ref="${hoja.filtro}"/>` : ""
+  const combinadas = hoja.combinar?.length
+    ? `<mergeCells count="${hoja.combinar.length}">${hoja.combinar.map((r) => `<mergeCell ref="${r}"/>`).join("")}</mergeCells>`
+    : ""
+  const impresion = hoja.horizontal
+    ? `<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>` +
+      `<pageSetup paperSize="1" orientation="landscape" fitToWidth="1" fitToHeight="0"/>`
+    : `<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>`
+  const ajustar = hoja.horizontal ? `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>` : ""
+  // El orden de las partes lo fija el esquema de Excel.
+  const tablas = hoja.tabla ? `<tableParts count="1"><tablePart r:id="rId1"/></tableParts>` : ""
+  return `${XML}<worksheet xmlns="${NS}" xmlns:r="${NS_REL}">${ajustar}${dimension}${vista}${cols}<sheetData>${filas}</sheetData>${filtro}${combinadas}${impresion}${tablas}</worksheet>`
 }
 
 const ESTILOS =
   `${XML}<styleSheet xmlns="${NS}">` +
-  `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
-  `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
-  `<fill><patternFill patternType="solid"><fgColor rgb="FFDDEBF7"/><bgColor indexed="64"/></patternFill></fill></fills>` +
+  `<fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>` +
+  `<font><b/><sz val="14"/><name val="Calibri"/></font><font><i/><sz val="10"/><color rgb="FF595959"/><name val="Calibri"/></font></fonts>` +
+  `<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
+  `<fill><patternFill patternType="solid"><fgColor rgb="FFDDEBF7"/><bgColor indexed="64"/></patternFill></fill>` +
+  `<fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill></fills>` +
   `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>` +
   `<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right>` +
   `<top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  `<cellXfs count="7">` +
+  `<cellXfs count="8">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
-  `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+  `<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
   `<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>` +
-  `<xf numFmtId="2" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>` +
-  `<xf numFmtId="2" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>` +
-  `<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>` +
+  `<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>` +
+  `<xf numFmtId="4" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>` +
+  `<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>` +
+  `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
   `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+
+/** El nombre de la hoja como lo admite Excel: sin \ / ? * [ ] : y hasta 31 caracteres. */
+const nombreDeHoja = (nombre: string) => nombre.replace(/[\\/?*[\]:]/g, " ").slice(0, 31).trim() || "Hoja1"
+
+/** Un rango «A4:G26» con el nombre de la hoja y en absoluto, como lo guarda Excel. */
+function rangoAbsoluto(hoja: string, rango: string): string {
+  const absoluto = rango
+    .split(":")
+    .map((ref) => ref.replace(/^([A-Z]+)(\d+)$/, "$$$1$$$2"))
+    .join(":")
+  return `'${hoja.replace(/'/g, "''")}'!${absoluto}`
+}
+
+/** La parte de la tabla de Excel: sus columnas salen del encabezado de la hoja. */
+function tablaXml(hoja: HojaXlsx, tabla: TablaXlsx): string {
+  const [desde, hasta] = tabla.rango.split(":")
+  const filaDe = (ref: string) => Number(ref.replace(/^[A-Z]+/, ""))
+  const encabezado = hoja.filas[filaDe(desde) - 1]?.celdas ?? []
+  const conTotales = tabla.totales !== undefined
+  const ultimaDeDatos = conTotales ? `${hasta.replace(/\d+$/, "")}${filaDe(hasta) - 1}` : hasta
+  const columnas = encabezado.map((nombre, i) => {
+    const total = tabla.totales?.[i]
+    const extra =
+      typeof total === "string" ? ` totalsRowLabel="${escapar(total)}"` : total ? ` totalsRowFunction="sum"` : ""
+    return `<tableColumn id="${i + 1}" name="${escapar(String(nombre ?? `Columna ${i + 1}`))}"${extra}/>`
+  })
+  return (
+    `${XML}<table xmlns="${NS}" id="1" name="${tabla.nombre}" displayName="${tabla.nombre}" ref="${tabla.rango}"` +
+    `${conTotales ? ` totalsRowCount="1"` : ""}>` +
+    `<autoFilter ref="${desde}:${ultimaDeDatos}"/>` +
+    `<tableColumns count="${columnas.length}">${columnas.join("")}</tableColumns>` +
+    `<tableStyleInfo name="TableStyleLight1" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`
+  )
+}
 
 /** Los archivos que forman el .xlsx. */
 function partes(hoja: HojaXlsx): [string, string][] {
-  const nombreHoja = escapar(hoja.nombre.replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Hoja1")
+  const limpio = nombreDeHoja(hoja.nombre)
+  const nombreHoja = escapar(limpio)
+  // El filtro del encabezado, como lo guarda Excel: un nombre oculto con su rango.
+  const nombres = hoja.filtro
+    ? `<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">${escapar(rangoAbsoluto(limpio, hoja.filtro))}</definedName></definedNames>`
+    : ""
   return [
     [
       "[Content_Types].xml",
@@ -117,6 +230,9 @@ function partes(hoja: HojaXlsx): [string, string][] {
         `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
         `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
         `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+        (hoja.tabla
+          ? `<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`
+          : "") +
         `</Types>`,
     ],
     [
@@ -125,7 +241,7 @@ function partes(hoja: HojaXlsx): [string, string][] {
     ],
     [
       "xl/workbook.xml",
-      `${XML}<workbook xmlns="${NS}" xmlns:r="${NS_REL}"><sheets><sheet name="${nombreHoja}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      `${XML}<workbook xmlns="${NS}" xmlns:r="${NS_REL}"><sheets><sheet name="${nombreHoja}" sheetId="1" r:id="rId1"/></sheets>${nombres}</workbook>`,
     ],
     [
       "xl/_rels/workbook.xml.rels",
@@ -135,6 +251,15 @@ function partes(hoja: HojaXlsx): [string, string][] {
     ],
     ["xl/styles.xml", ESTILOS],
     ["xl/worksheets/sheet1.xml", hojaXml(hoja)],
+    ...((hoja.tabla
+      ? [
+          [
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            `${XML}<Relationships xmlns="${NS_PAQUETE}"><Relationship Id="rId1" Type="${NS_REL}/table" Target="../tables/table1.xml"/></Relationships>`,
+          ],
+          ["xl/tables/table1.xml", tablaXml(hoja, hoja.tabla)],
+        ]
+      : []) as [string, string][]),
   ]
 }
 
