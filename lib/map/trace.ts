@@ -66,8 +66,46 @@ export type ResultadoTrace =
       atenuacionTotal: number | null
       /** Cuándo se calculó el recorrido (ISO). */
       calculadoEn: string | null
+      /** La tabla de elementos del recorrido hacia arriba (`null` hacia abajo). */
+      elementos: ElementoDelRecorrido[] | null
+      /** Si no se pudieron leer los datos de esa tabla, por qué. */
+      errorElementos: { mensaje: string; detalle?: string } | null
     }
   | { estado: "error"; mensaje: string; detalle?: string }
+
+/**
+ * Una fila de la tabla del trace hacia arriba, como la pidió el ingeniero:
+ * cada puerto o hilo por donde pasa el recorrido, dónde está y en qué
+ * contenedor, y al final la central.
+ *
+ * - Puerto de un divisor: ubica «Divisor» y su número; contenedor la cubierta
+ *   («Cub nivel 1», «Cub nivel 2») y su etiqueta.
+ * - Puerto de una tarjeta o una bandeja: ubica «Tarjeta» o «Bandeja» y su slot;
+ *   contenedor el equipo (OLT u ODF) y su código.
+ * - Hilo: ubica «Buffer» y su número; contenedor «Cable» y su código; la
+ *   longitud es la del cable (medida en campo o, si no hay, la calculada).
+ */
+export type ElementoDelRecorrido = {
+  tipo: "Puerto" | "Hilo" | "Central"
+  codigo: string | null
+  ubica: string | null
+  codigoUbica: string | null
+  longitudM: number | null
+  contenedor: string | null
+  codigoContenedor: string | null
+}
+
+/** Lo que la ruta lee de la base para armar esa tabla, por UUID. */
+export type DatosDeElementos = {
+  hilos: Record<string, { numero: number | null; buffer: number | null; idCable: string | null }>
+  cables: Record<string, { codigo: string | null; largoM: number | null }>
+  puertos: Record<string, { numero: number | null; nombre: string | null; tipoPert: string | null; idPert: string | null }>
+  tarjetas: Record<string, { slot: number | null; tipoEquipo: string | null; idEquipo: string | null }>
+  equipos: Record<string, { codigo: string | null; idCabecera: string | null }>
+  divisores: Record<string, { numero: number | null; codigo: string | null; idCubierta: string | null }>
+  cubiertas: Record<string, { etiqueta: string | null; funcion: string | null }>
+  cabeceras: Record<string, { nombre: string | null }>
+}
 
 /** Lo que puede tardar la consulta antes de darla por caída. */
 export const ESPERA_MAXIMA_TRACE_MS = 30_000
@@ -177,6 +215,122 @@ export function atenuacionTotal(pasos: PasoDeTrace[]): number | null {
   return null
 }
 
+/**
+ * Los puertos e hilos del recorrido en orden: el origen y lo que sale de cada
+ * paso, sin repetir (hay recorridos que repiten el último paso).
+ */
+export function elementosDelRecorrido(pasos: PasoDeTrace[]): ExtremoDePaso[] {
+  if (pasos.length === 0) return []
+  const vistos = new Set<string>()
+  const lista: ExtremoDePaso[] = []
+  for (const e of [pasos[0].origen, ...pasos.map((p) => p.destino)]) {
+    if (!e.id || vistos.has(e.id)) continue
+    vistos.add(e.id)
+    lista.push(e)
+  }
+  return lista
+}
+
+const UBICA: Record<string, string> = { DIV: "Divisor", TJT: "Tarjeta", BDJ: "Bandeja" }
+
+/** «Primer nivel» → «Cub nivel 1», «Segundo nivel» → «Cub nivel 2». */
+function contenedorDeCubierta(funcion: string | null): string {
+  if (!funcion) return "Cubierta"
+  const nivel = /primer/i.test(funcion) ? 1 : /segundo/i.test(funcion) ? 2 : /tercer/i.test(funcion) ? 3 : null
+  return nivel ? `Cub nivel ${nivel}` : `Cubierta (${funcion})`
+}
+
+const textoDe = (v: number | string | null | undefined) => (v === null || v === undefined || v === "" ? null : String(v))
+
+/** Arma la tabla del trace hacia arriba con lo que la ruta leyó de la base. */
+export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElementos): ElementoDelRecorrido[] {
+  const filas: ElementoDelRecorrido[] = []
+  let cabecera: string | null = null
+  for (const e of elementosDelRecorrido(pasos)) {
+    const id = e.id as string
+    if (e.tipo === "HILO") {
+      const hilo = datos.hilos[id]
+      const cable = hilo?.idCable ? datos.cables[hilo.idCable] : undefined
+      filas.push({
+        tipo: "Hilo",
+        codigo: textoDe(hilo?.numero),
+        ubica: hilo?.buffer !== null && hilo?.buffer !== undefined ? "Buffer" : null,
+        codigoUbica: textoDe(hilo?.buffer),
+        longitudM: cable?.largoM ?? null,
+        contenedor: "Cable",
+        codigoContenedor: cable?.codigo ?? null,
+      })
+      continue
+    }
+    const puerto = datos.puertos[id]
+    const tipoPert = puerto?.tipoPert ?? null
+    const fila: ElementoDelRecorrido = {
+      tipo: "Puerto",
+      codigo: puerto?.nombre ?? textoDe(puerto?.numero),
+      ubica: tipoPert ? (UBICA[tipoPert] ?? tipoPert) : null,
+      codigoUbica: null,
+      longitudM: null,
+      contenedor: null,
+      codigoContenedor: null,
+    }
+    if (tipoPert === "DIV" && puerto?.idPert) {
+      const divisor = datos.divisores[puerto.idPert]
+      const cubierta = divisor?.idCubierta ? datos.cubiertas[divisor.idCubierta] : undefined
+      fila.codigoUbica = textoDe(divisor?.numero) ?? divisor?.codigo ?? null
+      fila.contenedor = contenedorDeCubierta(cubierta?.funcion ?? null)
+      fila.codigoContenedor = cubierta?.etiqueta ?? null
+    } else if (puerto?.idPert) {
+      const tarjeta = datos.tarjetas[puerto.idPert]
+      const equipo = tarjeta?.idEquipo ? datos.equipos[tarjeta.idEquipo] : undefined
+      fila.codigoUbica = textoDe(tarjeta?.slot)
+      fila.contenedor = tarjeta?.tipoEquipo ?? null
+      fila.codigoContenedor = equipo?.codigo ?? null
+      if (equipo?.idCabecera) cabecera = datos.cabeceras[equipo.idCabecera]?.nombre ?? cabecera
+    }
+    filas.push(fila)
+  }
+  // Al final, la central donde está el equipo al que llega el recorrido.
+  if (cabecera) {
+    filas.push({ tipo: "Central", codigo: cabecera, ubica: null, codigoUbica: null, longitudM: null, contenedor: null, codigoContenedor: null })
+  }
+  return filas
+}
+
+/** La suma de las longitudes de la tabla (las de los hilos). */
+export function sumaDeLongitudes(filas: ElementoDelRecorrido[]): number {
+  return filas.reduce((suma, f) => suma + (f.longitudM ?? 0), 0)
+}
+
+/** Lee la tabla como la reenvía la ruta; lo que no tenga la forma esperada se descarta. */
+function normalizarElementos(v: unknown): ElementoDelRecorrido[] | null {
+  if (!Array.isArray(v)) return null
+  const tipos = ["Puerto", "Hilo", "Central"]
+  return v.flatMap((f) => {
+    if (!f || typeof f !== "object") return []
+    const o = f as Record<string, unknown>
+    if (!tipos.includes(o.tipo as string)) return []
+    return [
+      {
+        tipo: o.tipo as ElementoDelRecorrido["tipo"],
+        codigo: texto(o.codigo),
+        ubica: texto(o.ubica),
+        codigoUbica: texto(o.codigoUbica),
+        longitudM: numero(o.longitudM),
+        contenedor: texto(o.contenedor),
+        codigoContenedor: texto(o.codigoContenedor),
+      },
+    ]
+  })
+}
+
+/** El error de la tabla como lo manda la ruta (`{ message, detalle }`). */
+function errorDeElementos(v: unknown): { mensaje: string; detalle?: string } | null {
+  if (!v || typeof v !== "object") return null
+  const { message, detalle } = v as { message?: unknown; detalle?: unknown }
+  if (typeof message !== "string") return null
+  return { mensaje: message, ...(typeof detalle === "string" ? { detalle } : {}) }
+}
+
 /** Clasifica lo que responde `GET /api/traces/{direccion}/{id}`. */
 export function clasificarRespuestaTrace(status: number, cuerpo: unknown): ResultadoTrace {
   if (status < 200 || status >= 300) {
@@ -199,6 +353,8 @@ export function clasificarRespuestaTrace(status: number, cuerpo: unknown): Resul
     geometria: geometria(c.geomPath),
     atenuacionTotal: numero(c.atenuacionTotal) ?? atenuacionTotal(pasos),
     calculadoEn: texto(c.calculadoEn),
+    elementos: normalizarElementos(c.elementos),
+    errorElementos: errorDeElementos(c.errorElementos),
   }
 }
 

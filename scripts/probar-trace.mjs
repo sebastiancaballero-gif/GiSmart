@@ -9,9 +9,18 @@ process.env.AUTH_JWT_SECRET = "secreto-solo-para-las-pruebas-del-trace-012345678
 delete process.env.SUPABASE_URL
 delete process.env.SUPABASE_SECRET_KEY
 
-const { normalizarPasos, hilosDelRecorrido, atenuacionTotal, clasificarRespuestaTrace, geometria, direccionDeUrl } = await import(
-  "../lib/map/trace.ts"
-)
+const {
+  normalizarPasos,
+  hilosDelRecorrido,
+  atenuacionTotal,
+  clasificarRespuestaTrace,
+  geometria,
+  direccionDeUrl,
+  armarTablaHaciaArriba,
+  elementosDelRecorrido,
+  sumaDeLongitudes,
+} = await import("../lib/map/trace.ts")
+const { crearXlsx } = await import("../lib/excel.ts")
 const { emitirToken } = await import("../lib/auth-server.ts")
 const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
 
@@ -153,6 +162,68 @@ console.log("\n4) LA RUTA GET /api/traces/{downstream|upstream}/{id}\n")
   comprobar("UUID mal codificado en la URL: 400", malCodificado.status === 400)
   const valida = await pedir(` ${UUID_BUENO} `, "upstream")
   comprobar("petición válida pasa las validaciones (sin Supabase: 500)", valida.status === 500, `HTTP ${valida.status}`)
+}
+
+console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
+{
+  // Desde el puerto de un divisor en una cubierta de primer nivel hasta la OLT,
+  // con el último paso repetido (pasa en la caché).
+  const pasos = normalizarPasos([
+    { paso: 1, id_contenedor: "cub", tipo_contenedor: "CUB", tip_origen: "PUERTO", puerto_origen: "pd", tip_destino: "HILO", hilo_destino: "h2", tipo_conexion: "FUSION" },
+    { paso: 2, id_contenedor: "cub0", tipo_contenedor: "CUB", tip_origen: "HILO", hilo_origen: "h2", tip_destino: "HILO", hilo_destino: "h1", tipo_conexion: "FUSION" },
+    { paso: 3, id_contenedor: "odf", tipo_contenedor: "ODF", tip_origen: "HILO", hilo_origen: "h1", tip_destino: "PUERTO", puerto_destino: "pb", tipo_conexion: "PIGTAIL" },
+    { paso: 4, id_contenedor: "olt", tipo_contenedor: "OLT", tip_origen: "PUERTO", puerto_origen: "pb", tip_destino: "PUERTO", puerto_destino: "pt", tipo_conexion: "PATCHCORD" },
+    { paso: 4, id_contenedor: "olt", tipo_contenedor: "OLT", tip_origen: "PUERTO", puerto_origen: "pb", tip_destino: "PUERTO", puerto_destino: "pt", tipo_conexion: "PATCHCORD" },
+  ])
+  comprobar("elementos en orden y sin repetir", elementosDelRecorrido(pasos).map((e) => e.id).join(",") === "pd,h2,h1,pb,pt")
+  const datos = {
+    hilos: { h2: { numero: 56, buffer: 5, idCable: "c2" }, h1: { numero: 56, buffer: 5, idCable: "c1" } },
+    cables: { c2: { codigo: "2103630", largoM: 116.65 }, c1: { codigo: "2100555", largoM: 2586.52 } },
+    puertos: {
+      pd: { numero: 1, nombre: "E1", tipoPert: "DIV", idPert: "d1" },
+      pb: { numero: 44, nombre: "44", tipoPert: "BDJ", idPert: "b1" },
+      pt: { numero: 6, nombre: null, tipoPert: "TJT", idPert: "t1" },
+    },
+    tarjetas: { b1: { slot: 144, tipoEquipo: "ODF", idEquipo: "e1" }, t1: { slot: 6, tipoEquipo: "OLT", idEquipo: "e2" } },
+    equipos: { e1: { codigo: "1", idCabecera: "cab" }, e2: { codigo: "1", idCabecera: "cab" } },
+    divisores: { d1: { numero: 1, codigo: "D-1", idCubierta: "cu" } },
+    cubiertas: { cu: { etiqueta: "CO19", funcion: "Primer nivel" } },
+    cabeceras: { cab: { nombre: "HUB LA UNION" } },
+  }
+  const filas = armarTablaHaciaArriba(pasos, datos)
+  const linea = (f) => [f.tipo, f.codigo, f.ubica, f.codigoUbica, f.longitudM, f.contenedor, f.codigoContenedor].map((v) => v ?? "").join("|")
+  comprobar("puerto de divisor: divisor 1, Cub nivel 1 CO19", linea(filas[0]) === "Puerto|E1|Divisor|1||Cub nivel 1|CO19", linea(filas[0]))
+  comprobar("hilo: buffer, longitud del cable y cable", linea(filas[1]) === "Hilo|56|Buffer|5|116.65|Cable|2103630", linea(filas[1]))
+  comprobar("puerto de bandeja: bandeja 144, ODF 1", linea(filas[3]) === "Puerto|44|Bandeja|144||ODF|1", linea(filas[3]))
+  comprobar("puerto de tarjeta sin nombre: su número, tarjeta 6, OLT 1", linea(filas[4]) === "Puerto|6|Tarjeta|6||OLT|1", linea(filas[4]))
+  comprobar("al final, la central", linea(filas[5]) === "Central|HUB LA UNION|||||" && filas.length === 6, linea(filas.at(-1)))
+  comprobar("suma de longitudes", Math.abs(sumaDeLongitudes(filas) - 2703.17) < 1e-9, String(sumaDeLongitudes(filas)))
+  const segundo = armarTablaHaciaArriba(pasos.slice(0, 1), { ...datos, cubiertas: { cu: { etiqueta: "CO7", funcion: "Segundo nivel" } } })
+  comprobar("cubierta de segundo nivel: Cub nivel 2", segundo[0].contenedor === "Cub nivel 2")
+  const sinDatos = armarTablaHaciaArriba(pasos, { hilos: {}, cables: {}, puertos: {}, tarjetas: {}, equipos: {}, divisores: {}, cubiertas: {}, cabeceras: {} })
+  comprobar("sin datos de la base: filas con lo que se sepa, sin romperse", sinDatos.length === 5 && sinDatos[1].contenedor === "Cable" && sinDatos[1].codigoContenedor === null)
+  const r = clasificarRespuestaTrace(200, JSON.parse(JSON.stringify({ encontrado: true, pasos, totalPasos: 4, elementos: [...filas, { tipo: "Otro" }], errorElementos: null })))
+  comprobar("la respuesta trae la tabla (y descarta filas raras)", r.estado === "ok" && r.elementos?.length === 6 && r.errorElementos === null)
+  const conError = clasificarRespuestaTrace(200, { encontrado: true, pasos, elementos: null, errorElementos: { message: "No se pudieron leer…", detalle: "x" } })
+  comprobar("si la tabla falla, el error llega aparte", conError.estado === "ok" && conError.elementos === null && conError.errorElementos?.detalle === "x")
+}
+
+console.log("\n6) EXCEL (.xlsx)\n")
+{
+  const datos = crearXlsx({
+    nombre: "Trace hacia arriba",
+    filas: [
+      { celdas: ["Trace hacia arriba — ñ <&>"], estilo: "titulo" },
+      { celdas: ["Tipo", "Longitud"], estilo: "encabezado" },
+      { celdas: ["Hilo", 116.65] },
+      { celdas: ["Suma", 116.65], estilo: "total" },
+    ],
+  })
+  const texto = new TextDecoder().decode(datos)
+  comprobar("empieza como un zip (PK)", datos[0] === 0x50 && datos[1] === 0x4b)
+  comprobar("trae las seis partes de un .xlsx", ["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/worksheets/sheet1.xml"].every((n) => texto.includes(n)))
+  comprobar("los números van como números", texto.includes("<v>116.65</v>"))
+  comprobar("el texto va escapado", texto.includes("ñ &lt;&amp;&gt;"))
 }
 
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)

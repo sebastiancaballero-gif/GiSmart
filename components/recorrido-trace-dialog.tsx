@@ -1,11 +1,18 @@
 "use client"
 
 import { useImperativeHandle, useRef, useState, type Ref } from "react"
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, Cable, ChevronDown, Loader2, MapPin, Ruler } from "lucide-react"
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, Cable, ChevronDown, FileSpreadsheet, Loader2, MapPin, Ruler } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
+import { BarraDeEstado, Boton, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
-import { obtenerTrace, type DireccionTrace, type PasoDeTrace } from "@/lib/map/trace"
+import { crearXlsx, descargarArchivo } from "@/lib/excel"
+import {
+  obtenerTrace,
+  sumaDeLongitudes,
+  type DireccionTrace,
+  type ElementoDelRecorrido,
+  type PasoDeTrace,
+} from "@/lib/map/trace"
 
 /**
  * «Recorrido del trace» (ribbon: Red de fibra → Trace). Se pega el UUID de un
@@ -59,7 +66,32 @@ type Resumen = {
   largoM: number | null
   /** Los pasos tal como vienen de la caché, para la lista de la ventana. */
   lista: PasoDeTrace[]
+  /** La tabla del trace hacia arriba (`null` hacia abajo). */
+  elementos: ElementoDelRecorrido[] | null
+  errorElementos: { mensaje: string; detalle?: string } | null
 }
+
+/** Las columnas de la tabla del trace hacia arriba, como las pidió el ingeniero. */
+const COLUMNAS_ARRIBA = [
+  "Tipo elemento",
+  "Código elemento",
+  "Elemento ubica",
+  "Código ubica",
+  "Longitud (m)",
+  "Contenedor",
+  "Código contenedor",
+]
+
+const metros = (m: number) => m.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** «Hilo 55 del cable 2102262» → «hilo-55-del-cable-2102262», para el nombre del archivo. */
+const paraArchivo = (texto: string) =>
+  texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
 
 /** Cómo se lee el tipo de conexión de un paso. */
 const CONEXION: Record<string, string> = { PATCHCORD: "Patchcord", PIGTAIL: "Pigtail", FUSION: "Fusión" }
@@ -165,7 +197,12 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       atenuacionDb: r.atenuacionTotal,
       largoM: hayLinea ? pintado.largoM : null,
       lista: r.pasos,
+      elementos: direccion === "UPSTREAM" ? r.elementos : null,
+      errorElementos: direccion === "UPSTREAM" ? r.errorElementos : null,
     })
+    // Con la tabla la ventana crece: se vuelve a encuadrar cuando ya tiene su
+    // tamaño, para que no tape el recorrido.
+    window.setTimeout(() => api.encuadrarRecorrido(ventanaRef.current?.getBoundingClientRect().top), 120)
 
     const calculado = textoDeFecha(r.calculadoEn)
     const recorrido = `${r.totalPasos} ${r.totalPasos === 1 ? "paso" : "pasos"} ${SENTIDO[direccion]}, de ${nombreDe(r.pasos[0].contenedor)} a ${nombreDe(r.pasos[r.pasos.length - 1].contenedor)}${calculado ? ` (calculado el ${calculado})` : ""}`
@@ -182,6 +219,29 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     } else {
       setMensaje({ texto: `${recorrido}.`, tono: "info" })
     }
+  }
+
+  /** «Exportar a Excel»: la tabla del trace hacia arriba, con su título y la suma. */
+  function exportarExcel() {
+    const filas = resumen?.elementos
+    if (!filas || filas.length === 0) return
+    const origenTexto = desde?.etiqueta ?? `origen ${origen}`
+    const datos = crearXlsx({
+      nombre: "Trace hacia arriba",
+      anchos: [14, 18, 16, 14, 13, 15, 19],
+      filas: [
+        { celdas: [`Trace hacia arriba — ${origenTexto}`], estilo: "titulo" },
+        { celdas: COLUMNAS_ARRIBA, estilo: "encabezado" },
+        ...filas.map((f) => ({
+          celdas: [f.tipo, f.codigo, f.ubica, f.codigoUbica, f.longitudM, f.contenedor, f.codigoContenedor],
+        })),
+        {
+          celdas: [null, null, null, "Suma", Math.round(sumaDeLongitudes(filas) * 100) / 100, null, null],
+          estilo: "total" as const,
+        },
+      ],
+    })
+    descargarArchivo(datos, `trace-hacia-arriba-${paraArchivo(desde?.etiqueta ?? origen.slice(0, 8))}.xlsx`)
   }
 
   function quitarDelMapa() {
@@ -250,7 +310,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       <DialogContent
         ref={ventanaRef}
         sinFondo
-        className="left-1/2 top-auto bottom-28 flex xl:bottom-5 w-[min(23rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 flex-col overflow-hidden p-0 shadow-2xl data-[starting-style]:translate-y-2"
+        className={`left-1/2 top-auto bottom-28 flex xl:bottom-5 ${
+          resumen?.elementos || resumen?.errorElementos ? "w-[min(46rem,calc(100vw-1.5rem))]" : "w-[min(23rem,calc(100vw-1.5rem))]"
+        } max-h-[calc(100dvh-8rem)] max-w-none -translate-x-1/2 translate-y-0 flex-col overflow-hidden p-0 shadow-2xl data-[starting-style]:translate-y-2`}
       >
         <EncabezadoVentana
           icono={Activity}
@@ -261,7 +323,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               : "Desde un puerto o un hilo; se pinta en el mapa."
           }
         />
-        <div className="flex flex-col gap-3 bg-muted/20 p-4">
+        {/* Con la tabla puede no caber en pantallas bajas: se desplaza por dentro. */}
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto bg-muted/20 p-4">
           {/* El hilo que se eligió en Gestión de hilos, a la vista, y cómo volver. */}
           {desde && (
             <div data-origen-elegido className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2">
@@ -348,10 +411,80 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
             </output>
           </div>
 
+          {/* Hacia arriba, la tabla que pidió el ingeniero: cada puerto e hilo
+              del recorrido, dónde está y en qué contenedor, la central al
+              final y la suma de las longitudes. Se puede bajar a Excel. */}
+          {resumen?.direccion === "UPSTREAM" && (resumen.elementos || resumen.errorElementos) && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Rotulo>Trace hacia arriba</Rotulo>
+                {resumen.elementos && resumen.elementos.length > 0 && (
+                  <Boton icono={FileSpreadsheet} onClick={exportarExcel} colorIcono="text-emerald-600">
+                    Exportar a Excel
+                  </Boton>
+                )}
+              </div>
+              {resumen.errorElementos ? (
+                <p role="alert" className="rounded-lg bg-destructive/8 px-2.5 py-2 text-[11px] text-destructive">
+                  {resumen.errorElementos.mensaje}
+                  {resumen.errorElementos.detalle && (
+                    <span className="mt-0.5 block break-words font-mono text-[10px] opacity-80">{resumen.errorElementos.detalle}</span>
+                  )}
+                </p>
+              ) : (
+                <div className="max-h-[min(11rem,24vh)] overflow-auto rounded-xl border border-border bg-card shadow-sm">
+                  <table className="w-full min-w-[40rem] border-separate border-spacing-0 text-[11px]">
+                    <thead>
+                      <tr>
+                        {COLUMNAS_ARRIBA.map((c) => (
+                          <th
+                            key={c}
+                            scope="col"
+                            className={`sticky top-0 z-10 whitespace-nowrap border-b border-border bg-muted px-2 py-1.5 font-semibold text-foreground ${
+                              c.startsWith("Longitud") ? "text-right" : "text-left"
+                            }`}
+                          >
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(resumen.elementos ?? []).map((f, i) => (
+                        <tr key={i} className={i % 2 === 1 ? "bg-foreground/[0.035]" : ""}>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 font-semibold text-foreground">{f.tipo}</td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 tabular-nums">{f.codigo ?? "—"}</td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 text-muted-foreground">{f.ubica ?? ""}</td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 tabular-nums">{f.codigoUbica ?? ""}</td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 text-right tabular-nums">
+                            {f.longitudM !== null ? metros(f.longitudM) : ""}
+                          </td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 text-muted-foreground">{f.contenedor ?? ""}</td>
+                          <td className="whitespace-nowrap border-b border-border px-2 py-1 tabular-nums">{f.codigoContenedor ?? ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="font-semibold">
+                        <td colSpan={3} className="sticky bottom-0 bg-muted px-2 py-1.5" />
+                        <td className="sticky bottom-0 bg-muted px-2 py-1.5 text-foreground">Suma</td>
+                        <td className="sticky bottom-0 bg-muted px-2 py-1.5 text-right tabular-nums text-foreground">
+                          {metros(sumaDeLongitudes(resumen.elementos ?? []))}
+                        </td>
+                        <td colSpan={2} className="sticky bottom-0 bg-muted px-2 py-1.5" />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Los pasos que guarda la caché, como pide el ingeniero que se
               muestren. Una cubierta del mapa se puede pulsar: el mapa la lleva
-              al espacio que deja libre la ventana y la destella. */}
-          {resumen && (
+              al espacio que deja libre la ventana y la destella. Hacia arriba
+              ya está la tabla, así que la lista no se repite. */}
+          {resumen && !resumen.elementos && (
             <div className="flex flex-col gap-1.5">
               <button
                 type="button"

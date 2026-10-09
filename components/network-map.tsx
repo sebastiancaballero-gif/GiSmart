@@ -160,6 +160,11 @@ export type MapaApi = {
    * que deja (arriba o a un costado), no debajo de ella. `false` si no está.
    */
   mostrarCubierta: (id: string, ventana?: { top: number; left: number; right: number; bottom: number }) => boolean
+  /**
+   * Vuelve a encuadrar el recorrido pintado (por ejemplo, después de que la
+   * ventana del trace creció y lo tapa). `despejarDesde`, como en `pintarRecorrido`.
+   */
+  encuadrarRecorrido: (despejarDesde?: number) => void
 }
 
 /** El largo de un cable en metros: el medido en campo si la base lo tiene; si no, el de su línea. */
@@ -833,6 +838,24 @@ function MapaDeRed({
 
   const abandonarEleccion = useCallback(() => cancelarEleccionRef.current?.("abandonada"), [])
 
+  /**
+   * Encuadre del recorrido como lo definió el ingeniero: 50 px de margen y
+   * 400 ms. Abajo el margen crece hasta dejar libre lo que tapa la ventana del
+   * trace, sin comerse más de lo que deja al recorrido unos 120 px de alto.
+   */
+  const encuadrarRecorrido = useCallback(
+    (despejarDesde?: number) => {
+      const view = mapRef.current?.getView()
+      const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
+      const extent = traceSource.getExtent()
+      if (!view || !caja || !extent || traceSource.getFeatures().length === 0 || !extent.every((v) => Number.isFinite(v))) return
+      const tapado = despejarDesde === undefined ? 0 : caja.bottom - despejarDesde + 24
+      const abajo = Math.round(Math.max(50, Math.min(tapado, caja.height - 50 - 120)))
+      view.fit(extent, { padding: [50, 50, abajo, 50], maxZoom: 18, duration: 400 })
+    },
+    [traceSource],
+  )
+
   const pintarRecorrido = useCallback(
     ({
       cables,
@@ -881,20 +904,10 @@ function MapaDeRed({
       }
       setHayRecorrido(traceSource.getFeatures().length > 0)
 
-      // Encuadre como lo definió el ingeniero: 50 px de margen y 400 ms. Abajo
-      // el margen crece hasta dejar libre lo que tapa la ventana del trace,
-      // sin comerse más de lo que deja al recorrido unos 120 px de alto.
-      const view = mapRef.current?.getView()
-      const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
-      const extent = traceSource.getExtent()
-      if (view && caja && extent && traceSource.getFeatures().length > 0 && extent.every((v) => Number.isFinite(v))) {
-        const tapado = despejarDesde === undefined ? 0 : caja.bottom - despejarDesde + 24
-        const abajo = Math.round(Math.max(50, Math.min(tapado, caja.height - 50 - 120)))
-        view.fit(extent, { padding: [50, 50, abajo, 50], maxZoom: 18, duration: 400 })
-      }
+      encuadrarRecorrido(despejarDesde)
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
-    [traceSource, fiberSource, nodeSource],
+    [traceSource, fiberSource, nodeSource, encuadrarRecorrido],
   )
 
   const limpiarRecorrido = useCallback(() => {
@@ -944,6 +957,7 @@ function MapaDeRed({
       pintarRecorrido,
       limpiarRecorrido,
       mostrarCubierta,
+      encuadrarRecorrido,
     }
     return () => {
       apiRef.current = null
@@ -958,6 +972,7 @@ function MapaDeRed({
     pintarRecorrido,
     limpiarRecorrido,
     mostrarCubierta,
+    encuadrarRecorrido,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
