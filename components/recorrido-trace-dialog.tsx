@@ -289,21 +289,24 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
           )}
 
           <label className="flex flex-col gap-1">
-            <Rotulo>Origen · UUID de un puerto o de un hilo</Rotulo>
+            <Rotulo>{desde ? "Origen · UUID del hilo elegido" : "Origen · UUID de un puerto o de un hilo"}</Rotulo>
+            {/* Con el hilo elegido en Gestión de hilos, el origen es ese hilo:
+                se ve (y se puede copiar) pero no se cambia aquí. */}
             <input
               type="text"
               value={origen}
-              onChange={(e) => {
-                setOrigen(e.target.value)
-                // Otro origen ya no es el hilo elegido; al cerrar se sigue
-                // volviendo a Gestión de hilos.
-                setDesde((d) => (d?.volver ? { etiqueta: "Origen escrito a mano", volver: d.volver } : null))
-              }}
+              readOnly={desde !== null}
+              onChange={(e) => setOrigen(e.target.value)}
               placeholder="01a0f9bf-be88-7b80-9c77-2219b25fb611"
+              title={desde ? "El origen es el hilo elegido en Gestión de hilos" : undefined}
               spellCheck={false}
               autoComplete="off"
-              aria-invalid={mensaje?.tono === "aviso" && !UUID.test(limpiarUuid(origen)) ? true : undefined}
-              className="h-8 w-full rounded-lg border border-input bg-card px-2.5 font-mono text-[11.5px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-amber-500"
+              aria-invalid={!desde && mensaje?.tono === "aviso" && !UUID.test(limpiarUuid(origen)) ? true : undefined}
+              className={`h-8 w-full rounded-lg border border-input px-2.5 font-mono text-[11.5px] outline-none transition placeholder:text-muted-foreground/50 ${
+                desde
+                  ? "cursor-not-allowed bg-muted/70 text-muted-foreground"
+                  : "bg-card text-foreground focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-amber-500"
+              }`}
             />
           </label>
 
