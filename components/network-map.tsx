@@ -645,8 +645,12 @@ function MapaDeRed({
     // Índice para el buscador: nombre, una línea de contexto y los otros
     // textos por los que alguien podría buscarlo (código, UUID…).
     if (onIndiceChangeRef.current) {
+      // Los números también (el `id_legacy` llega como número y no entraba).
       const textos = (f: Feature<Geometry>, campos: string[]) =>
-        campos.map((c) => f.get(c)).filter((v): v is string => typeof v === "string" && v.trim() !== "")
+        campos
+          .map((c) => f.get(c))
+          .map((v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : v))
+          .filter((v): v is string => typeof v === "string" && v.trim() !== "")
       const entrada = (
         f: Feature<Geometry>,
         tipo: ElementoBuscable["tipo"],
@@ -1084,6 +1088,11 @@ function MapaDeRed({
       // La conectividad se arma en la base en el momento: al recargar se
       // olvida la consultada, y lo que llegue de la carga anterior se ignora.
       cargaRef.current++
+      // Una carga anterior que siga en camino (la inicial, si se pulsa
+      // «Actualizar» antes de que termine) ya no escribe: sumaba sus elementos a
+      // los de esta y quedaban duplicados (370 cubiertas en vez de 185).
+      const generacion = cargaRef.current
+      const vieja = () => isCancelled() || cargaRef.current !== generacion
       setConsultada(null)
       setConectividades({})
       // Los elementos se reemplazan por los que lleguen, así que lo que
@@ -1103,8 +1112,8 @@ function MapaDeRed({
       setLoadingData(true)
       onLoadingChangeRef.current?.(true)
 
-      const mufasDone = loadRealMufas(nodeSource, isCancelled).then((error) => {
-        if (isCancelled()) return
+      const mufasDone = loadRealMufas(nodeSource, vieja).then((error) => {
+        if (vieja()) return
         if (error) {
           setMufaLoadError(error)
           return
@@ -1113,15 +1122,15 @@ function MapaDeRed({
         // depender de un centro fijo que puede no coincidir con la data.
         if (encuadrar) encuadrarEnDatos()
       })
-      const cablesDone = loadRealFiberCables(fiberSource, isCancelled).then((error) => {
-        if (error && !isCancelled()) setFiberLoadError(error)
+      const cablesDone = loadRealFiberCables(fiberSource, vieja).then((error) => {
+        if (error && !vieja()) setFiberLoadError(error)
       })
-      const cabecerasDone = loadRealCabeceras(cabeceraSource, isCancelled).then((error) => {
-        if (error && !isCancelled()) setCabeceraLoadError(error)
+      const cabecerasDone = loadRealCabeceras(cabeceraSource, vieja).then((error) => {
+        if (error && !vieja()) setCabeceraLoadError(error)
       })
       // El indicador se apaga cuando todos los endpoints terminaron, con éxito o no.
       Promise.allSettled([mufasDone, cablesDone, cabecerasDone]).then(() => {
-        if (isCancelled()) return
+        if (vieja()) return
         setLoadingData(false)
         setFirstLoadDone(true)
         onLoadingChangeRef.current?.(false)

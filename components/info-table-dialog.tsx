@@ -44,6 +44,13 @@ function humanizarCampo(key: string): string {
 
 const vacio = (value: unknown) => value === null || value === undefined || value === ""
 
+/**
+ * Identificadores y códigos (`id_legacy`, `id_proyecto`, `codigo`, `cod_…`): van
+ * tal cual. Con separador de miles, el `id_legacy` 1555766 salía «1.555.766» y
+ * así se copiaba, y eso no sirve para buscarlo en la base.
+ */
+const ES_IDENTIFICADOR = /^(id|id_.+|.+_id|codigo|cod_.+)$/
+
 function formatValue(key: string, value: unknown): string {
   if (vacio(value)) return "—"
   // Fechas: `creado_en`/`modificado_en` desde septiembre de 2026; se aceptan
@@ -52,7 +59,7 @@ function formatValue(key: string, value: unknown): string {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("es-CO")
   }
-  if (typeof value === "number") return value.toLocaleString("es-CO")
+  if (typeof value === "number") return ES_IDENTIFICADOR.test(key) ? String(value) : value.toLocaleString("es-CO")
   if (typeof value === "object") return JSON.stringify(value)
   return String(value)
 }

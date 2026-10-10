@@ -76,13 +76,15 @@ export function expiracionGuardada(): number | null {
  * Pregunta al servidor si la cookie de sesión sigue siendo válida.
  * `"sin-red"` si no se pudo preguntar: no es lo mismo que una sesión vencida.
  */
-export async function verificarSesion(): Promise<{ expira: number } | "invalida" | "sin-red"> {
+export async function verificarSesion(): Promise<{ expira: number; usuario: string | null } | "invalida" | "sin-red"> {
   try {
     const res = await fetch("/api/auth/sesion", { credentials: "same-origin", cache: "no-store" })
     if (res.status === 401) return "invalida"
     if (!res.ok) return "sin-red"
-    const cuerpo = (await res.json()) as { expira?: unknown }
-    return typeof cuerpo.expira === "number" ? { expira: cuerpo.expira } : "invalida"
+    const cuerpo = (await res.json()) as { expira?: unknown; usuario?: unknown }
+    return typeof cuerpo.expira === "number"
+      ? { expira: cuerpo.expira, usuario: typeof cuerpo.usuario === "string" ? cuerpo.usuario : null }
+      : "invalida"
   } catch {
     return "sin-red"
   }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Clock, Loader2, X } from "lucide-react"
-import { expiracionGuardada, terminarSesionCaducada, verificarSesion } from "@/lib/auth"
+import { expiracionGuardada, saveSession, terminarSesionCaducada, verificarSesion } from "@/lib/auth"
 import { GismartLogo } from "@/components/gismart-mark"
 import { TramaRed } from "@/components/trama-red"
 
@@ -17,10 +17,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // La sesión vive en una cookie httpOnly que el navegador no puede leer: se le
   // pregunta al servidor. Lo que dejó el login en el navegador solo sirve para
-  // no esperar en vano cuando claramente no hay sesión.
+  // no esperar en vano cuando ya venció.
+  //
+  // Sin nada guardado en esta pestaña (se entró sin «Recordar» y se abrió otra
+  // pestaña, o un marcador) la cookie puede seguir siendo válida: antes se
+  // mandaba al login sin preguntar y había que volver a escribir la clave.
   useEffect(() => {
     const guardada = expiracionGuardada()
-    if (!guardada || guardada <= Date.now()) {
+    if (guardada !== null && guardada <= Date.now()) {
       window.location.replace("/")
       return
     }
@@ -28,7 +32,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     let activo = true
     let temporizador: number | undefined
     let temporizadorAviso: number | undefined
-    let expira = guardada
+    let expira = guardada ?? 0
 
     function comprobarAlVolver() {
       if (document.visibilityState === "visible" && expira <= Date.now()) terminarSesionCaducada()
@@ -37,12 +41,24 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     void verificarSesion().then((resultado) => {
       if (!activo) return
       if (resultado === "invalida") {
-        terminarSesionCaducada()
+        // Si esta pestaña no tenía sesión, no hay nada que «caducó»: al login, sin aviso.
+        if (guardada === null) window.location.replace("/")
+        else terminarSesionCaducada()
         return
       }
-      // Sin red no se puede confirmar, pero tampoco es una sesión vencida: se
-      // entra con lo guardado y las capas dirán si algo falla.
-      if (resultado !== "sin-red") expira = resultado.expira
+      if (resultado === "sin-red") {
+        // Sin red no se puede confirmar, pero tampoco es una sesión vencida: se
+        // entra con lo guardado y las capas dirán si algo falla. Sin nada
+        // guardado no hay con qué entrar.
+        if (guardada === null) {
+          window.location.replace("/")
+          return
+        }
+      } else {
+        expira = resultado.expira
+        // La sesión de la cookie, para esta pestaña (el encabezado muestra el usuario).
+        if (guardada === null) saveSession({ usuario: resultado.usuario }, resultado.expira, false)
+      }
       setAuthorized(true)
 
       // La sesión dura ocho horas, más que una jornada de trabajo con el mapa

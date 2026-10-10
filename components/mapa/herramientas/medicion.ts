@@ -1,3 +1,4 @@
+import { unByKey } from "ol/Observable"
 import Overlay from "ol/Overlay"
 import type LineString from "ol/geom/LineString"
 import type Polygon from "ol/geom/Polygon"
@@ -43,10 +44,15 @@ export function herramientaMedicion(ctx: ContextoHerramienta) {
       }
     })
 
-    draw.once("drawend", () => {
+    // La medición termina de una de dos formas, y la otra deja de aplicar. Antes
+    // el «drawabort» de una medición ya terminada quedaba esperando, y la Esc de
+    // la siguiente borraba también su rótulo.
+    const alTerminar = draw.once("drawend", () => {
+      unByKey(alCancelar)
       tooltipEl.style.background = "#334155"
     })
-    draw.once("drawabort", () => {
+    const alCancelar = draw.once("drawabort", () => {
+      unByKey(alTerminar)
       map.removeOverlay(tooltipOverlay)
       measureOverlaysRef.current = measureOverlaysRef.current.filter((o) => o !== tooltipOverlay)
     })
