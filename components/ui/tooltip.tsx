@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
+import { useContenedorDePortal } from "@/lib/pantalla-completa"
 import { cn } from "@/lib/utils"
 
 /**
@@ -44,6 +45,8 @@ function Tooltip({
   label?: string
   side?: "top" | "right" | "bottom" | "left"
 }) {
+  // En pantalla completa, dentro de lo que se ve (ver lib/pantalla-completa.ts).
+  const contenedor = useContenedorDePortal()
   if (!label) return children
 
   // El retardo se configura en `TooltipProvider`, que va en el layout: en esta
@@ -55,7 +58,7 @@ function Tooltip({
   return (
     <TooltipPrimitive.Root>
       <TooltipPrimitive.Trigger render={children} />
-      <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Portal container={contenedor}>
         <TooltipPrimitive.Positioner side={side} sideOffset={8} className="z-[100]">
           <TooltipPrimitive.Popup
             className={cn(

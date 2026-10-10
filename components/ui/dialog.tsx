@@ -4,6 +4,7 @@ import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { X } from "lucide-react"
 
+import { useContenedorDePortal } from "@/lib/pantalla-completa"
 import { cn } from "@/lib/utils"
 
 function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -40,8 +41,10 @@ function DialogContent({
    */
   sinFondo?: boolean
 }) {
+  // En pantalla completa, dentro de lo que se ve (ver lib/pantalla-completa.ts).
+  const contenedor = useContenedorDePortal()
   return (
-    <DialogPrimitive.Portal>
+    <DialogPrimitive.Portal container={contenedor}>
       {!sinFondo && <DialogBackdrop />}
       <DialogPrimitive.Popup
         data-slot="dialog-content"

@@ -101,7 +101,8 @@ export function DashboardRibbon({
       document.exitFullscreen()
     } else {
       const mapPanel = document.getElementById("map-panel") ?? document.documentElement
-      mapPanel.requestFullscreen().catch(() => {})
+      // Si el navegador no lo deja (políticas, un iframe), se dice en vez de no hacer nada.
+      mapPanel.requestFullscreen().catch(() => setAviso("El navegador no dejó poner el mapa en pantalla completa."))
     }
   }
 
