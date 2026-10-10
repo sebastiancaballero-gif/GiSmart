@@ -22,6 +22,7 @@ const PASOS = [
   ["Capa activa", `${PRUEBAS} scripts/probar-capa-activa.mjs`],
   ["Buscador de elementos", `${PRUEBAS} scripts/probar-busqueda.mjs`],
   ["Sesión en cookie", `${PRUEBAS} scripts/probar-sesion.mjs`],
+  ["Inicio de sesión y bloqueo", `${PRUEBAS} scripts/probar-login.mjs`],
   ["Gestión de hilos", `${PRUEBAS} scripts/probar-hilos.mjs`],
   ["Redes/Nodo y GPON", `${PRUEBAS} scripts/probar-red-de-fibra.mjs`],
   ["Recorrido del trace", `${PRUEBAS} scripts/probar-trace.mjs`],

@@ -141,11 +141,31 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // El intento se cuenta ya, antes del primer `await`: si se cuenta al fallar,
+  // muchas peticiones a la vez leen todas el mismo registro viejo, pasan el
+  // bloqueo y el contador queda en 1 (se podían probar cientos de claves cada
+  // 30 s). Si la clave resulta buena, o la base falla, el intento se devuelve.
+  const fallos = (registro?.fallos ?? 0) + 1
+  const bloquear = fallos >= MAX_INTENTOS
+  intentos.set(
+    clave,
+    bloquear ? { fallos: 0, bloqueadaHasta: ahora + BLOQUEO_MS, visto: ahora } : { fallos, bloqueadaHasta: 0, visto: ahora },
+  )
+
+  /** Deshace la cuenta de este intento (la base falló o la cuenta está inactiva: no fue una clave errada). */
+  function devolverIntento() {
+    const actual = intentos.get(clave)
+    if (!actual) return
+    if (bloquear && actual.bloqueadaHasta === ahora + BLOQUEO_MS) {
+      intentos.set(clave, { fallos: MAX_INTENTOS - 1, bloqueadaHasta: 0, visto: ahora })
+    } else if (actual.bloqueadaHasta === 0 && actual.fallos > 0) {
+      intentos.set(clave, { ...actual, fallos: actual.fallos - 1 })
+    }
+  }
+
   function registrarFalloDeAcceso() {
-    const fallos = (registro?.fallos ?? 0) + 1
     const restantes = MAX_INTENTOS - fallos
-    if (fallos >= MAX_INTENTOS) {
-      intentos.set(clave, { fallos: 0, bloqueadaHasta: ahora + BLOQUEO_MS, visto: ahora })
+    if (bloquear) {
       return NextResponse.json(
         {
           message: "Demasiados intentos fallidos. Cuenta bloqueada 30 segundos.",
@@ -155,7 +175,6 @@ export async function POST(req: NextRequest) {
         { status: 429 },
       )
     }
-    intentos.set(clave, { fallos, bloqueadaHasta: 0, visto: ahora })
     return NextResponse.json(
       {
         message: `Usuario o contraseña incorrectos. Te ${restantes === 1 ? "queda" : "quedan"} ${restantes} ${restantes === 1 ? "intento" : "intentos"}.`,
@@ -180,6 +199,7 @@ export async function POST(req: NextRequest) {
     // recreó usuario_app, el motivo real era una columna que ya no existía
     // (42703) y un permiso perdido (42501).
     console.error(`[login] usuario_app: ${error.code} ${error.message}`)
+    devolverIntento()
     return NextResponse.json(
       {
         message:
@@ -209,6 +229,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!cuentaValida.activo) {
+    devolverIntento()
     return NextResponse.json(
       { message: "Este usuario está inactivo. Contacta a un administrador.", field: null },
       { status: 403 },
