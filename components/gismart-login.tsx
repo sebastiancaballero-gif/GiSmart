@@ -3,6 +3,7 @@
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { VersionApp } from "@/components/version-app"
 import {
   User,
   Lock,
@@ -383,6 +384,8 @@ export function GiSmartLogin() {
         Sistema de Información Geográfica
         <br />
         <span className="font-medium text-foreground/70">G&amp;G Technology SAS</span>
+        {" · "}
+        <VersionApp />
       </p>
 
       {/* Modal de carga durante la autenticación */}

@@ -590,6 +590,13 @@ script para cerrar la migración sin esperar a que todos inicien sesión.
 
 ---
 
+## Versiones
+
+La versión se ve en el pie del login («Versión 1.4.0»; al pasar el mouse, el commit desde
+el que se compiló). Sale de `package.json` al compilar (`next.config.mjs` → `lib/version.ts`),
+así que hay un solo lugar donde cambiarla. Cada cambio importante sube la versión y queda
+anotado en [`CHANGELOG.md`](CHANGELOG.md), que explica también cómo se numera.
+
 ## Despliegue
 
 La guía para publicarlo en el servidor Windows de la empresa (Node + NSSM como servicio +

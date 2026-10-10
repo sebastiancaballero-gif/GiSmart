@@ -1,4 +1,21 @@
-/** @type {import('next').NextConfig} */
+import { execSync } from "node:child_process"
+import { readFileSync } from "node:fs"
+
+/**
+ * La versión que se ve en el login (lib/version.ts) sale de package.json, y el
+ * commit desde el que se compila, de git. Cada cambio importante sube la
+ * versión y queda anotado en CHANGELOG.md.
+ */
+const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"))
+
+function commitActual() {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
+  } catch {
+    // Compilado fuera del repositorio: se ve solo la versión.
+    return ""
+  }
+}
 
 /**
  * Cabeceras de seguridad para todas las respuestas.
@@ -23,7 +40,12 @@ const cabecerasDeSeguridad = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ]
 
+/** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_VERSION: version,
+    NEXT_PUBLIC_COMPILACION: commitActual(),
+  },
   // Sin «X-Powered-By: Next.js»: no hace falta anunciar con qué está hecha.
   poweredByHeader: false,
   images: {

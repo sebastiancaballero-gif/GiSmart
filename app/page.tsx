@@ -1,6 +1,7 @@
 import { GiSmartLogin } from "@/components/gismart-login"
 import { LoginPanelMarca } from "@/components/login-panel-marca"
 import { TramaRed } from "@/components/trama-red"
+import { VersionApp } from "@/components/version-app"
 
 export default function Page() {
   return (
@@ -30,7 +31,8 @@ export default function Page() {
 
         {/* En el celular esto ya va debajo de la tarjeta (ver GiSmartLogin). */}
         <p className="absolute inset-x-0 bottom-5 hidden text-center text-[11px] text-muted-foreground lg:block">
-          {`© ${new Date().getFullYear()} G&G Technology SAS`}
+          {`© ${new Date().getFullYear()} G&G Technology SAS · `}
+          <VersionApp />
         </p>
       </section>
     </main>
