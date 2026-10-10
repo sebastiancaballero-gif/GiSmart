@@ -154,15 +154,23 @@ Esto es deliberado por tres razones:
 
 | Ruta | Qué hace |
 | --- | --- |
-| `POST /api/auth/login` | Valida usuario/clave contra `public.usuario_app` y devuelve un JWT firmado. |
+| `POST /api/auth/login` | Valida usuario/clave contra `public.usuario_app` y deja la sesión en la cookie httpOnly `gismart_sesion` (un token firmado que el navegador no puede leer). |
+| `GET /api/auth/sesion` | ¿Hay sesión? Lo pregunta el tablero al abrir: quién es y cuándo vence. |
+| `POST /api/auth/logout` | Borra la cookie de sesión. |
 | `GET /api/mufas` | Devuelve un `FeatureCollection` con las cubiertas de empalme. |
 | `GET /api/fiber-cables` | Devuelve un `FeatureCollection` con los cables de fibra. |
 | `GET /api/cabeceras` | Devuelve un `FeatureCollection` con las cabeceras centrales. |
 | `GET /api/mufas/{id}/conectividad` | Conectividad interna de una mufa, generada por la función `get_json_conectividad_cubierta`. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
 | `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_json_conectividad_cubierta(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
 | `GET /api/cables/{id}/extremos` | Extremos de un cable (dónde sale y dónde entra), según `geo_fiber.fn_json_extremos_cable(p_uuid_cable)`. Solo lectura. |
+| `GET /api/cables/{id}/hilos` | Hilos de un cable para «Gestión de hilos», según `fn_obtener_hilos_cable_json`. Solo lectura. |
+| `GET /api/traces/{downstream\|upstream}/{id}` | Recorrido del trace desde un puerto o un hilo, leído de la caché `tab_fiber.element_connection` (ver la fila del Trace más abajo). Solo lectura. |
 | `GET /api/reverse-geocode` | Traduce `lon`/`lat` al nombre del municipio (Nominatim/OSM), para el subtítulo del mapa. |
 | `GET /api/geocode` | Busca municipios/zonas por texto (Nominatim/OSM, limitado a Colombia) para el buscador de la cabecera. |
+
+Toda ruta de datos exige sesión (`exigirSesion`); la prueba «Sesión en cookie» lo revisa
+en cada `route.ts`. Los endpoints geográficos leen por páginas de 1000 (el tope que
+PostgREST aplica sin avisar), así que el mapa no se corta al pasar de mil elementos.
 
 Los endpoints geográficos leen vistas que ya exponen `geom` como GeoJSON. Si una vista
 falta —se borran junto con su tabla, y ya pasó tres veces— la ruta cae automáticamente a
@@ -464,7 +472,7 @@ hilos) construido con JointJS.
 ## Autenticación
 
 1. El login (`components/gismart-login.tsx`) envía usuario y clave a `/api/auth/login`.
-2. La ruta busca el registro en `public.usuario_app` por `nombre` (comparación
+2. La ruta busca el registro en `public.usuario_app` por `nombre_usuario` (comparación
    insensible a mayúsculas) y verifica que `activo` sea verdadero.
 3. Si coincide, firma un JWT HMAC-SHA256 con `AUTH_JWT_SECRET` y lo deja en la cookie
    httpOnly `gismart_sesion` (SameSite=Strict, Secure con HTTPS): ningún script de la
@@ -594,12 +602,12 @@ Se evaluó el 25 de septiembre de 2026 y **no es viable**. Queda escrito porque 
 parece razonable —es gratis y esto es Next.js— y la pregunta va a volver.
 
 La única ruta de Pages que Cloudflare sigue documentando para Next.js es la **exportación
-estática**, y aquí no aplica: las nueve rutas de `app/api/` verifican sesión y consultan
+estática**, y aquí no aplica: las rutas de `app/api/` verifican sesión y consultan
 Supabase, así que sin servidor no queda aplicación. La ruta dinámica era
 `@cloudflare/next-on-pages`, marcada como descontinuada en npm («use the OpenNext adapter
 instead») y con tope en Next 15.5.2, cuando el proyecto va por 16. Encima es
 exclusivamente runtime *edge*, que rechaza los módulos de Node: `exigirSesion` importa
-`node:crypto` y por ahí pasan las nueve rutas, de modo que declarar
+`node:crypto` y por ahí pasan todas las rutas, de modo que declarar
 `export const runtime = 'edge'` **las rompe todas**, no unas pocas.
 
 Ese detalle es el que decide. En *edge* no existe `scrypt` —WebCrypto solo trae PBKDF2—,
@@ -675,12 +683,14 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   fibra, mover un vértice o cambiar un nombre solo existe en el navegador; al recargar se
   pierde. Hoy la aplicación es un **visor** con herramientas de dibujo, no un editor.
   Para que lo sea faltan endpoints de escritura y decidir permisos por usuario.
-- **Cables sin cargar** (21 de septiembre de 2026): `geo_fiber.cable_fibra` está vacía,
-  así que el mapa no dibuja tendido y ninguna mufa tiene conectividad que mostrar. Además,
-  un disparador de esa tabla impide insertar cables hasta que se corrija. El detalle está
-  en [`docs/base-de-datos.md`](docs/base-de-datos.md). Los permisos que se habían
-  perdido ya se restauraron con
-  [`docs/sql/permisos-service-role.sql`](docs/sql/permisos-service-role.sql).
+- **Cables** (resuelto): el 21 de septiembre de 2026 `geo_fiber.cable_fibra` estaba
+  vacía; hoy tiene 182 cables y el mapa los dibuja. El historial está en
+  [`docs/base-de-datos.md`](docs/base-de-datos.md) y los permisos que se habían perdido
+  se restauraron con [`docs/sql/permisos-service-role.sql`](docs/sql/permisos-service-role.sql).
+- **La función `get_json_conectividad_cubierta` falla** (10 de octubre de 2026): busca la
+  columna `pe.id_equipo` de `puerto_equipo`, que ahora se llama `id_equipo_pert`. La ruta
+  `/api/mufas/{id}/conectividad` responde con ese error (y la ventana lo muestra) hasta
+  que se corrija la función en la base.
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.

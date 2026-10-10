@@ -91,6 +91,14 @@ si el proceso se cae.
 4. Crear un sitio nuevo con el binding del dominio interno o público.
 5. En ese sitio → **URL Rewrite** → *Add Rule* → *Reverse Proxy* → destino
    `localhost:3000`.
+6. Avisarle a la aplicación que la conexión del usuario es HTTPS: IIS habla con Node
+   por HTTP, y sin este aviso la cookie de sesión sale sin `Secure` (el navegador la
+   mandaría también por HTTP).
+   - En el nodo del servidor → **URL Rewrite** → *View Server Variables* → *Add* →
+     `HTTP_X_FORWARDED_PROTO`.
+   - En la regla del paso 5 → *Server Variables* → *Add* → nombre
+     `HTTP_X_FORWARDED_PROTO`, valor `https`.
+   - La aplicación lee esa cabecera (`X-Forwarded-Proto`) en `lib/auth-server.ts`.
 
 ### HTTPS
 
@@ -125,6 +133,8 @@ mover el proxy de IIS al nuevo puerto antes de apagar la anterior.
 - [ ] `http://localhost:3000` responde en el propio servidor.
 - [ ] El dominio responde por HTTPS desde otro equipo.
 - [ ] El login funciona (valida contra Supabase, o sea que hay salida a internet).
+- [ ] En el navegador, herramientas de desarrollo → *Application* → *Cookies*: la cookie
+      `gismart_sesion` tiene marcado **Secure** (si no, falta el paso 6 de IIS).
 - [ ] El mapa carga las mufas y los cables (endpoints `/api/mufas` y `/api/fiber-cables`).
 - [ ] Reiniciar el servidor y confirmar que el servicio levanta solo.
 
