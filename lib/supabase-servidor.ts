@@ -13,11 +13,27 @@ import { exigirSesion } from "@/lib/auth-server"
  * Supabase en el navegador a propósito.
  */
 
+/**
+ * Lo más que se espera a Supabase por consulta. El navegador deja de esperar a
+ * los 20–30 s, pero sin este tope la ruta seguía colgada en el servidor; así
+ * la consulta se corta y la ruta responde con su error de siempre.
+ */
+const ESPERA_MAXIMA_MS = 15_000
+
 const crearCliente = (url: string, clave: string, esquema: string) =>
   createClient(url, clave, {
     db: { schema: esquema },
     // En el servidor no hay sesión de Supabase que guardar ni renovar.
     auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: (entrada, opciones) =>
+        fetch(entrada, {
+          ...opciones,
+          signal: opciones?.signal
+            ? AbortSignal.any([opciones.signal, AbortSignal.timeout(ESPERA_MAXIMA_MS)])
+            : AbortSignal.timeout(ESPERA_MAXIMA_MS),
+        }),
+    },
   })
 
 type ClienteSupabase = ReturnType<typeof crearCliente>

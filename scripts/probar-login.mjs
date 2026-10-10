@@ -14,9 +14,11 @@ const HASH = await hashClave(CLAVE)
 
 let baseCaida = false
 const servidor = createServer((req, res) => {
+  // Un error de la base que el cliente de Supabase no reintenta (un 503 lo
+  // reintenta varias veces con espera, y la prueba tardaba 40 s).
   if (baseCaida) {
-    res.writeHead(503, { "content-type": "application/json" })
-    res.end(JSON.stringify({ code: "PGRST000", message: "base caída (simulada)" }))
+    res.writeHead(403, { "content-type": "application/json" })
+    res.end(JSON.stringify({ code: "42501", message: "permiso denegado (simulado)" }))
     return
   }
   const filtro = new URL(req.url, "http://local").searchParams.get("nombre_usuario") ?? ""
@@ -92,7 +94,7 @@ console.log("\n4) LO QUE NO ES UNA CLAVE ERRADA NO CUENTA\n")
   const caidas = []
   for (let i = 0; i < 6; i++) caidas.push(await entrar("eva", "errada"))
   baseCaida = false
-  comprobar("con la base caída responde 502, sin bloquear", caidas.every((x) => x.status === 502))
+  comprobar("con la base fallando responde 502, sin bloquear", caidas.every((x) => x.status === 502))
   const luego = await entrar("eva", "errada")
   comprobar("al volver la base, el primer error deja 4 intentos", luego.status === 401 && luego.cuerpo.message?.includes("quedan 4 intentos"), luego.cuerpo.message)
   const inactiva = []

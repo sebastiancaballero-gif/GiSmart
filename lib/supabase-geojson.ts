@@ -13,6 +13,17 @@ const vistasAusentes = new Map<string, number>()
 const MEMORIA_MS = 5 * 60_000
 
 /**
+ * PostgREST devuelve como mucho `max_rows` filas por consulta (1000 en este
+ * proyecto: `hilo_cable` tiene más de 10 000 y llegan 1000) y corta sin
+ * error. Las capas se leen por páginas, con el total que da la base, para que
+ * el mapa no dibuje una red incompleta cuando pase de mil cubiertas o cables.
+ * Hoy cada capa cabe en la primera página: sigue siendo una sola consulta.
+ */
+const POR_PAGINA = 1000
+/** Tope de seguridad: 200 páginas son 200 000 elementos. */
+const MAX_PAGINAS = 200
+
+/**
  * Sirve una capa del mapa como GeoJSON FeatureCollection.
  *
  * Las tres capas (mufas, cables y cabeceras) se leen igual: misma validación de
@@ -59,19 +70,30 @@ export async function serveGeoJsonView({
     // Se piden todas las columnas: la vista ya define qué se expone, y repetir
     // la lista acá solo servía para que la ruta se rompiera cada vez que
     // cambiaba el esquema (pasó al renombrarse `est_const` a `tipo_est_const`).
-    const { data, error } = await supabase.from(view).select("*")
-
-    if (error) {
-      if (esRelacionInexistente(error)) {
-        vistasAusentes.set(clave, Date.now())
-        return await servirDesdeTabla({ schema, view, table, entidad })
-      }
-      return fallo({ schema, relacion: view, entidad, error })
-    }
-
+    // Por páginas, ordenadas por `id` para que no se repitan ni se salten filas.
     // `select()` recibe las columnas como string, así que Supabase no puede
     // inferir la forma de la fila: acá se trata como un registro genérico.
-    const rows = (data ?? []) as unknown as Record<string, unknown>[]
+    const rows: Record<string, unknown>[] = []
+    for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+      const desde = pagina * POR_PAGINA
+      const { data, error, count } = await supabase
+        .from(view)
+        .select("*", { count: pagina === 0 ? "exact" : undefined })
+        .order("id")
+        .range(desde, desde + POR_PAGINA - 1)
+
+      if (error) {
+        if (pagina === 0 && esRelacionInexistente(error)) {
+          vistasAusentes.set(clave, Date.now())
+          return await servirDesdeTabla({ schema, view, table, entidad })
+        }
+        return fallo({ schema, relacion: view, entidad, error })
+      }
+      rows.push(...((data ?? []) as unknown as Record<string, unknown>[]))
+      const total = pagina === 0 ? count : null
+      if (!data || data.length === 0 || (total !== null && total !== undefined ? rows.length >= total : data.length < POR_PAGINA)) break
+    }
+
     const features = rows
       .filter((row) => row.geom)
       .map(({ geom, ...properties }) => ({
@@ -127,32 +149,49 @@ async function servirDesdeTabla({
   }
 
   const claveServicio = process.env.SUPABASE_SECRET_KEY as string
-  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?select=*`, {
-    headers: {
-      apikey: claveServicio,
-      Authorization: `Bearer ${claveServicio}`,
-      "Accept-Profile": schema,
-      Accept: "application/geo+json",
-    },
-    cache: "no-store",
-  })
-
-  if (!res.ok) {
-    const detalle = await res.text().catch(() => "")
-    console.error(`[${schema}.${table}] respaldo GeoJSON: HTTP ${res.status} ${detalle.slice(0, 300)}`)
-    return NextResponse.json(
-      {
-        message:
-          `Falta la vista ${schema}.${view} y tampoco se puede leer la tabla ${schema}.${table}. ` +
-          `Revisa docs/base-de-datos.md para recrearla.`,
-        ...(process.env.NODE_ENV === "production" ? {} : { detalle: `${schema}.${table} → HTTP ${res.status}: ${detalle.slice(0, 300)}` }),
-        features: [],
+  // Por páginas, como la vista: el total sale de `Content-Range` («0-999/1834»).
+  const features: unknown[] = []
+  let total: number | null = null
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const desde = pagina * POR_PAGINA
+    const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?select=*&order=id`, {
+      headers: {
+        apikey: claveServicio,
+        Authorization: `Bearer ${claveServicio}`,
+        "Accept-Profile": schema,
+        Accept: "application/geo+json",
+        Range: `${desde}-${desde + POR_PAGINA - 1}`,
+        ...(pagina === 0 ? { Prefer: "count=exact" } : {}),
       },
-      { status: 502 },
-    )
+      cache: "no-store",
+    })
+
+    if (!res.ok) {
+      const detalle = await res.text().catch(() => "")
+      console.error(`[${schema}.${table}] respaldo GeoJSON: HTTP ${res.status} ${detalle.slice(0, 300)}`)
+      return NextResponse.json(
+        {
+          message:
+            `Falta la vista ${schema}.${view} y tampoco se puede leer la tabla ${schema}.${table}. ` +
+            `Revisa docs/base-de-datos.md para recrearla.`,
+          ...(process.env.NODE_ENV === "production" ? {} : { detalle: `${schema}.${table} → HTTP ${res.status}: ${detalle.slice(0, 300)}` }),
+          features: [],
+        },
+        { status: 502 },
+      )
+    }
+
+    const coleccion = (await res.json()) as { features?: unknown[] }
+    const deEstaPagina = Array.isArray(coleccion.features) ? coleccion.features : []
+    features.push(...deEstaPagina)
+    if (pagina === 0) {
+      const enRango = Number(res.headers.get("content-range")?.split("/")[1])
+      total = Number.isFinite(enRango) ? enRango : null
+    }
+    if (deEstaPagina.length === 0 || (total !== null ? features.length >= total : deEstaPagina.length < POR_PAGINA)) break
   }
 
-  return NextResponse.json(await res.json())
+  return NextResponse.json({ type: "FeatureCollection", features })
 }
 
 function fallo({

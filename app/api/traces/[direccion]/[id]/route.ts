@@ -82,14 +82,27 @@ const COLUMNAS = {
   cabecera: "id, nombre",
 }
 
-/** Las filas de una tabla con esos UUID; si la consulta falla, lanza el error con el nombre de la tabla. */
+/**
+ * Cuántos UUID van en una consulta. Van en la URL (37 caracteres cada uno) y
+ * un recorrido grande hacia abajo, con cientos de hilos, pasaba el largo que
+ * aceptan los servidores; además PostgREST no devuelve más de 1000 filas.
+ */
+const IDS_POR_CONSULTA = 100
+
+/** Las filas de una tabla con esos UUID, por lotes; si una consulta falla, lanza el error con el nombre de la tabla. */
 async function filasPorId<T>(esquema: string, tabla: string, columnas: string, ids: string[], columna = "id"): Promise<T[]> {
   if (ids.length === 0) return []
   const cliente = clienteSupabase(esquema)
   if (!cliente) throw new Error("SUPABASE_URL/SUPABASE_SECRET_KEY no están configurados.")
-  const { data, error } = await cliente.from(tabla).select(columnas).in(columna, ids)
-  if (error) throw new Error(`${esquema}.${tabla} → ${error.code}: ${error.message}`)
-  return (data ?? []) as T[]
+  const lotes: string[][] = []
+  for (let i = 0; i < ids.length; i += IDS_POR_CONSULTA) lotes.push(ids.slice(i, i + IDS_POR_CONSULTA))
+  const respuestas = await Promise.all(lotes.map((lote) => cliente.from(tabla).select(columnas).in(columna, lote)))
+  const filas: T[] = []
+  for (const { data, error } of respuestas) {
+    if (error) throw new Error(`${esquema}.${tabla} → ${error.code}: ${error.message}`)
+    filas.push(...((data ?? []) as T[]))
+  }
+  return filas
 }
 
 /** Todas las filas de una tabla (de a 1000, el tope de la API), con filtros de igualdad. */
@@ -108,6 +121,12 @@ async function todas<T>(esquema: string, tabla: string, columnas: string, iguale
 }
 
 const sinRepetir = (lista: (string | null | undefined)[]) => [...new Set(lista.filter((v): v is string => !!v))]
+
+/** El número si es mayor que cero; si no, `null`. */
+const positivo = (v: unknown) => {
+  const n = numero(v)
+  return n !== null && n > 0 ? n : null
+}
 
 /**
  * Lo que casi no cambia y se repite en cada recorrido hacia arriba: los
@@ -301,7 +320,8 @@ async function datosDeElementos(hilos: FilaDeHilo[], puertos: FilaDePuerto[], ca
       colorHilo: h.color_hilo,
       colorBuffer: h.color_buffer,
     })),
-    cables: de(cables, (c) => c.id, (c) => ({ codigo: c.codigo, largoM: numero(c.longitud_medida) ?? numero(c.longitud_calc) })),
+    // Un largo en 0 es «sin medir», como en el mapa: se usa el calculado.
+    cables: de(cables, (c) => c.id, (c) => ({ codigo: c.codigo, largoM: positivo(c.longitud_medida) ?? positivo(c.longitud_calc) })),
     puertos: de(puertos, (q) => q.id, (q) => ({
       numero: numero(q.numero_puerto),
       nombre: q.nombre,
@@ -331,7 +351,11 @@ async function datosDeElementos(hilos: FilaDeHilo[], puertos: FilaDePuerto[], ca
 const VIGENCIA_RESPUESTA_MS = 60_000
 const respuestas = new Map<string, { hasta: number; cuerpo: unknown }>()
 
+/** Una respuesta más grande que esto no se guarda (un recorrido enorme hacia abajo). */
+const MAX_BYTES_RESPUESTA = 512 * 1024
+
 function guardarRespuesta(llave: string, cuerpo: unknown) {
+  if (JSON.stringify(cuerpo).length > MAX_BYTES_RESPUESTA) return
   const ahora = Date.now()
   for (const [k, r] of respuestas) if (r.hasta <= ahora) respuestas.delete(k)
   // Sin crecer sin fin: se va la más vieja.

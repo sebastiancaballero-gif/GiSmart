@@ -18,7 +18,8 @@
     "hilos": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-hilos.mjs",
     "red": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-red-de-fibra.mjs",
     "trace": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-trace.mjs",
-    "login": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-login.mjs"
+    "login": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-login.mjs",
+    "capas": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-capas.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
