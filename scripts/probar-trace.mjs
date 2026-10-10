@@ -327,6 +327,13 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
   )
   const ciclo = normalizarPasos([paso(1, H("h1"), H("h2")), paso(2, H("h2"), H("h1"))])
   comprobar("un ciclo en los pasos no se recorre para siempre", rutasDelRecorrido(ciclo, "h1").length === 1)
+  const abanico = normalizarPasos(Array.from({ length: 9 }, (_, i) => paso(1, P("pd"), H(`r${i}`))))
+  const muchas = armarTablaHaciaArriba(abanico, datos, "pd")
+  comprobar(
+    "más de 8 caminos: se muestran 8 y se avisa",
+    muchas.rutas.length === 8 && muchas.avisos[0] === "El recorrido se abre en más de 8 caminos; la tabla muestra los primeros 8.",
+    muchas.avisos[0],
+  )
 
   const r = clasificarRespuestaTrace(
     200,

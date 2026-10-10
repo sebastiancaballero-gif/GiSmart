@@ -114,7 +114,9 @@ export function herramientaCable(ctx: ContextoHerramienta) {
     // puntas quedan a la vista.
     const geometriaCable = cable.getGeometry()
     if (geometriaCable) {
-      sentidoSource.addFeature(new Feature({ geometry: geometriaCable, color: CABLE_CONSULTADO_COLOR }))
+      // Una copia, como en el trace: si el cable se edita mientras está
+      // resaltado, el resalte no se mueve con él.
+      sentidoSource.addFeature(new Feature({ geometry: geometriaCable.clone(), color: CABLE_CONSULTADO_COLOR }))
     }
 
     const datos = datosDelCable(cable).join(" · ")

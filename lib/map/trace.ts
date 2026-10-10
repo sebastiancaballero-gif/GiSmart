@@ -467,8 +467,13 @@ function centralDe(e: ExtremoDePaso, datos: DatosDeElementos): { id: string; nom
  * bifurcación, una ruta que no llega a la OLT, elementos que no están en la
  * base o pasos que no encadenan con el origen.
  */
+/** Cuántas rutas muestra la tabla cuando el recorrido se abre en varias. */
+export const MAX_RUTAS = 8
+
 export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElementos, origen?: string | null): TablaHaciaArriba {
-  const caminos = rutasDelRecorrido(pasos, origen)
+  // Una de más, para saber si hubo que dejar alguna afuera.
+  const encontradas = rutasDelRecorrido(pasos, origen, MAX_RUTAS + 1)
+  const caminos = encontradas.slice(0, MAX_RUTAS)
   const rutas = caminos.map((camino): RutaHaciaArriba => {
     const filas: ElementoDelRecorrido[] = []
     const divisores: string[] = []
@@ -504,6 +509,9 @@ export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElemen
   })
 
   const avisos: string[] = []
+  if (encontradas.length > MAX_RUTAS) {
+    avisos.push(`El recorrido se abre en más de ${MAX_RUTAS} caminos; la tabla muestra los primeros ${MAX_RUTAS}.`)
+  }
   // Una bifurcación: un elemento seguido por dos distintos según la ruta.
   const despues = new Map<string, Map<string, ExtremoDePaso>>()
   for (const camino of caminos) {

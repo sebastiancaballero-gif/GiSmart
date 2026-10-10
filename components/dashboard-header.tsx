@@ -496,9 +496,10 @@ export function DashboardHeader({
         <button
           type="button"
           onClick={() => setLogoutOpen(true)}
+          aria-label="Salir"
           className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <LogOut className="size-4" />
+          <LogOut className="size-4" aria-hidden="true" />
           <span className="hidden sm:inline">Salir</span>
         </button>
       </div>

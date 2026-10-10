@@ -207,6 +207,9 @@ async function completar<T extends { id: string }>(mapa: Map<string, T>, esquema
   }
 }
 
+/** Cuántos divisores seguidos se cruzan hacia arriba antes de parar. */
+const MAX_DIVISORES_EN_SERIE = 4
+
 /** Un recorrido de la caché, como lo devuelve la ruta. */
 function tramoDe(idOrigen: string, fila: FilaDeCache, pasos: PasoDeTrace[]) {
   return {
@@ -238,8 +241,9 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
   const unidos = [...pasos]
   const tramos: ReturnType<typeof tramoDe>[] = []
   const cruzados = new Set<string>()
+  let cortado = false
   // Más de cuatro divisores en serie no tiene sentido en una red FTTH: sería un ciclo.
-  for (let vuelta = 0; vuelta < 4; vuelta++) {
+  for (let vuelta = 0; vuelta < MAX_DIVISORES_EN_SERIE + 1; vuelta++) {
     const llegaA = new Map<string, PasoDeTrace>()
     for (const p of unidos) if (p.destino.id) llegaA.set(p.destino.id, p)
     const salidas = sinRepetir(rutasDelRecorrido(unidos, id).map((r) => r[r.length - 1].id)).flatMap((final) => {
@@ -248,6 +252,11 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
       return divisor && !cruzados.has(divisor) ? [{ salida: final, divisor }] : []
     })
     if (salidas.length === 0) break
+    // Se llegó al tope y todavía hay divisores por cruzar: se avisa en la tabla.
+    if (vuelta === MAX_DIVISORES_EN_SERIE) {
+      cortado = true
+      break
+    }
     for (const s of salidas) cruzados.add(s.divisor)
 
     // Un divisor que no está en el catálogo (recién creado): su entrada, de la base.
@@ -281,7 +290,7 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
       tramos.push(tramoDe(entrada, fila, pasosDeEntrada))
     }
   }
-  return { unidos, tramos }
+  return { unidos, tramos, cortado }
 }
 
 /**
@@ -475,10 +484,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
     // recorrido de la caché sale igual y la tabla lo avisa.
     let unidos = pasos
     let tramos: ReturnType<typeof tramoDe>[] = []
+    let cortado = false
     let errorContinuar: string | null = null
     if (haciaArriba) {
       try {
-        ;({ unidos, tramos } = await continuarPorLosDivisores(id, pasos, catalogoDelTrace))
+        ;({ unidos, tramos, cortado } = await continuarPorLosDivisores(id, pasos, catalogoDelTrace))
       } catch (e) {
         errorContinuar = e instanceof Error ? e.message : String(e)
         console.error(`[trace ${id}] continuar por el divisor: ${errorContinuar}`)
@@ -519,6 +529,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
       try {
         if (lecturaPuertos.status === "rejected") throw lecturaPuertos.reason
         tabla = armarTablaHaciaArriba(unidos, await datosDeElementos(filasDeHilo, lecturaPuertos.value, catalogoDelTrace), id)
+        if (cortado) {
+          tabla.avisos.unshift(
+            `El recorrido cruza más de ${MAX_DIVISORES_EN_SERIE} divisores seguidos; la tabla llega hasta el ${MAX_DIVISORES_EN_SERIE}.º. Puede haber un ciclo en la conectividad.`,
+          )
+        }
         if (errorContinuar) {
           const { detalle } = detalleSoloEnDesarrollo(errorContinuar)
           tabla.avisos.unshift(

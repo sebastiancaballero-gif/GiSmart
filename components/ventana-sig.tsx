@@ -553,7 +553,8 @@ export function BarraDeEstado({
   const Icono = mensaje.tono === "error" ? CircleAlert : mensaje.tono === "aviso" ? TriangleAlert : Info
   return (
     <div
-      role="status"
+      // Un error se anuncia en el momento (lectores de pantalla); lo demás, con cortesía.
+      role={mensaje.tono === "error" ? "alert" : "status"}
       className={`flex items-center gap-2 border-t border-border px-4 py-2 text-xs ${
         mensaje.tono === "error"
           ? "bg-destructive/8 text-destructive"

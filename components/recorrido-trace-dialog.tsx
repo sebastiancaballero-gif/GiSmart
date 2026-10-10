@@ -283,6 +283,18 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     const tabla = resumen?.tabla
     const elegida = tabla?.rutas[ruta]
     if (!resumen || !tabla || !elegida || elegida.filas.length === 0) return
+    try {
+      descargarElExcel(resumen, tabla, elegida)
+    } catch (e) {
+      setMensaje({
+        texto: "No se pudo armar el Excel del trace. Vuelve a intentarlo.",
+        tono: "error",
+        detalle: `Exportar a Excel → ${e instanceof Error ? e.message : String(e)}`,
+      })
+    }
+  }
+
+  function descargarElExcel(resumen: Resumen, tabla: TablaHaciaArriba, elegida: TablaHaciaArriba["rutas"][number]) {
     const ahora = new Date()
     const fecha = (d: Date) =>
       d.toLocaleString("es-CO", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })
