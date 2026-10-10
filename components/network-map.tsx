@@ -176,6 +176,18 @@ export type MapaApi = {
   encuadrarRecorrido: (ventana?: Recuadro) => void
 }
 
+/**
+ * Lo que flota sobre el mapa y tapa parte de él: las herramientas, la leyenda,
+ * la ficha del elemento, la barra de estado (con `data-tapa-mapa`) y los
+ * controles de OpenLayers (acercar, escala). El encuadre del trace y «mostrar»
+ * lo esquivan, para que lo que se muestra no quede debajo.
+ */
+function lasTapasDelMapa(): Recuadro[] {
+  return [...document.querySelectorAll<HTMLElement>("[data-tapa-mapa], .ol-control")]
+    .map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+}
+
 /** El largo de un cable en metros: el medido en campo si la base lo tiene; si no, el de su línea. */
 function largoDeCableM(f: Feature<Geometry>): number {
   const medido = f.get("longitud_medida")
@@ -860,7 +872,7 @@ function MapaDeRed({
       const caja = mapRef.current?.getTargetElement()?.getBoundingClientRect()
       const extent = traceSource.getExtent()
       if (!view || !caja || !extent || traceSource.getFeatures().length === 0 || !extent.every((v) => Number.isFinite(v))) return
-      const libre = espacioLibre(caja, ventana, { ancho: 180, alto: 140 })
+      const libre = espacioLibre(caja, ventana, { ancho: 180, alto: 140 }, lasTapasDelMapa())
       view.fit(extent, { padding: margenParaZona(caja, libre), maxZoom: 18, duration: 400 })
     },
     [traceSource],
@@ -942,7 +954,7 @@ function MapaDeRed({
       if (!mapa || !caja || !view || !actual) return false
 
       // El espacio donde debe quedar, en píxeles del mapa.
-      const libre = espacioLibre(caja, ventana, { ancho: 60, alto: 60 })
+      const libre = espacioLibre(caja, ventana, { ancho: 60, alto: 60 }, lasTapasDelMapa())
       const extent = geometria.getExtent()
       // Con un margen del 20 %; un punto no cambia la resolución.
       const resolucion = Math.max(
@@ -1791,7 +1803,7 @@ function MapaDeRed({
       </MapNoticeStack>
 
       {/* Herramientas de dibujo (izquierda) */}
-      <div className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded-xl bg-card/95 p-1 shadow-lg ring-1 ring-border backdrop-blur">
+      <div data-tapa-mapa className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded-xl bg-card/95 p-1 shadow-lg ring-1 ring-border backdrop-blur">
         {tools.map((t) => {
           const Icon = t.icon
           const active = tool === t.id

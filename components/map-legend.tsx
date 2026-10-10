@@ -50,7 +50,7 @@ export function MapLegend({
   // globals.css). En el celular va encima de la barra de estado, que ahí ocupa
   // casi todo el ancho y quedaba debajo de la leyenda.
   return (
-    <div className="gismart-leyenda absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:bottom-14">
+    <div data-tapa-mapa className="gismart-leyenda absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:bottom-14">
       <button
         type="button"
         onClick={() => setAbierta((v) => !v)}

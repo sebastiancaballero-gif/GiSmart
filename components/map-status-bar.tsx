@@ -25,7 +25,7 @@ export function MapStatusBar({
   herramienta: string
 }) {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 whitespace-nowrap rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:gap-2 max-sm:px-2.5">
+    <div data-tapa-mapa className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 whitespace-nowrap rounded-lg bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:gap-2 max-sm:px-2.5">
       <span>
         Lon:{" "}
         <span ref={lonRef} className="tabular-nums text-primary">

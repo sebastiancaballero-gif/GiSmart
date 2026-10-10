@@ -466,15 +466,18 @@
  * El filtro se aplica solo a esta capa: OpenLayers dibuja todas las capas en
  * un mismo lienzo salvo que se les dé un `className` propio, y por eso la capa
  * base lo lleva (ver network-map.tsx). Así los datos de la red no se invierten.
+ *
+ * Va solo en el contenedor de la capa (el `div` con la clase), no también en
+ * su lienzo: con los dos, la segunda inversión deshacía la primera (el fondo
+ * quedaba gris claro en vez de oscuro) y el navegador pagaba el filtro dos
+ * veces en cada cuadro al mover el mapa.
  */
-.dark .gismart-basemap,
-.dark .gismart-basemap canvas {
+.dark .gismart-basemap {
   filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.72);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not(.light) .gismart-basemap,
-  :root:not(.light) .gismart-basemap canvas {
+  :root:not(.light) .gismart-basemap {
     filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.72);
   }
 }

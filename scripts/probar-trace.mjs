@@ -475,6 +475,20 @@ console.log("\n7) DÓNDE SE VE EL TRACE CON LA VENTANA ENCIMA\n")
   comprobar("ventana que no toca el mapa (sobre el ribbon): el mapa entero", texto(espacioLibre(mapa, { left: 300, top: 8, right: 700, bottom: 80 }, MIN)) === "0,0,1078,578")
   comprobar("ventana que tapa casi todo: el mapa entero", texto(espacioLibre(mapa, { left: 300, top: 200, right: 1360, bottom: 760 }, MIN)) === "0,0,1078,578")
   comprobar("para una cubierta basta un espacio chico (60 px)", texto(espacioLibre(mapa, { left: 300, top: 200, right: 1290, bottom: 760 }, { ancho: 60, alto: 60 })) === "1002,0,1078,578")
+  // Lo demás que flota sobre el mapa, como en la pantalla real: la leyenda abajo a
+  // la derecha, la ficha del elemento arriba a la derecha y la barra de estado.
+  const leyenda = { left: 1166, top: 500, right: 1354, bottom: 756 }
+  const ficha = { left: 1066, top: 294, right: 1354, bottom: 520 }
+  const estado = { left: 300, top: 730, right: 700, bottom: 760 }
+  const esquiva = espacioLibre(mapa, arribaDerecha, MIN, [estado, leyenda])
+  comprobar("ventana arriba: abajo, pero sin meterse bajo la leyenda ni la barra de estado", texto(esquiva) === "0,393,878,540", texto(esquiva))
+  comprobar("y el margen lo respeta", margenParaZona(mapa, esquiva).join() === "417,224,62,50", margenParaZona(mapa, esquiva).join())
+  comprobar("sin ventana, el trace no queda bajo la leyenda", texto(espacioLibre(mapa, undefined, MIN, [leyenda])) === "0,0,878,578")
+  comprobar(
+    "si esquivándolo todo no alcanza, solo se esquiva la ventana",
+    texto(espacioLibre(mapa, abajoAlCentro, MIN, [ficha, leyenda])) === "875,0,1078,578",
+    texto(espacioLibre(mapa, abajoAlCentro, MIN, [ficha, leyenda])),
+  )
 }
 
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)
