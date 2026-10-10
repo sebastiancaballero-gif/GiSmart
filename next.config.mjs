@@ -24,6 +24,8 @@ const cabecerasDeSeguridad = [
 ]
 
 const nextConfig = {
+  // Sin «X-Powered-By: Next.js»: no hace falta anunciar con qué está hecha.
+  poweredByHeader: false,
   images: {
     unoptimized: true,
   },

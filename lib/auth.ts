@@ -13,6 +13,21 @@ const EXPIRA_KEY = "gismart_expira"
 const TOKEN_ANTERIOR_KEY = "gismart_token"
 
 /**
+ * El almacenamiento del navegador, o `null` si está bloqueado (navegación
+ * privada estricta, políticas de la empresa): ahí hasta leer `localStorage`
+ * lanza un error, y el login decía «Error de red» aunque la clave era buena.
+ * Sin almacenamiento la sesión sigue en la cookie; el tablero se la pregunta
+ * al servidor.
+ */
+function almacen(tipo: "local" | "sesion"): Storage | null {
+  try {
+    return tipo === "local" ? window.localStorage : window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+/**
  * `fetch` con la sesión.
  *
  * La cookie va sola en cada petición al mismo origen; esta función existe para
@@ -51,23 +66,31 @@ export function terminarSesionCaducada() {
 /** Lo que el login dejó en el navegador: quién entró y cuándo vence, en milisegundos. */
 export function saveSession(user: unknown, expira: number, remember: boolean) {
   clearSession()
-  const storage = remember ? localStorage : sessionStorage
-  storage.setItem(USER_KEY, JSON.stringify(user))
-  storage.setItem(EXPIRA_KEY, String(expira))
+  try {
+    const storage = almacen(remember ? "local" : "sesion")
+    storage?.setItem(USER_KEY, JSON.stringify(user))
+    storage?.setItem(EXPIRA_KEY, String(expira))
+  } catch {
+    // Lleno o bloqueado: la sesión sigue en la cookie.
+  }
 }
 
 export function clearSession() {
-  for (const storage of [localStorage, sessionStorage]) {
-    storage.removeItem(USER_KEY)
-    storage.removeItem(EXPIRA_KEY)
-    storage.removeItem(TOKEN_ANTERIOR_KEY)
+  for (const storage of [almacen("local"), almacen("sesion")]) {
+    try {
+      storage?.removeItem(USER_KEY)
+      storage?.removeItem(EXPIRA_KEY)
+      storage?.removeItem(TOKEN_ANTERIOR_KEY)
+    } catch {
+      // Bloqueado: no hay nada que borrar.
+    }
   }
 }
 
 /** Cuándo vence la sesión según lo que guardó el login, o `null` si no hay. */
 export function expiracionGuardada(): number | null {
   if (typeof window === "undefined") return null
-  const crudo = localStorage.getItem(EXPIRA_KEY) ?? sessionStorage.getItem(EXPIRA_KEY)
+  const crudo = almacen("local")?.getItem(EXPIRA_KEY) ?? almacen("sesion")?.getItem(EXPIRA_KEY) ?? null
   const valor = Number(crudo)
   return crudo && Number.isFinite(valor) ? valor : null
 }
@@ -98,7 +121,7 @@ export async function logout() {
 
 export function getUser() {
   if (typeof window === "undefined") return null
-  const raw = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY)
+  const raw = almacen("local")?.getItem(USER_KEY) || almacen("sesion")?.getItem(USER_KEY)
   if (!raw) return null
   try {
     return JSON.parse(raw)

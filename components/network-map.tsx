@@ -226,7 +226,6 @@ type NetworkMapProps = {
   onStatsChange?: (stats: NetworkStats) => void
   /** Se dispara al terminar cada desplazamiento, con el centro actual del mapa. */
   onCenterChange?: (center: { lon: number; lat: number }) => void
-  /** Centra el mapa en un punto. `nonce` permite repetir el mismo destino. */
   /**
    * Centra el mapa en un punto y lo marca con un pin (el resultado del
    * buscador). `etiqueta` es el texto que lleva el pin; `nonce` permite repetir

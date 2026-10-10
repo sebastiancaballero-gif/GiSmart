@@ -8,4 +8,3 @@ export const LAYER_COLORS = {
   cabecera: "#059669",
 } as const
 
-export type LayerId = keyof typeof LAYER_COLORS

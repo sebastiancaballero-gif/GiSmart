@@ -111,5 +111,31 @@ console.log("\n3) LAS RUTAS DE SESIÓN\n")
   comprobar("salir borra la cookie", r.status === 200 && c.startsWith(`${COOKIE_SESION}=;`) && /Max-Age=0/.test(c), c)
 }
 
+{
+  // Toda ruta bajo app/api, salvo las de auth, pasa por `exigirSesion` (o por
+  // `responderConFuncion`, que la llama). Una ruta nueva que se olvide queda
+  // marcada acá, antes de llegar al servidor.
+  const { readdirSync, readFileSync, statSync } = await import("node:fs")
+  const { join, relative } = await import("node:path")
+  const rutas = []
+  const recorrer = (dir) => {
+    for (const nombre of readdirSync(dir)) {
+      const ruta = join(dir, nombre)
+      if (statSync(ruta).isDirectory()) recorrer(ruta)
+      else if (nombre === "route.ts") rutas.push(ruta)
+    }
+  }
+  recorrer("app/api")
+  const sinSesion = rutas
+    .filter((r) => !relative("app/api", r).startsWith("auth"))
+    .filter((r) => !/exigirSesion\(|responderConFuncion\(/.test(readFileSync(r, "utf8")))
+    .map((r) => relative("app/api", r))
+  comprobar(`toda ruta de datos exige sesión (${rutas.length} rutas revisadas)`, rutas.length > 5 && sinSesion.length === 0, sinSesion.join(", "))
+  comprobar(
+    "responderConFuncion la exige también",
+    /exigirSesion\(/.test(readFileSync("lib/supabase-servidor.ts", "utf8").split("export async function responderConFuncion")[1] ?? ""),
+  )
+}
+
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)
 process.exit(fallos ? 1 : 0)

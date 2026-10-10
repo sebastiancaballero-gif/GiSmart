@@ -2,12 +2,6 @@ const THEME_KEY = "gismart_theme"
 
 export type Theme = "light" | "dark"
 
-export function getStoredTheme(): Theme | null {
-  if (typeof window === "undefined") return null
-  const stored = localStorage.getItem(THEME_KEY)
-  return stored === "light" || stored === "dark" ? stored : null
-}
-
 /**
  * El tema que se ve. Sin uno elegido a mano, el del sistema: antes se daba por
  * claro, y con el equipo en oscuro el botón ofrecía «Cambiar a modo oscuro» y
@@ -24,7 +18,12 @@ export function getCurrentTheme(): Theme {
 export function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark")
   document.documentElement.classList.toggle("light", theme === "light")
-  localStorage.setItem(THEME_KEY, theme)
+  // Con el almacenamiento bloqueado el tema cambia igual; solo no se recuerda.
+  try {
+    localStorage.setItem(THEME_KEY, theme)
+  } catch {
+    // Nada que hacer.
+  }
 }
 
 /** El tema pedido que todavía no se aplicó: el fundido lo aplica un fotograma después. */

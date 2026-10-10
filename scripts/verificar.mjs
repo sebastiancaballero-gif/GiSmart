@@ -8,9 +8,8 @@
  * dependen de cómo esté la base ese día y la auditoría hace intentos de login
  * reales.
  *
- * El lint deja fuera `components/network-schematic.tsx`: no lo usa ninguna
- * página y lo mantiene otra persona del equipo (ver «Pendientes conocidos» en
- * el README).
+ * El lint deja fuera `components/network-schematic.tsx` (ver eslint.config.mjs):
+ * no lo usa ninguna página y lo mantiene otra persona del equipo.
  */
 import { spawnSync } from "node:child_process"
 
@@ -18,7 +17,7 @@ const PRUEBAS = "node --experimental-strip-types --import ./scripts/registrar-al
 
 const PASOS = [
   ["Tipos (TypeScript)", "npx tsc --noEmit"],
-  ["Lint (ESLint)", "npx eslint . --ignore-pattern components/network-schematic.tsx"],
+  ["Lint (ESLint)", "npx eslint ."],
   ["Capa activa", `${PRUEBAS} scripts/probar-capa-activa.mjs`],
   ["Buscador de elementos", `${PRUEBAS} scripts/probar-busqueda.mjs`],
   ["Sesión en cookie", `${PRUEBAS} scripts/probar-sesion.mjs`],
