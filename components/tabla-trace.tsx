@@ -1,9 +1,12 @@
 "use client"
 
-import { Building2, ChevronDown, FileSpreadsheet, MapPin, Split, TriangleAlert } from "lucide-react"
+import type { CSSProperties } from "react"
+import { Cable, ChevronDown, FileSpreadsheet, MapPin, Plug, Server, Split, TriangleAlert } from "lucide-react"
 import { BolitaDeHilo } from "@/components/bolita-de-hilo"
+import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbols"
 import { Boton, Rotulo } from "@/components/ventana-sig"
 import { colorParaMostrar } from "@/lib/map/hilos-cable"
+import { LAYER_COLORS } from "@/lib/network-colors"
 import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, RESALTE } from "@/lib/map/symbology"
 import { COLUMNAS_TRACE } from "@/lib/map/trace-excel"
 import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/map/trace"
@@ -20,9 +23,12 @@ import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/
  * - las cubiertas, el color de su nivel, como en el mapa y la leyenda;
  * - el pin de una fila lleva el mapa a su cubierta o su cable y lo deja
  *   resaltado en ámbar; la fila queda marcada con el mismo ámbar;
- * - los códigos de elemento y contenedor son los UUID (se seleccionan enteros
- *   con un click para copiarlos); lo que se lee (hilo 56, cable 2103630, CO19)
- *   sale al pasar el mouse;
+ * - los códigos de elemento y contenedor son los UUID, en gris para que se lea
+ *   primero lo demás (se seleccionan enteros con un click para copiarlos); lo
+ *   que se lee va a la vista: el puerto (E1) junto a su tipo, y el cable
+ *   (2102262), la cubierta (CO19) o el equipo junto a su contenedor, con el
+ *   mismo símbolo del mapa y la leyenda;
+ * - la primera columna queda fija al desplazar la tabla de lado (en el celular);
  * - si el recorrido se abre en dos, se elige la ruta; los avisos dicen lo que
  *   no cuadra en los datos, para corregirlo en la base;
  * - se pliega para ver más mapa (queda el resumen y el Excel).
@@ -34,14 +40,34 @@ const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWN
 
 const CELDA = "whitespace-nowrap border-b border-border px-2 py-1"
 
-/** Un UUID entero, en monoespaciada; un click lo selecciona todo para copiarlo. */
+/**
+ * El fondo de una fila, opaco: la primera columna queda fija al desplazar la
+ * tabla de lado y no debe dejar ver lo que pasa por debajo.
+ */
+function fondoDeFila(indice: number, marcada: boolean) {
+  // En sRGB: en oklch, mezclar el ámbar con el fondo oscuro giraba el tono hacia el verde.
+  if (marcada) return `color-mix(in srgb, ${RESALTE.color} 25%, var(--card))`
+  return indice % 2 === 1 ? "color-mix(in oklch, var(--foreground) 3.5%, var(--card))" : "var(--card)"
+}
+
+/** Un UUID entero, en monoespaciada y gris (se lee primero lo demás); un click lo selecciona todo para copiarlo. */
 function Uuid({ valor, nombre }: { valor: string | null; nombre?: string | null }) {
-  if (!valor) return <span className="text-muted-foreground">—</span>
+  if (!valor) return <span className="text-muted-foreground/50">—</span>
   return (
-    <span title={nombre ? `${nombre} · ${valor}` : valor} className="select-all font-mono text-[10.5px] tracking-tight">
+    <span
+      title={nombre ? `${nombre} · ${valor}` : valor}
+      className="select-all font-mono text-[10px] tracking-tight text-muted-foreground transition-colors group-hover:text-foreground"
+    >
       {valor}
     </span>
   )
+}
+
+/** El ícono de cada tipo de fila: el de «Hilos» del ribbon, un conector, la cabecera como en el mapa. */
+function IconoDeTipo({ tipo }: { tipo: ElementoDelRecorrido["tipo"] }) {
+  if (tipo === "Central") return <CabeceraSymbol size={13} />
+  const Icono = tipo === "Hilo" ? Cable : Plug
+  return <Icono className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
 }
 
 /** «Buffer 5» con la barrita del color del buffer, como en Gestión de hilos. */
@@ -63,12 +89,43 @@ function BufferDelHilo({ fila }: { fila: ElementoDelRecorrido }) {
   )
 }
 
+/** El número de dónde está un puerto (divisor, bandeja, tarjeta), en una pastilla neutra junto a las bolitas de los hilos. */
+function PastillaDeUbica({ valor }: { valor: string }) {
+  return (
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10px] font-bold tabular-nums text-foreground ring-1 ring-border">
+      {valor}
+    </span>
+  )
+}
+
+/** El contenedor con su símbolo del mapa y lo que se lee de él: «Cable 2102262», «Cub nivel 1 CO19», «ODF 1». */
+function Contenedor({ fila }: { fila: ElementoDelRecorrido }) {
+  if (!fila.contenedor) return null
+  const simbolo =
+    fila.idCubierta !== undefined ? (
+      <MufaSymbol size={13} color={(fila.funcionCubierta && FUNCION_CUB_COLORS[fila.funcionCubierta]) || FUNCION_CUB_DEFAULT_COLOR} />
+    ) : fila.contenedor === "Cable" ? (
+      <FiberSymbol size={13} color={LAYER_COLORS.fiber} width={3} />
+    ) : (
+      <Server className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    )
+  return (
+    <span className="flex items-center gap-1.5">
+      {simbolo}
+      <span className="text-muted-foreground">{fila.contenedor}</span>
+      {fila.nombreContenedor && <span className="font-semibold text-foreground">{fila.nombreContenedor}</span>}
+    </span>
+  )
+}
+
 function Fila({
   fila,
+  indice,
   marcada,
   onUbicar,
 }: {
   fila: ElementoDelRecorrido
+  indice: number
   /** La fila del elemento resaltado en el mapa: lleva su mismo ámbar. */
   marcada: boolean
   onUbicar: () => void
@@ -79,27 +136,25 @@ function Fila({
   return (
     <tr
       aria-current={marcada || undefined}
-      style={marcada ? { backgroundColor: `color-mix(in oklch, ${RESALTE.color} 25%, transparent)` } : undefined}
-      className={`transition-colors ${marcada ? "" : "even:bg-foreground/[0.035] hover:bg-accent/60"}`}
+      style={{ "--fondo": fondoDeFila(indice, marcada) } as CSSProperties}
+      className={`group bg-[var(--fondo)] transition-colors ${marcada ? "" : "hover:bg-[color-mix(in_oklch,var(--accent)_70%,var(--card))]"}`}
     >
       <td
-        className={`${CELDA} font-semibold text-foreground`}
+        className={`${CELDA} sticky left-0 z-[1] border-r bg-inherit`}
         style={marcada ? { boxShadow: `inset 3px 0 0 ${RESALTE.fuerte}` } : undefined}
       >
-        {fila.tipo === "Central" ? (
-          <span className="flex items-center gap-1">
-            <Building2 className="size-3 text-emerald-600" aria-hidden="true" />
-            Central
-          </span>
-        ) : (
-          fila.tipo
-        )}
+        <span className="flex items-center gap-1.5" title={fila.tipo === "Central" && fila.nombre ? `Central ${fila.nombre}` : undefined}>
+          <IconoDeTipo tipo={fila.tipo} />
+          <span className="font-semibold text-foreground">{fila.tipo}</span>
+          {/* El puerto por su nombre (el número del hilo va en Código ubica; el nombre de la central, al pasar el mouse). */}
+          {fila.tipo === "Puerto" && fila.nombre && <span className="text-muted-foreground">{fila.nombre}</span>}
+        </span>
       </td>
       <td className={CELDA}>
         <Uuid valor={fila.codigo} nombre={esHilo ? `Hilo ${fila.nombre ?? "?"}` : fila.nombre} />
       </td>
       <td className={`${CELDA} text-muted-foreground`}>{esHilo && fila.ubica ? <BufferDelHilo fila={fila} /> : (fila.ubica ?? "")}</td>
-      <td className={`${CELDA} tabular-nums`}>
+      <td className={CELDA}>
         {/* El número del hilo, en la bolita de su color, como en Gestión de hilos. */}
         {esHilo && fila.codigoUbica ? (
           <BolitaDeHilo
@@ -108,22 +163,13 @@ function Fila({
             color={fila.colorHilo ?? null}
             titulo={`Hilo ${fila.codigoUbica}${fila.colorHilo ? ` · ${fila.colorHilo}` : ""}`}
           />
-        ) : (
-          (fila.codigoUbica ?? "")
-        )}
+        ) : fila.codigoUbica ? (
+          <PastillaDeUbica valor={fila.codigoUbica} />
+        ) : null}
       </td>
-      <td className={`${CELDA} text-right tabular-nums`}>{fila.longitudM !== null ? metros(fila.longitudM) : ""}</td>
-      <td className={`${CELDA} text-muted-foreground`}>
-        <span className="flex items-center gap-1.5">
-          {fila.idCubierta !== undefined && (
-            <span
-              className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: (fila.funcionCubierta && FUNCION_CUB_COLORS[fila.funcionCubierta]) || FUNCION_CUB_DEFAULT_COLOR }}
-              aria-hidden="true"
-            />
-          )}
-          {fila.contenedor ?? ""}
-        </span>
+      <td className={`${CELDA} text-right font-medium tabular-nums text-foreground`}>{fila.longitudM !== null ? metros(fila.longitudM) : ""}</td>
+      <td className={CELDA}>
+        <Contenedor fila={fila} />
       </td>
       <td className={CELDA}>
         <span className="flex items-center gap-1">
@@ -307,13 +353,13 @@ export function TablaTrace({
             </caption>
             <thead>
               <tr>
-                {COLUMNAS_TRACE.map((c) => (
+                {COLUMNAS_TRACE.map((c, i) => (
                   <th
                     key={c}
                     scope="col"
-                    className={`sticky top-0 z-10 whitespace-nowrap border-b border-border bg-muted px-2 py-1.5 font-semibold text-foreground ${
-                      c.startsWith("Longitud") ? "text-right" : "text-left"
-                    }`}
+                    className={`sticky top-0 whitespace-nowrap border-b border-border bg-muted px-2 py-1.5 text-[10.5px] font-semibold text-muted-foreground ${
+                      i === 0 ? "left-0 z-20 border-r" : "z-10"
+                    } ${c.startsWith("Longitud") ? "text-right" : "text-left"}`}
                   >
                     {c}
                   </th>
@@ -322,17 +368,17 @@ export function TablaTrace({
             </thead>
             <tbody>
               {actual.filas.map((f, i) => (
-                <Fila key={`${ruta}-${i}`} fila={f} marcada={ubicada === i} onUbicar={() => onUbicar(f, i)} />
+                <Fila key={`${ruta}-${i}`} fila={f} indice={i} marcada={ubicada === i} onUbicar={() => onUbicar(f, i)} />
               ))}
             </tbody>
             <tfoot>
-              <tr className="font-semibold text-foreground">
-                <td colSpan={3} className="sticky bottom-0 bg-muted px-2 py-1.5" />
-                <th scope="row" className="sticky bottom-0 bg-muted px-2 py-1.5 text-left">
+              <tr className="[&>*]:sticky [&>*]:bottom-0 [&>*]:whitespace-nowrap [&>*]:bg-muted [&>*]:px-2 [&>*]:py-1.5 [&>*]:shadow-[inset_0_1px_0_var(--border)]">
+                <td colSpan={3} />
+                <th scope="row" className="text-left text-[10.5px] font-semibold text-muted-foreground">
                   Suma
                 </th>
-                <td className="sticky bottom-0 bg-muted px-2 py-1.5 text-right tabular-nums">{metros(actual.sumaM)}</td>
-                <td colSpan={2} className="sticky bottom-0 bg-muted px-2 py-1.5" />
+                <td className="text-right text-xs font-bold tabular-nums text-foreground">{metros(actual.sumaM)} m</td>
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>

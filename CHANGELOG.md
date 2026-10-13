@@ -10,6 +10,15 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.2 — 13 de octubre de 2026
+
+- **Tabla del trace más fácil de leer:** el cable, la cubierta o el equipo de cada fila se
+  ven por su código (Cable 2102262, Cub nivel 1 CO19, ODF 1) con el símbolo del mapa, y el
+  puerto por su nombre (Puerto E1); los UUID siguen enteros, en gris. Encabezado más
+  liviano, la Suma con su unidad, la central con el símbolo de la cabecera, y la primera
+  columna fija al desplazar la tabla en el celular. La fila resaltada se ve ámbar también
+  en modo oscuro.
+
 ## 1.5.1 — 13 de octubre de 2026
 
 - **Resaltado en ámbar:** lo ubicado desde la tabla del trace se resalta en ámbar con borde
