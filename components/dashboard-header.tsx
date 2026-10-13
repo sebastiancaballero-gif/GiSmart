@@ -290,6 +290,8 @@ export function DashboardHeader({
           <Input
             ref={inputRef}
             type="text"
+            // Lo mismo que acepta la búsqueda de direcciones en el servidor.
+            maxLength={120}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)

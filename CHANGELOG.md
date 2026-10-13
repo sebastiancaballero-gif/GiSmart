@@ -10,6 +10,23 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.4.1 — 13 de octubre de 2026
+
+Revisión de lo que se puede escribir o pegar en cada campo, y de lo que llega al servidor.
+
+- **Nombre de un elemento:** lo pegado desde Excel o un correo queda en una sola línea, sin
+  caracteres invisibles y con un tope de 80 caracteres (antes aceptaba 200 000 y quedaban
+  como rótulo del mapa). Si se borra todo, al salir del campo vuelve el nombre que tenía.
+- **Login:** un usuario con caracteres invisibles (saltos de línea, el carácter nulo, marcas
+  que dan vuelta el texto) se rechaza con su aviso; el servidor no lee pedidos de más de
+  10 KB.
+- **Ubicación del mapa:** sin coordenadas o con coordenadas mal escritas ya no consulta el
+  punto (0, 0) en Nominatim; la búsqueda de direcciones no le manda caracteres invisibles.
+- **Campos:** cada buscador tiene un largo máximo acorde con lo que acepta el servidor.
+- **Arreglos:** el color de un hilo no se caía con una posición rara de la base; el Excel no
+  se rompía con una celda vacía o de más de 32 767 caracteres (el máximo de Excel).
+- **Pruebas:** `pnpm run entradas` (también dentro de `pnpm verificar`).
+
 ## 1.4.0 — 10 de octubre de 2026
 
 - **Seguridad:** Next.js 16.3.8. Cierra 3 vulnerabilidades críticas de la 16.2.6, entre

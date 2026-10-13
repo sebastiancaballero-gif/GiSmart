@@ -115,7 +115,10 @@ pnpm verificar   # tipos + lint + pruebas sin base: lo de correr antes de subir 
 
 Pruebas sueltas: `pnpm run capa`, `pnpm run busqueda` y `pnpm run sesion` no necesitan la
 base; `pnpm run conectividad` y `pnpm auditar` sí (la auditoría hace intentos de login
-reales y puede dejar una cuenta bloqueada 30 segundos).
+reales y puede dejar una cuenta bloqueada 30 segundos). `pnpm run entradas` prueba lo que
+se escribe o se pega: ids, coordenadas y búsquedas que no deben llegar a la base ni a
+Nominatim, usuarios con caracteres invisibles, nombres pegados y celdas del Excel (la
+limpieza de textos está en `lib/texto.ts`).
 
 ---
 

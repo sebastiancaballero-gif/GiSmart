@@ -626,6 +626,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               value={origen}
               readOnly={desde !== null}
               onChange={(e) => setOrigen(e.target.value)}
+              // Un UUID son 36 caracteres; con comillas o «::uuid» de una consulta, algo más.
+              maxLength={100}
               placeholder="01a0f9bf-be88-7b80-9c77-2219b25fb611"
               title={desde ? "El origen es el hilo elegido en Gestión de hilos" : undefined}
               spellCheck={false}

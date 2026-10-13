@@ -6,6 +6,9 @@ import { exigirSesion } from "@/lib/auth-server"
 // desde el navegador: así se puede fijar la cabecera y aprovechar la caché.
 const USER_AGENT = "GISmart/1.0 (G&G Technology SAS)"
 
+/** Un número decimal como se escribe en una coordenada: «-76.0883», «4.53». */
+const DECIMAL = /^[-+]?\d{1,3}(?:\.\d{1,15})?$/
+
 type NominatimAddress = {
   city?: string
   town?: string
@@ -20,9 +23,14 @@ export async function GET(request: Request) {
   const sinSesion = exigirSesion(request)
   if (sinSesion) return sinSesion
 
+  // Solo números decimales escritos como tales. Antes `Number(null)` daba 0:
+  // sin `lon` o `lat` se consultaba el punto (0, 0), en medio del océano, y
+  // `0x10` pasaba como 16.
   const { searchParams } = new URL(request.url)
-  const lon = Number(searchParams.get("lon"))
-  const lat = Number(searchParams.get("lat"))
+  const crudoLon = searchParams.get("lon")?.trim() ?? ""
+  const crudoLat = searchParams.get("lat")?.trim() ?? ""
+  const lon = DECIMAL.test(crudoLon) ? Number(crudoLon) : NaN
+  const lat = DECIMAL.test(crudoLat) ? Number(crudoLat) : NaN
 
   // Además de numéricas, tienen que ser coordenadas posibles: `Number.isFinite`
   // deja pasar un 1e30 que luego se envía tal cual a Nominatim, y el servicio

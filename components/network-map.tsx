@@ -50,6 +50,7 @@ import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
 import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, destellar, type ColorRGB } from "@/lib/map/destello"
 import { espacioLibre, margenParaZona, type Recuadro } from "@/lib/map/espacio-libre"
+import { limpiarNombre } from "@/lib/texto"
 import { fuenteDelMapaBase } from "@/lib/map/mapa-base"
 import { TOOL_HINTS, TOOL_ORDER, type MapTool } from "@/lib/map/herramientas"
 import type { ElementoBuscable } from "@/lib/map/busqueda"
@@ -1616,10 +1617,31 @@ function MapaDeRed({
     drawRef.current?.abortDrawing()
   }
 
+  /** El nombre que tenía cada elemento antes de editarlo, por si queda vacío. */
+  const nombresOriginales = useRef(new WeakMap<Feature<Geometry>, string>())
+
+  // Al escribir: sin saltos de línea ni caracteres invisibles (llegan al
+  // pegar), y con tope. Antes un nombre pegado de 200 000 caracteres quedaba
+  // como rótulo del mapa.
   function handleNameChange(value: string) {
-    if (!seleccionEditable) return
-    setNameDraft(value)
-    selected?.feature.set(NOMBRE_VISIBLE, value)
+    if (!seleccionEditable || !selected) return
+    const f = selected.feature
+    if (!nombresOriginales.current.has(f)) nombresOriginales.current.set(f, String(f.get(NOMBRE_VISIBLE) ?? ""))
+    const limpio = limpiarNombre(value)
+    setNameDraft(limpio)
+    f.set(NOMBRE_VISIBLE, limpio)
+  }
+
+  /** Al salir del nombre: sin espacios de más, y si quedó vacío, el que tenía. */
+  function terminarNombre() {
+    if (!seleccionEditable || !selected) return
+    const f = selected.feature
+    const final = nameDraft.trim() || nombresOriginales.current.get(f) || ""
+    // La próxima edición parte del nombre con el que quedó.
+    nombresOriginales.current.delete(f)
+    if (final === nameDraft) return
+    setNameDraft(final)
+    f.set(NOMBRE_VISIBLE, final)
   }
 
   function closeSelection() {
@@ -1889,6 +1911,7 @@ function MapaDeRed({
           seleccionado={selected}
           nombre={nameDraft}
           onCambiarNombre={handleNameChange}
+          onTerminarNombre={terminarNombre}
           editable={seleccionEditable}
           conectividad={consultaSeleccionada}
           enBase={idMufaSeleccionada !== null}

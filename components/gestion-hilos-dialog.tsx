@@ -610,6 +610,7 @@ function VentanaHilos({
                       type="search"
                       value={filtroActual.texto}
                       onChange={(e) => cambiarFiltro({ texto: e.target.value })}
+                      maxLength={60}
                       placeholder="Buscar hilo…"
                       className="h-7 w-40 rounded-full border border-input bg-card pl-7 pr-2.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
                     />

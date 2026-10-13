@@ -229,7 +229,12 @@ export function GiSmartLogin() {
                     required: "Ingresa un usuario.",
                     minLength: { value: 3, message: "El usuario debe tener al menos 3 caracteres." },
                     maxLength: { value: 120, message: "El usuario no puede superar 120 caracteres." },
-                    validate: (v) => v.trim().length > 0 || "El usuario no puede estar vacío.",
+                    validate: (v) =>
+                      v.trim().length === 0
+                        ? "El usuario no puede estar vacío."
+                        : /[\p{Cc}\p{Cf}]/u.test(v.trim())
+                          ? "El usuario tiene caracteres que no se pueden usar."
+                          : true,
                   })}
                 />
                 {usuarioOk && (

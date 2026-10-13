@@ -169,6 +169,7 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
               type="search"
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
+              maxLength={60}
               placeholder="Buscar un campo o un valor…"
               aria-label="Buscar un campo o un valor"
               className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2.5 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"

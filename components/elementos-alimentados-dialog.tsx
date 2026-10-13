@@ -289,6 +289,7 @@ function VentanaElementosAlimentados({
                   type="search"
                   value={caracteres}
                   onChange={(e) => setCaracteres(e.target.value)}
+                  maxLength={60}
                   onKeyDown={(e) => e.key === "Enter" && buscarPorCaracteres()}
                   placeholder="Parte del nombre…"
                   aria-label="Caracteres del nombre"

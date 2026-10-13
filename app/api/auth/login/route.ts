@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { emitirToken, llegoPorHttps, ponerCookieDeSesion, verificarToken } from "@/lib/auth-server"
 import { clienteSupabase } from "@/lib/supabase-servidor"
 import { esHash, hashClave, verificarClave, HASH_SENUELO } from "@/lib/password"
+import { tieneInvisibles } from "@/lib/texto"
 
 // Los usuarios reales viven en `public.usuario_app`. La tabla se recreó en
 // septiembre de 2026 con otras columnas: antes eran id_usr, codigo, nombre,
@@ -23,6 +24,9 @@ const COLUMNAS_USUARIO = "nombre_usuario, nombre_completo, clave, activo"
 // Sin columna de rol todavía en usuario_app: se asigna uno genérico hasta
 // que exista esa información real.
 const ROL_POR_DEFECTO = "usuario"
+
+/** El cuerpo de un inicio de sesión no pasa de unos cientos de bytes. */
+const MAX_BYTES_CUERPO = 10_000
 
 const MAX_INTENTOS = 5
 const BLOQUEO_MS = 30_000
@@ -84,19 +88,42 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const body = await req.json().catch(() => null)
+  // Un usuario y una clave caben en unos cientos de bytes: un cuerpo de varios
+  // megas no tiene por qué leerse ni interpretarse.
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BYTES_CUERPO) {
+    return NextResponse.json({ message: "Solicitud demasiado grande.", field: null }, { status: 413 })
+  }
+  const texto = await req.text().catch(() => "")
+  if (texto.length > MAX_BYTES_CUERPO) {
+    return NextResponse.json({ message: "Solicitud demasiado grande.", field: null }, { status: 413 })
+  }
+  let body: unknown = null
+  try {
+    body = JSON.parse(texto)
+  } catch {
+    // Queda en null: «Solicitud inválida».
+  }
 
   if (!body || typeof body !== "object") {
     return NextResponse.json({ message: "Solicitud inválida.", field: null }, { status: 400 })
   }
 
-  const usuario = typeof body.usuario === "string" ? body.usuario.trim() : ""
-  const contrasena = typeof body.contrasena === "string" ? body.contrasena : ""
-  const recordar = body.recordar === true
+  const campos = body as { usuario?: unknown; contrasena?: unknown; recordar?: unknown }
+  const usuario = typeof campos.usuario === "string" ? campos.usuario.trim() : ""
+  const contrasena = typeof campos.contrasena === "string" ? campos.contrasena : ""
+  const recordar = campos.recordar === true
 
   // Validaciones de servidor (defensa en profundidad)
   if (!usuario) {
     return NextResponse.json({ message: "El usuario es obligatorio.", field: "usuario" }, { status: 400 })
+  }
+  // Saltos de línea, el carácter nulo o marcas de dirección (U+202E da vuelta
+  // el texto) no van en un nombre de usuario: se ven igual y no coinciden.
+  if (tieneInvisibles(usuario)) {
+    return NextResponse.json(
+      { message: "El usuario tiene caracteres que no se pueden usar.", field: "usuario" },
+      { status: 400 },
+    )
   }
   if (usuario.length < 3) {
     return NextResponse.json(

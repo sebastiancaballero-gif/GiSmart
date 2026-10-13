@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { exigirSesion } from "@/lib/auth-server"
+import { sinInvisibles } from "@/lib/texto"
 
 // Búsqueda de zonas/direcciones contra Nominatim (OpenStreetMap). Igual que
 // /api/reverse-geocode, se llama desde el servidor para poder identificar la
@@ -18,7 +19,9 @@ export async function GET(request: Request) {
   if (sinSesion) return sinSesion
 
   const { searchParams } = new URL(request.url)
-  const q = (searchParams.get("q") ?? "").trim()
+  // Sin caracteres invisibles (el nulo, saltos de línea, marcas de dirección):
+  // no ayudan a buscar y no tienen por qué salir hacia Nominatim.
+  const q = sinInvisibles(searchParams.get("q") ?? "").trim()
 
   if (q.length < 3) {
     return NextResponse.json({ message: "La búsqueda debe tener al menos 3 caracteres.", results: [] }, { status: 400 })

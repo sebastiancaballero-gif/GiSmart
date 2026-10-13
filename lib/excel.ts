@@ -95,7 +95,11 @@ export function columna(indice: number): string {
   return letras
 }
 
-const esFormula = (valor: CeldaXlsx): valor is FormulaXlsx => typeof valor === "object" && valor !== null
+const esFormula = (valor: CeldaXlsx): valor is FormulaXlsx =>
+  typeof valor === "object" && valor !== null && typeof (valor as FormulaXlsx).formula === "string"
+
+/** Lo más que Excel admite en una celda; con más, pide «reparar» el archivo. */
+const MAX_CARACTERES_CELDA = 32_767
 
 function celda(valor: CeldaXlsx, ref: string, estilo: FilaXlsx["estilo"]): string {
   const esNumero = (typeof valor === "number" && Number.isFinite(valor)) || esFormula(valor)
@@ -118,9 +122,11 @@ function celda(valor: CeldaXlsx, ref: string, estilo: FilaXlsx["estilo"]): strin
     const cache = valor.valor !== null && Number.isFinite(valor.valor) ? `<v>${valor.valor}</v>` : ""
     return `<c r="${ref}" s="${s}"><f>${escapar(valor.formula)}</f>${cache}</c>`
   }
-  if (valor === null || valor === "") return sinBordes ? "" : `<c r="${ref}" s="${s}"/>`
+  if (valor === null || valor === undefined || valor === "") return sinBordes ? "" : `<c r="${ref}" s="${s}"/>`
   if (typeof valor === "number") return Number.isFinite(valor) ? `<c r="${ref}" s="${s}"><v>${valor}</v></c>` : `<c r="${ref}" s="${s}"/>`
-  return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapar(String(valor))}</t></is></c>`
+  const texto = String(valor)
+  const enCelda = texto.length > MAX_CARACTERES_CELDA ? `${texto.slice(0, MAX_CARACTERES_CELDA - 1)}…` : texto
+  return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapar(enCelda)}</t></is></c>`
 }
 
 function hojaXml(hoja: HojaXlsx): string {

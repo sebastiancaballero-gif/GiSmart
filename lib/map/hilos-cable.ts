@@ -145,11 +145,13 @@ function filasDe(datos: unknown): unknown[] {
  * TIA-598) o, si no lo reconoce, el que le toca por posición.
  */
 export function colorParaMostrar(nombre: string | null, posicion: number | null): string | null {
-  if (nombre) {
+  // Solo texto: si la base mandara otra cosa, se usa el color por posición.
+  if (typeof nombre === "string" && nombre) {
     const conocido = fiberColorByName(nombre)
     if (conocido) return conocido.hex
   }
-  return posicion && posicion > 0 ? fiberColor(posicion).hex : null
+  // Una posición entera: con Infinity o 2.5 la tabla de colores no tiene fila.
+  return Number.isInteger(posicion) && (posicion as number) > 0 ? fiberColor(posicion as number).hex : null
 }
 
 /** Clasifica lo que responde `GET /api/cables/{id}/hilos`. */

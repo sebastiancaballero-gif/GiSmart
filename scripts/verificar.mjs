@@ -26,6 +26,7 @@ const PASOS = [
   ["Redes/Nodo y GPON", `${PRUEBAS} scripts/probar-red-de-fibra.mjs`],
   ["Recorrido del trace", `${PRUEBAS} scripts/probar-trace.mjs`],
   ["Capas del mapa por páginas", `${PRUEBAS} scripts/probar-capas.mjs`],
+  ["Entradas raras y textos pegados", `${PRUEBAS} scripts/probar-entradas.mjs`],
 ]
 
 const resultados = []

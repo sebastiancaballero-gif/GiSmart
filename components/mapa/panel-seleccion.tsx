@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { MAX_NOMBRE } from "@/lib/texto"
 import type LineString from "ol/geom/LineString"
 import Point from "ol/geom/Point"
 import { toLonLat } from "ol/proj"
@@ -42,6 +43,8 @@ type PanelSeleccionProps = {
   /** El nombre tal como se está escribiendo. */
   nombre: string
   onCambiarNombre: (valor: string) => void
+  /** Al salir del campo del nombre (quita espacios de más; vacío vuelve al anterior). */
+  onTerminarNombre?: () => void
   /** Si es de la capa activa: solo entonces se renombra o se quita. */
   editable: boolean
   /** Última conectividad consultada de la cubierta con «Conectividad fina», si la hay. */
@@ -66,6 +69,7 @@ export function PanelSeleccion({
   seleccionado,
   nombre,
   onCambiarNombre,
+  onTerminarNombre,
   editable,
   conectividad,
   enBase,
@@ -181,6 +185,8 @@ export function PanelSeleccion({
             type="text"
             value={nombre}
             onChange={(e) => onCambiarNombre(e.target.value)}
+            onBlur={onTerminarNombre}
+            maxLength={MAX_NOMBRE}
             readOnly={!editable}
             className={
               editable
