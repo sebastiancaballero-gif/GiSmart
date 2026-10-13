@@ -286,7 +286,8 @@ async function todas(cliente, tabla, columnas) {
 }
 
 const hilos = await todas(tab, "hilo_cable", "id, id_cable")
-const conexiones = await todas(tab, "conectividad_fina", "id_ubicacion, id_hilo_origen, id_hilo_destino")
+// La tabla cambió de columnas (octubre de 2026): padre/hijo y el contenedor con su tipo.
+const conexiones = await todas(tab, "conectividad_fina", "id_contenedor, tipo_contenedor, id_hilo_padre, id_hilo_hijo")
 console.log(`   ${hilos.length} hilos, ${conexiones.length} conexiones`)
 
 if (hilos.length && cables.length) {
@@ -316,7 +317,7 @@ if (buffersEnCero) aviso(`${buffersEnCero} cable(s) con cant_buff = 0 aunque dec
 if (conexiones.length && hilos.length) {
   const idsHilo = new Set(hilos.map((h) => String(h.id)))
   const rotas = conexiones.filter(
-    (c) => (c.id_hilo_origen && !idsHilo.has(String(c.id_hilo_origen))) || (c.id_hilo_destino && !idsHilo.has(String(c.id_hilo_destino))),
+    (c) => (c.id_hilo_padre && !idsHilo.has(String(c.id_hilo_padre))) || (c.id_hilo_hijo && !idsHilo.has(String(c.id_hilo_hijo))),
   ).length
   if (rotas) aviso(`${rotas} conexión(es) apuntan a un hilo que no existe`)
 }
@@ -326,9 +327,11 @@ if (conexiones.length && hilos.length) {
 // cubierta encontraba las suyas.
 if (conexiones.length && mufas.length) {
   const idsMufaSet = new Set(mufas.map((m) => String(m.id)))
-  const enCubiertaInexistente = conexiones.filter((c) => !idsMufaSet.has(String(c.id_ubicacion))).length
+  // Solo las que están en una cubierta: las demás están en el ODF, la OLT o un divisor.
+  const enCubiertas = conexiones.filter((c) => c.tipo_contenedor === "CUB")
+  const enCubiertaInexistente = enCubiertas.filter((c) => !idsMufaSet.has(String(c.id_contenedor))).length
   if (enCubiertaInexistente) {
-    aviso(`${enCubiertaInexistente} de ${conexiones.length} conexión(es) están en una cubierta que no existe (¿mufas recargadas con UUID nuevos?)`)
+    aviso(`${enCubiertaInexistente} de ${enCubiertas.length} conexión(es) en cubiertas están en una que no existe (¿mufas recargadas con UUID nuevos?)`)
   }
 }
 
