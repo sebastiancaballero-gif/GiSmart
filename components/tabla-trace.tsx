@@ -4,7 +4,7 @@ import { Building2, ChevronDown, FileSpreadsheet, MapPin, Split, TriangleAlert }
 import { BolitaDeHilo } from "@/components/bolita-de-hilo"
 import { Boton, Rotulo } from "@/components/ventana-sig"
 import { colorParaMostrar } from "@/lib/map/hilos-cable"
-import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, RESALTE_COLOR } from "@/lib/map/symbology"
+import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, RESALTE } from "@/lib/map/symbology"
 import { COLUMNAS_TRACE } from "@/lib/map/trace-excel"
 import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/map/trace"
 
@@ -19,7 +19,7 @@ import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/
  *   color (Código ubica) y su buffer con el color del buffer (Elemento ubica);
  * - las cubiertas, el color de su nivel, como en el mapa y la leyenda;
  * - el pin de una fila lleva el mapa a su cubierta o su cable y lo deja
- *   resaltado en fucsia; la fila queda marcada con el mismo fucsia;
+ *   resaltado en ámbar; la fila queda marcada con el mismo ámbar;
  * - los códigos de elemento y contenedor son los UUID (se seleccionan enteros
  *   con un click para copiarlos); lo que se lee (hilo 56, cable 2103630, CO19)
  *   sale al pasar el mouse;
@@ -69,7 +69,7 @@ function Fila({
   onUbicar,
 }: {
   fila: ElementoDelRecorrido
-  /** La fila del elemento resaltado en el mapa: lleva su mismo fucsia. */
+  /** La fila del elemento resaltado en el mapa: lleva su mismo ámbar. */
   marcada: boolean
   onUbicar: () => void
 }) {
@@ -79,12 +79,12 @@ function Fila({
   return (
     <tr
       aria-current={marcada || undefined}
-      style={marcada ? { backgroundColor: `color-mix(in oklch, ${RESALTE_COLOR} 13%, transparent)` } : undefined}
+      style={marcada ? { backgroundColor: `color-mix(in oklch, ${RESALTE.color} 25%, transparent)` } : undefined}
       className={`transition-colors ${marcada ? "" : "even:bg-foreground/[0.035] hover:bg-accent/60"}`}
     >
       <td
         className={`${CELDA} font-semibold text-foreground`}
-        style={marcada ? { boxShadow: `inset 3px 0 0 ${RESALTE_COLOR}` } : undefined}
+        style={marcada ? { boxShadow: `inset 3px 0 0 ${RESALTE.fuerte}` } : undefined}
       >
         {fila.tipo === "Central" ? (
           <span className="flex items-center gap-1">
@@ -136,10 +136,10 @@ function Fila({
               type="button"
               onClick={onUbicar}
               aria-label={verEnElMapa}
-              title={marcada ? `${verEnElMapa} (resaltado en fucsia)` : verEnElMapa}
-              style={marcada ? { backgroundColor: RESALTE_COLOR } : undefined}
+              title={marcada ? `${verEnElMapa} (resaltado en ámbar)` : verEnElMapa}
+              style={marcada ? { backgroundColor: RESALTE.fuerte, color: RESALTE.sobreFuerte } : undefined}
               className={`flex size-5 shrink-0 items-center justify-center rounded outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                marcada ? "text-white" : "text-primary hover:bg-primary/10"
+                marcada ? "" : "text-primary hover:bg-primary/10"
               }`}
             >
               <MapPin className="size-3.5" aria-hidden="true" />

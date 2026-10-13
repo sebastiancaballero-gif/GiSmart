@@ -564,29 +564,34 @@ export function traceStyle() {
 
 /**
  * El elemento ubicado desde la tabla del trace (el pin de una fila): queda
- * resaltado en fucsia hasta que se ubica otro o se quita el recorrido.
+ * resaltado hasta que se ubica otro o se quita el recorrido.
  *
- * El fucsia sale de comparar (distancia perceptual OKLab) los candidatos con
- * todo lo que ya pinta el mapa: es el más lejano de todos (lo más cercano es el
- * violeta del buscador) y el de más contraste contra el cian del recorrido, que
- * es su complementario. El amarillo, la otra opción clásica, se confunde con
- * las vías y el pasto del mapa base y casi no se separa del cian. Lleva borde
- * blanco y sombra oscura: se lee igual sobre el mapa claro, el oscuro y el
- * recorrido.
+ * Paleta Ámbar, elegida entre cuatro propuestas (ámbar, fucsia, lima y tinta):
+ * es el color de selección más común en un SIG y complementa el azul de la
+ * aplicación. El borde oscuro es el que lo separa del cian del recorrido, de
+ * los puntos rojos y de las vías claras del mapa base; sobre el mapa oscuro el
+ * ámbar se lee solo. La fila de la tabla y su pin usan la misma paleta.
  */
-export const RESALTE_COLOR = "#d500f9"
-const RESALTE_SOMBRA = "rgba(15, 23, 42, 0.55)"
+export const RESALTE = {
+  /** El trazo del cable y el anillo de la cubierta. */
+  color: "#fbbf24",
+  /** El borde oscuro alrededor. */
+  borde: "#1e293b",
+  /** La barra y el pin de la fila marcada: un tono más fuerte, que se lee sobre el fondo claro. */
+  fuerte: "#f59e0b",
+  /** El ícono sobre el pin ámbar. */
+  sobreFuerte: "#422006",
+} as const
 
 const resalteDeLinea = [
-  new Style({ stroke: new Stroke({ color: RESALTE_SOMBRA, width: 14, lineCap: "round", lineJoin: "round" }) }),
-  new Style({ stroke: new Stroke({ color: "#ffffff", width: 10, lineCap: "round", lineJoin: "round" }) }),
-  new Style({ stroke: new Stroke({ color: RESALTE_COLOR, width: 6, lineCap: "round", lineJoin: "round" }) }),
+  new Style({ stroke: new Stroke({ color: RESALTE.borde, width: 12, lineCap: "round", lineJoin: "round" }) }),
+  new Style({ stroke: new Stroke({ color: RESALTE.color, width: 6, lineCap: "round", lineJoin: "round" }) }),
 ]
 
 // Un anillo alrededor del símbolo de la cubierta, sin taparlo.
 const anilloDeResalte = (color: string, width: number) =>
   new Style({ image: new CircleStyle({ radius: MUFA_SYMBOL_RADIUS + 8, stroke: new Stroke({ color, width }), declutterMode: "none" }) })
-const resalteDePunto = [anilloDeResalte(RESALTE_SOMBRA, 8), anilloDeResalte("#ffffff", 6), anilloDeResalte(RESALTE_COLOR, 3.5)]
+const resalteDePunto = [anilloDeResalte(RESALTE.borde, 6.5), anilloDeResalte(RESALTE.color, 3.5)]
 
 export function resalteStyle(feature: Feature<Geometry>) {
   return feature.getGeometry()?.getType() === "Point" ? resalteDePunto : resalteDeLinea

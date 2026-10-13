@@ -160,7 +160,7 @@ export type MapaApi = {
   limpiarRecorrido: () => void
   /**
    * Lleva el mapa a la cubierta con ese UUID, la destella y la deja resaltada
-   * en fucsia (ver `resalteStyle`), sin seleccionarla. `ventana` es el recuadro
+   * en ámbar (ver `resalteStyle`), sin seleccionarla. `ventana` es el recuadro
    * (en píxeles de pantalla) de una ventana que tapa parte del mapa: la cubierta
    * queda en el centro del espacio libre más grande que deja (arriba, abajo o a
    * un costado), no debajo de ella. El resalte queda hasta que se muestre otra
@@ -307,7 +307,7 @@ function MapaDeRed({
   const [destinoSource] = useState(() => new VectorSource())
   // Recorrido del trace: copias de los cables por donde pasa (ver pintarRecorrido).
   const [traceSource] = useState(() => new VectorSource())
-  // Lo ubicado desde la tabla del trace, resaltado en fucsia (ver mostrarCubierta).
+  // Lo ubicado desde la tabla del trace, resaltado en ámbar (ver mostrarCubierta).
   const [resalteSource] = useState(() => new VectorSource())
   const [hayResalte, setHayResalte] = useState(false)
   // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
@@ -961,7 +961,7 @@ function MapaDeRed({
   }, [traceSource, quitarResalte])
 
   /**
-   * Lleva el mapa a una geometría, la destella y la deja resaltada en fucsia
+   * Lleva el mapa a una geometría, la destella y la deja resaltada en ámbar
    * (sobre el cian del recorrido, un destello solo se perdía), sin seleccionar
    * nada. Queda en
    * el centro del espacio libre más grande que deja `ventana` (arriba, abajo o

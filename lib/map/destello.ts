@@ -23,8 +23,8 @@ export const DESTELLO_ELEMENTO: ColorRGB = [42, 155, 196]
 /** Una dirección o coordenada del buscador: el violeta de su pin. */
 export const DESTELLO_DESTINO: ColorRGB = [124, 58, 237]
 
-/** Lo ubicado desde la tabla del trace: el fucsia de su resalte (`RESALTE_COLOR`). */
-export const DESTELLO_RESALTE: ColorRGB = [213, 0, 249]
+/** Lo ubicado desde la tabla del trace: el ámbar fuerte de su resalte (`RESALTE.fuerte`), que se ve sobre el mapa claro. */
+export const DESTELLO_RESALTE: ColorRGB = [245, 158, 11]
 
 /**
  * Destello sobre un elemento del mapa: dos ondas que se abren y se apagan donde

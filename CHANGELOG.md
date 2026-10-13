@@ -10,6 +10,12 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.1 — 13 de octubre de 2026
+
+- **Resaltado en ámbar:** lo ubicado desde la tabla del trace se resalta en ámbar con borde
+  oscuro, en el mapa, la fila, el pin y la leyenda. Se eligió entre cuatro paletas (ámbar,
+  fucsia, lima y tinta); el fucsia de la 1.5.0 era demasiado chillón.
+
 ## 1.5.0 — 13 de octubre de 2026
 
 - **Trace hacia abajo con su tabla:** las mismas columnas, la Suma y **Exportar a Excel** que

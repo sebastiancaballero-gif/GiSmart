@@ -32,19 +32,23 @@ export function CabeceraSymbol({ size = 16 }: { size?: number }) {
 
 /**
  * Cable de fibra: un trazo cuyo grosor refleja la cantidad de hilos, igual que
- * en el mapa. `width` viene de `fiberWidth()` para que coincidan.
+ * en el mapa. `width` viene de `fiberWidth()` para que coincidan. `borde`
+ * dibuja un trazo más ancho debajo, como el resalte del trace.
  */
 export function FiberSymbol({
   color,
   width = 3,
   size = 16,
+  borde,
 }: {
   color: string
   width?: number
   size?: number
+  borde?: string
 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
+      {borde && <line x1="1" y1="8" x2="15" y2="8" stroke={borde} strokeWidth={width + 3} strokeLinecap="round" />}
       <line x1="1" y1="8" x2="15" y2="8" stroke={color} strokeWidth={width} strokeLinecap="round" />
     </svg>
   )

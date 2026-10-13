@@ -9,7 +9,7 @@ import {
   EXTREMO_COLORS,
   FUNCION_CUB_COLORS,
   FUNCION_CUB_DEFAULT_COLOR,
-  RESALTE_COLOR,
+  RESALTE,
   SENTIDO_COLORS,
   TRACE_COLOR,
   TRACE_PUNTO_COLOR,
@@ -160,7 +160,7 @@ export function MapLegend({
               </span>
               {resalte && (
                 <span className="flex items-center gap-2">
-                  <FiberSymbol color={RESALTE_COLOR} width={4} size={14} />
+                  <FiberSymbol color={RESALTE.color} borde={RESALTE.borde} width={3.5} size={14} />
                   Ubicado desde la tabla
                 </span>
               )}
