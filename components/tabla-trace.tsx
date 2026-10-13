@@ -1,21 +1,25 @@
 "use client"
 
 import { Building2, ChevronDown, FileSpreadsheet, MapPin, Split, TriangleAlert } from "lucide-react"
+import { BolitaDeHilo } from "@/components/bolita-de-hilo"
 import { Boton, Rotulo } from "@/components/ventana-sig"
 import { colorParaMostrar } from "@/lib/map/hilos-cable"
-import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR } from "@/lib/map/symbology"
-import { COLUMNAS_TRACE_ARRIBA } from "@/lib/map/trace-excel"
-import type { ElementoDelRecorrido, TablaHaciaArriba } from "@/lib/map/trace"
+import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, RESALTE_COLOR } from "@/lib/map/symbology"
+import { COLUMNAS_TRACE } from "@/lib/map/trace-excel"
+import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/map/trace"
 
 /**
- * La tabla del trace hacia arriba, dentro de la ventana del recorrido: las
- * columnas que pidió el ingeniero, una fila por puerto e hilo, la central al
- * final y la suma de las longitudes. Solo esa información; lo demás es ayuda
+ * La tabla del trace, hacia arriba o hacia abajo, dentro de la ventana del
+ * recorrido: las columnas que pidió el ingeniero, una fila por puerto e hilo,
+ * la central (al final hacia arriba; al principio hacia abajo, si sale de
+ * ella) y la suma de las longitudes. Solo esa información; lo demás es ayuda
  * para leerla:
  *
- * - los hilos y los buffers llevan su color, como en Gestión de hilos;
+ * - un hilo se reconoce como en Gestión de hilos: su número en la bolita de su
+ *   color (Código ubica) y su buffer con el color del buffer (Elemento ubica);
  * - las cubiertas, el color de su nivel, como en el mapa y la leyenda;
- * - el código de una cubierta o de un cable lleva el mapa hasta él;
+ * - el pin de una fila lleva el mapa a su cubierta o su cable y lo deja
+ *   resaltado en fucsia; la fila queda marcada con el mismo fucsia;
  * - los códigos de elemento y contenedor son los UUID (se seleccionan enteros
  *   con un click para copiarlos); lo que se lee (hilo 56, cable 2103630, CO19)
  *   sale al pasar el mouse;
@@ -26,18 +30,7 @@ import type { ElementoDelRecorrido, TablaHaciaArriba } from "@/lib/map/trace"
 
 export const metros = (m: number) => m.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** Una muestra de color redonda; el borde hace visible el blanco. */
-function Muestra({ color, nombre }: { color: string | null; nombre?: string | null }) {
-  if (!color) return null
-  return (
-    <span
-      className="size-2.5 shrink-0 rounded-full ring-1 ring-foreground/25"
-      style={{ backgroundColor: color }}
-      title={nombre ?? undefined}
-      aria-hidden="true"
-    />
-  )
-}
+const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWNSTREAM: "hacia abajo" }
 
 const CELDA = "whitespace-nowrap border-b border-border px-2 py-1"
 
@@ -51,23 +44,48 @@ function Uuid({ valor, nombre }: { valor: string | null; nombre?: string | null 
   )
 }
 
+/** «Buffer 5» con la barrita del color del buffer, como en Gestión de hilos. */
+function BufferDelHilo({ fila }: { fila: ElementoDelRecorrido }) {
+  const numero = Number(fila.ubica?.match(/\d+$/)?.[0]) || null
+  const color = colorParaMostrar(fila.colorBuffer ?? null, numero)
+  return (
+    <span className="flex items-center gap-1.5">
+      {color && (
+        <span
+          className="h-3 w-1.5 shrink-0 rounded-sm ring-1 ring-foreground/20"
+          style={{ backgroundColor: color }}
+          title={fila.colorBuffer ?? undefined}
+          aria-hidden="true"
+        />
+      )}
+      {fila.ubica}
+    </span>
+  )
+}
+
 function Fila({
   fila,
   marcada,
   onUbicar,
 }: {
   fila: ElementoDelRecorrido
+  /** La fila del elemento resaltado en el mapa: lleva su mismo fucsia. */
   marcada: boolean
   onUbicar: () => void
 }) {
   const esHilo = fila.tipo === "Hilo"
   const ubicable = Boolean(fila.idCubierta || fila.idCable)
+  const verEnElMapa = fila.idCubierta ? `Ver ${fila.nombreContenedor ?? "la cubierta"} en el mapa` : `Ver el cable ${fila.nombreContenedor ?? ""} en el mapa`
   return (
     <tr
       aria-current={marcada || undefined}
-      className={`transition-colors ${marcada ? "bg-primary/10" : "even:bg-foreground/[0.035] hover:bg-accent/60"}`}
+      style={marcada ? { backgroundColor: `color-mix(in oklch, ${RESALTE_COLOR} 13%, transparent)` } : undefined}
+      className={`transition-colors ${marcada ? "" : "even:bg-foreground/[0.035] hover:bg-accent/60"}`}
     >
-      <td className={`${CELDA} font-semibold text-foreground`}>
+      <td
+        className={`${CELDA} font-semibold text-foreground`}
+        style={marcada ? { boxShadow: `inset 3px 0 0 ${RESALTE_COLOR}` } : undefined}
+      >
         {fila.tipo === "Central" ? (
           <span className="flex items-center gap-1">
             <Building2 className="size-3 text-emerald-600" aria-hidden="true" />
@@ -78,24 +96,21 @@ function Fila({
         )}
       </td>
       <td className={CELDA}>
-        <span className="flex items-center gap-1.5">
-          {esHilo && (
-            <Muestra
-              color={colorParaMostrar(fila.colorHilo ?? null, Number(fila.nombre) || null)}
-              nombre={`Hilo ${fila.nombre ?? ""}${fila.colorHilo ? ` (${fila.colorHilo})` : ""}`}
-            />
-          )}
-          <Uuid valor={fila.codigo} nombre={fila.tipo === "Hilo" ? `Hilo ${fila.nombre ?? "?"}` : fila.nombre} />
-        </span>
+        <Uuid valor={fila.codigo} nombre={esHilo ? `Hilo ${fila.nombre ?? "?"}` : fila.nombre} />
       </td>
-      <td className={`${CELDA} text-muted-foreground`}>{fila.ubica ?? ""}</td>
+      <td className={`${CELDA} text-muted-foreground`}>{esHilo && fila.ubica ? <BufferDelHilo fila={fila} /> : (fila.ubica ?? "")}</td>
       <td className={`${CELDA} tabular-nums`}>
-        <span className="flex items-center gap-1.5">
-          {esHilo && fila.codigoUbica && (
-            <Muestra color={colorParaMostrar(fila.colorBuffer ?? null, Number(fila.codigoUbica) || null)} nombre={fila.colorBuffer} />
-          )}
-          {fila.codigoUbica ?? ""}
-        </span>
+        {/* El número del hilo, en la bolita de su color, como en Gestión de hilos. */}
+        {esHilo && fila.codigoUbica ? (
+          <BolitaDeHilo
+            chica
+            numero={fila.codigoUbica}
+            color={fila.colorHilo ?? null}
+            titulo={`Hilo ${fila.codigoUbica}${fila.colorHilo ? ` · ${fila.colorHilo}` : ""}`}
+          />
+        ) : (
+          (fila.codigoUbica ?? "")
+        )}
       </td>
       <td className={`${CELDA} text-right tabular-nums`}>{fila.longitudM !== null ? metros(fila.longitudM) : ""}</td>
       <td className={`${CELDA} text-muted-foreground`}>
@@ -120,9 +135,12 @@ function Fila({
             <button
               type="button"
               onClick={onUbicar}
-              aria-label={fila.idCubierta ? `Ver ${fila.nombreContenedor ?? "la cubierta"} en el mapa` : `Ver el cable ${fila.nombreContenedor ?? ""} en el mapa`}
-              title={fila.idCubierta ? `Ver ${fila.nombreContenedor ?? "la cubierta"} en el mapa` : `Ver el cable ${fila.nombreContenedor ?? ""} en el mapa`}
-              className="flex size-5 shrink-0 items-center justify-center rounded text-primary outline-none transition hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label={verEnElMapa}
+              title={marcada ? `${verEnElMapa} (resaltado en fucsia)` : verEnElMapa}
+              style={marcada ? { backgroundColor: RESALTE_COLOR } : undefined}
+              className={`flex size-5 shrink-0 items-center justify-center rounded outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                marcada ? "text-white" : "text-primary hover:bg-primary/10"
+              }`}
             >
               <MapPin className="size-3.5" aria-hidden="true" />
             </button>
@@ -133,7 +151,8 @@ function Fila({
   )
 }
 
-export function TablaTraceArriba({
+export function TablaTrace({
+  direccion,
   tabla,
   ruta,
   onRuta,
@@ -143,7 +162,8 @@ export function TablaTraceArriba({
   abierta,
   onAlternar,
 }: {
-  tabla: TablaHaciaArriba
+  direccion: DireccionTrace
+  tabla: TablaDelTrace
   /** La ruta que se muestra (índice en `tabla.rutas`). */
   ruta: number
   onRuta: (indice: number) => void
@@ -159,10 +179,21 @@ export function TablaTraceArriba({
   const actual = tabla.rutas[ruta] ?? tabla.rutas[0]
   const varias = tabla.rutas.length > 1
   const elementos = actual ? actual.filas.filter((f) => f.tipo !== "Central").length : 0
-  const central = actual?.filas.find((f) => f.tipo === "Central")?.nombre
+  const haciaArriba = direccion === "UPSTREAM"
+  // Hacia arriba se llega a la OLT (y su central); hacia abajo la caché termina
+  // en la entrada del divisor de la cubierta siguiente.
+  const llegada = !actual
+    ? null
+    : actual.llega
+      ? haciaArriba
+        ? `Llega a la OLT${actual.final ? ` · ${actual.final}` : ""}`
+        : `Llega al ${actual.final ?? "divisor"}`
+      : haciaArriba
+        ? "No llega a la OLT"
+        : "No llega a un divisor"
 
   return (
-    <section aria-label="Trace hacia arriba" className="flex flex-col gap-1.5">
+    <section aria-label={`Trace ${SENTIDO[direccion]}`} className="flex flex-col gap-1.5">
       {/* En el celular baja de línea entera; cada texto no se parte. */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 whitespace-nowrap">
         <button
@@ -176,22 +207,22 @@ export function TablaTraceArriba({
             className={`size-3.5 text-muted-foreground transition-transform motion-reduce:transition-none ${abierta ? "" : "-rotate-90"}`}
             aria-hidden="true"
           />
-          <Rotulo>Trace hacia arriba</Rotulo>
+          <Rotulo>Trace {SENTIDO[direccion]}</Rotulo>
         </button>
         {actual && (
           <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold tabular-nums text-muted-foreground">
             {elementos} {elementos === 1 ? "elemento" : "elementos"}
           </span>
         )}
-        {actual && (
+        {actual && llegada && (
           <span
             className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${
-              actual.llegaALaOlt
+              actual.llega
                 ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
                 : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
             }`}
           >
-            {actual.llegaALaOlt ? `Llega a la OLT${central ? ` · ${central}` : ""}` : "No llega a la OLT"}
+            {llegada}
           </span>
         )}
         {/* Plegada, los avisos no se ven: al menos se sabe que hay. */}
@@ -265,18 +296,18 @@ export function TablaTraceArriba({
       ) : (
         <div
           role="region"
-          aria-label="Tabla del trace hacia arriba"
+          aria-label={`Tabla del trace ${SENTIDO[direccion]}`}
           tabIndex={0}
           className="max-h-[min(13rem,28vh)] overflow-auto rounded-xl border border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <table className="w-full min-w-[56rem] border-separate border-spacing-0 text-[11px]">
             <caption className="sr-only">
-              Elementos del recorrido hacia arriba{varias ? `, ruta ${ruta + 1} de ${tabla.rutas.length}` : ""}, con la suma de las
-              longitudes al final.
+              Elementos del recorrido {SENTIDO[direccion]}
+              {varias ? `, ruta ${ruta + 1} de ${tabla.rutas.length}` : ""}, con la suma de las longitudes al final.
             </caption>
             <thead>
               <tr>
-                {COLUMNAS_TRACE_ARRIBA.map((c) => (
+                {COLUMNAS_TRACE.map((c) => (
                   <th
                     key={c}
                     scope="col"

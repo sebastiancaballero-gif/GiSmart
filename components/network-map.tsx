@@ -26,7 +26,7 @@ import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, sentidoStyle, traceStyle } from "@/lib/map/symbology"
+import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, resalteStyle, sentidoStyle, traceStyle } from "@/lib/map/symbology"
 import type { GeometriaDeTramo } from "@/lib/map/trace"
 import {
   CABECERA_FIELD_LABELS,
@@ -48,7 +48,7 @@ import {
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
-import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, destellar, type ColorRGB } from "@/lib/map/destello"
+import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, DESTELLO_RESALTE, destellar, type ColorRGB } from "@/lib/map/destello"
 import { espacioLibre, margenParaZona, type Recuadro } from "@/lib/map/espacio-libre"
 import { limpiarNombre } from "@/lib/texto"
 import { fuenteDelMapaBase } from "@/lib/map/mapa-base"
@@ -159,17 +159,21 @@ export type MapaApi = {
   /** Quita del mapa el recorrido pintado. */
   limpiarRecorrido: () => void
   /**
-   * Lleva el mapa a la cubierta con ese UUID y la destella, sin seleccionarla.
-   * `ventana` es el recuadro (en píxeles de pantalla) de una ventana que tapa
-   * parte del mapa: la cubierta queda en el centro del espacio libre más grande
-   * que deja (arriba, abajo o a un costado), no debajo de ella. `false` si no está.
+   * Lleva el mapa a la cubierta con ese UUID, la destella y la deja resaltada
+   * en fucsia (ver `resalteStyle`), sin seleccionarla. `ventana` es el recuadro
+   * (en píxeles de pantalla) de una ventana que tapa parte del mapa: la cubierta
+   * queda en el centro del espacio libre más grande que deja (arriba, abajo o a
+   * un costado), no debajo de ella. El resalte queda hasta que se muestre otra
+   * cosa, se llame `quitarResalte` o se quite el recorrido. `false` si no está.
    */
   mostrarCubierta: (id: string, ventana?: Recuadro) => boolean
   /**
    * Lo mismo con el cable de ese UUID: queda entero en el espacio libre (si no
-   * cabe, el mapa se aleja lo justo) y se destella su trazo. `false` si no está.
+   * cabe, el mapa se aleja lo justo), se destella y queda resaltado. `false` si no está.
    */
   mostrarCable: (id: string, ventana?: Recuadro) => boolean
+  /** Quita el resalte que dejaron `mostrarCubierta` o `mostrarCable`. */
+  quitarResalte: () => void
   /**
    * Vuelve a encuadrar el recorrido pintado: después de que la ventana del
    * trace cambió de tamaño o se movió. `ventana`, como en `pintarRecorrido`.
@@ -303,6 +307,9 @@ function MapaDeRed({
   const [destinoSource] = useState(() => new VectorSource())
   // Recorrido del trace: copias de los cables por donde pasa (ver pintarRecorrido).
   const [traceSource] = useState(() => new VectorSource())
+  // Lo ubicado desde la tabla del trace, resaltado en fucsia (ver mostrarCubierta).
+  const [resalteSource] = useState(() => new VectorSource())
+  const [hayResalte, setHayResalte] = useState(false)
   // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
   const [hayRecorrido, setHayRecorrido] = useState(false)
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
@@ -318,6 +325,7 @@ function MapaDeRed({
   const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const traceLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const resalteLayer = useRef<VectorLayer<VectorSource> | null>(null)
   /** Corta el destello en curso si se pide otro antes de que termine. */
   const detenerDestelloRef = useRef<(() => void) | null>(null)
   const drawRef = useRef<Draw | null>(null)
@@ -897,6 +905,9 @@ function MapaDeRed({
       encuadrar?: boolean
     }) => {
       traceSource.clear()
+      // Un recorrido nuevo: lo resaltado del anterior ya no vale.
+      resalteSource.clear()
+      setHayResalte(false)
       const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
       const faltan: string[] = []
       let largoM = 0
@@ -935,16 +946,24 @@ function MapaDeRed({
       if (encuadrar) encuadrarRecorrido(ventana)
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
     },
-    [traceSource, fiberSource, nodeSource, encuadrarRecorrido],
+    [traceSource, resalteSource, fiberSource, nodeSource, encuadrarRecorrido],
   )
+
+  const quitarResalte = useCallback(() => {
+    resalteSource.clear()
+    setHayResalte(false)
+  }, [resalteSource])
 
   const limpiarRecorrido = useCallback(() => {
     traceSource.clear()
     setHayRecorrido(false)
-  }, [traceSource])
+    quitarResalte()
+  }, [traceSource, quitarResalte])
 
   /**
-   * Lleva el mapa a una geometría y la destella, sin seleccionar nada. Queda en
+   * Lleva el mapa a una geometría, la destella y la deja resaltada en fucsia
+   * (sobre el cian del recorrido, un destello solo se perdía), sin seleccionar
+   * nada. Queda en
    * el centro del espacio libre más grande que deja `ventana` (arriba, abajo o
    * a un costado), no debajo de ella; una línea que no cabe en ese espacio se
    * ve entera alejando el mapa lo justo.
@@ -970,10 +989,13 @@ function MapaDeRed({
       const dx = (libre.x0 + libre.x1) / 2 - caja.width / 2
       const dy = (libre.y0 + libre.y1) / 2 - caja.height / 2
       view.animate({ center: [x - dx * resolucion, y + dy * resolucion], resolution: resolucion, duration: 400 })
-      destellarEn(geometria, DESTELLO_ELEMENTO)
+      resalteSource.clear()
+      resalteSource.addFeature(new Feature({ geometry: geometria.clone() }))
+      setHayResalte(true)
+      destellarEn(geometria, DESTELLO_RESALTE)
       return true
     },
-    [destellarEn],
+    [destellarEn, resalteSource],
   )
 
   const mostrarCubierta = useCallback(
@@ -1004,6 +1026,7 @@ function MapaDeRed({
       limpiarRecorrido,
       mostrarCubierta,
       mostrarCable,
+      quitarResalte,
       encuadrarRecorrido,
     }
     return () => {
@@ -1020,6 +1043,7 @@ function MapaDeRed({
     limpiarRecorrido,
     mostrarCubierta,
     mostrarCable,
+    quitarResalte,
     encuadrarRecorrido,
   ])
 
@@ -1194,6 +1218,8 @@ function MapaDeRed({
     // `zIndex: 10`, como en el código del ingeniero: el recorrido queda por
     // encima de toda la red.
     traceLayer.current = new VectorLayer({ source: traceSource, style: traceStyle as never, zIndex: 10 })
+    // Encima del recorrido: lo ubicado desde su tabla no queda tapado por el cian.
+    resalteLayer.current = new VectorLayer({ source: resalteSource, style: resalteStyle as never, zIndex: 11 })
 
     const map = new Map({
       target: containerRef.current,
@@ -1209,6 +1235,7 @@ function MapaDeRed({
         sentidoLayer.current,
         // El recorrido del trace (con zIndex 10 se dibuja encima de todo).
         traceLayer.current,
+        resalteLayer.current,
         nodeLayer.current,
         // La cabecera va encima de las mufas: es el elemento jerárquicamente
         // más importante y no debe quedar tapada.
@@ -1903,7 +1930,7 @@ function MapaDeRed({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} trace={hayRecorrido} />
+      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} trace={hayRecorrido} resalte={hayResalte} />
 
       {/* Panel del elemento seleccionado (components/mapa/panel-seleccion.tsx). */}
       {selected && (

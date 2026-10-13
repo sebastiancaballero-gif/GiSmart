@@ -9,6 +9,7 @@ import {
   EXTREMO_COLORS,
   FUNCION_CUB_COLORS,
   FUNCION_CUB_DEFAULT_COLOR,
+  RESALTE_COLOR,
   SENTIDO_COLORS,
   TRACE_COLOR,
   TRACE_PUNTO_COLOR,
@@ -28,16 +29,18 @@ import { CabeceraSymbol, FiberSymbol, MufaSymbol } from "@/components/map-symbol
  * `sentido` y `extremos` agregan los colores de «Entradas y salidas» y de
  * «Cable» mientras esas herramientas están activas: son los únicos momentos en
  * que aparecen en el mapa. `trace`, lo mismo con el recorrido del trace mientras
- * está pintado.
+ * está pintado, y `resalte`, con el elemento ubicado desde su tabla.
  */
 export function MapLegend({
   sentido = false,
   extremos = false,
   trace = false,
+  resalte = false,
 }: {
   sentido?: boolean
   extremos?: boolean
   trace?: boolean
+  resalte?: boolean
 }) {
   // En el celular empieza plegada: abierta ocupaba media pantalla y tapaba la
   // escala y la barra de estado. El mapa solo se dibuja en el navegador (el
@@ -155,6 +158,12 @@ export function MapLegend({
                 />
                 Cubierta del recorrido
               </span>
+              {resalte && (
+                <span className="flex items-center gap-2">
+                  <FiberSymbol color={RESALTE_COLOR} width={4} size={14} />
+                  Ubicado desde la tabla
+                </span>
+              )}
             </>
           )}
         </div>

@@ -72,24 +72,25 @@ export type ResultadoTrace =
        * al cruzar un divisor (vacío si no cruza ninguno, y hacia abajo).
        */
       tramos: TramoDelTrace[]
-      /** La tabla del trace hacia arriba (`null` hacia abajo). */
-      tabla: TablaHaciaArriba | null
+      /** La tabla del trace, en los dos sentidos (`null` si no se pudo armar: ver `errorTabla`). */
+      tabla: TablaDelTrace | null
       /** Si no se pudieron leer los datos de esa tabla, por qué. */
       errorTabla: { mensaje: string; detalle?: string } | null
     }
   | { estado: "error"; mensaje: string; detalle?: string }
 
 /**
- * Una fila de la tabla del trace hacia arriba, como la pidió el ingeniero:
- * cada puerto o hilo por donde pasa el recorrido, dónde está y en qué
- * contenedor, y al final la central.
+ * Una fila de la tabla del trace, como la pidió el ingeniero: cada puerto o
+ * hilo por donde pasa el recorrido, dónde está y en qué contenedor, y la
+ * central (al final hacia arriba; al principio hacia abajo, si sale de ella).
  *
  * - Puerto de un divisor: ubica «Divisor» y su número; contenedor la cubierta
  *   («Cub nivel 1», «Cub nivel 2») y su etiqueta.
  * - Puerto de una tarjeta o una bandeja: ubica «Tarjeta» o «Bandeja» y su slot;
  *   contenedor el equipo (OLT u ODF) y su código.
- * - Hilo: ubica «Buffer» y su número; contenedor «Cable»; la longitud es la
- *   del cable (medida en campo o, si no hay, la calculada).
+ * - Hilo: ubica su buffer («Buffer 5»); código ubica, el número del hilo (el
+ *   «Número» de Gestión de hilos); contenedor «Cable»; la longitud es la del
+ *   cable (medida en campo o, si no hay, la calculada).
  *
  * «Código elemento» y «Código contenedor» son los UUID: del hilo o el puerto
  * (de la cabecera en la fila de la central) y del cable, la cubierta o el
@@ -122,24 +123,31 @@ export type ElementoDelRecorrido = {
   colorBuffer?: string | null
 }
 
-/** Una ruta del recorrido hacia arriba, ya como tabla. */
-export type RutaHaciaArriba = {
+/** Una ruta del recorrido, ya como tabla. */
+export type RutaDelTrace = {
   filas: ElementoDelRecorrido[]
   /** La suma de las longitudes de sus hilos. */
   sumaM: number
-  /** Si termina en un puerto de una tarjeta de la OLT. */
-  llegaALaOlt: boolean
+  /**
+   * Si llega a donde termina un recorrido completo: hacia arriba, a un puerto
+   * de una tarjeta de la OLT; hacia abajo, a la entrada de un divisor (ahí
+   * termina la caché).
+   */
+  llega: boolean
+  /** A dónde llega, en palabras: la central («HUB LA UNION») o el divisor («divisor 1 (1x8PC) de CO19»). */
+  final: string | null
   /** Los divisores por donde pasa: «divisor 1 (1x8PC) de CO02, de S5 a E1». */
   divisores: string[]
 }
 
 /**
- * La tabla del trace hacia arriba. Casi siempre es una sola ruta; si la caché
- * trae una bifurcación (un hilo fusionado con dos), sale una ruta por camino.
- * Los avisos dicen lo que no cuadra en los datos, para revisarlo en la base.
+ * La tabla del trace, hacia arriba o hacia abajo. Casi siempre es una sola
+ * ruta; si la caché trae una bifurcación (un hilo fusionado con dos), sale una
+ * ruta por camino. Los avisos dicen lo que no cuadra en los datos, para
+ * revisarlo en la base.
  */
-export type TablaHaciaArriba = {
-  rutas: RutaHaciaArriba[]
+export type TablaDelTrace = {
+  rutas: RutaDelTrace[]
   avisos: string[]
 }
 
@@ -404,8 +412,9 @@ function filaDe(e: ExtremoDePaso, datos: DatosDeElementos): ElementoDelRecorrido
     return {
       tipo: "Hilo",
       codigo: id || null,
-      ubica: hilo?.buffer !== null && hilo?.buffer !== undefined ? "Buffer" : null,
-      codigoUbica: textoDe(hilo?.buffer),
+      ubica: hilo?.buffer !== null && hilo?.buffer !== undefined ? `Buffer ${hilo.buffer}` : null,
+      // El número del hilo, el mismo «Número» de Gestión de hilos.
+      codigoUbica: textoDe(hilo?.numero),
       longitudM: cable?.largoM ?? null,
       contenedor: "Cable",
       codigoContenedor: hilo?.idCable ?? null,
@@ -457,24 +466,32 @@ function centralDe(e: ExtremoDePaso, datos: DatosDeElementos): { id: string; nom
   return equipo?.idCabecera ? { id: equipo.idCabecera, nombre: datos.cabeceras[equipo.idCabecera]?.nombre ?? null } : null
 }
 
-/**
- * Arma la tabla del trace hacia arriba con lo que la ruta leyó de la base.
- * `pasos` son los de la caché, ya unidos con los de la entrada de cada divisor
- * que cruza (ver `pasoPorDentroDelDivisor`); `origen`, el UUID de donde sale.
- *
- * Cada ruta va del origen a su final, en orden, con la central al final si
- * llega a un equipo de la central. Los avisos cuentan lo que no cuadra: una
- * bifurcación, una ruta que no llega a la OLT, elementos que no están en la
- * base o pasos que no encadenan con el origen.
- */
 /** Cuántas rutas muestra la tabla cuando el recorrido se abre en varias. */
 export const MAX_RUTAS = 8
 
-export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElementos, origen?: string | null): TablaHaciaArriba {
+/**
+ * Arma la tabla del trace con lo que la ruta leyó de la base. `pasos` son los
+ * de la caché (hacia arriba, ya unidos con los de la entrada de cada divisor
+ * que cruza: ver `pasoPorDentroDelDivisor`); `origen`, el UUID de donde sale.
+ *
+ * Cada ruta va del origen a su final, en orden. Hacia arriba termina en la OLT
+ * y la central va al final. Hacia abajo la caché termina en la entrada del
+ * divisor de la cubierta siguiente, y si el recorrido sale de la central (de un
+ * puerto de la OLT o del ODF), la central va al principio. Los avisos cuentan
+ * lo que no cuadra: una bifurcación, una ruta que no llega a donde debe,
+ * elementos que no están en la base o pasos que no encadenan con el origen.
+ */
+export function armarTablaDelTrace(
+  pasos: PasoDeTrace[],
+  datos: DatosDeElementos,
+  origen?: string | null,
+  direccion: DireccionTrace = "UPSTREAM",
+): TablaDelTrace {
+  const haciaArriba = direccion === "UPSTREAM"
   // Una de más, para saber si hubo que dejar alguna afuera.
   const encontradas = rutasDelRecorrido(pasos, origen, MAX_RUTAS + 1)
   const caminos = encontradas.slice(0, MAX_RUTAS)
-  const rutas = caminos.map((camino): RutaHaciaArriba => {
+  const rutas = caminos.map((camino): RutaDelTrace => {
     const filas: ElementoDelRecorrido[] = []
     const divisores: string[] = []
     let central: { id: string; nombre: string | null } | null = null
@@ -492,7 +509,7 @@ export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElemen
     // `central` cambia dentro del forEach: TypeScript no lo ve.
     const cabecera = central as { id: string; nombre: string | null } | null
     if (cabecera) {
-      filas.push({
+      const fila: ElementoDelRecorrido = {
         tipo: "Central",
         codigo: cabecera.id,
         ubica: null,
@@ -501,11 +518,21 @@ export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElemen
         contenedor: null,
         codigoContenedor: null,
         nombre: cabecera.nombre,
-      })
+      }
+      // Hacia arriba se llega a la central; hacia abajo se sale de ella.
+      if (haciaArriba) filas.push(fila)
+      else filas.unshift(fila)
     }
     const ultimo = camino[camino.length - 1]
     const final = ultimo.tipo !== "HILO" && ultimo.id ? datos.puertos[ultimo.id] : undefined
-    return { filas, sumaM: sumaDeLongitudes(filas), llegaALaOlt: final?.tipoPert === "TJT", divisores }
+    const llega = haciaArriba ? final?.tipoPert === "TJT" : final?.tipoPert === "DIV" && final.sentido !== "S"
+    return {
+      filas,
+      sumaM: sumaDeLongitudes(filas),
+      llega,
+      final: !llega ? null : haciaArriba ? (cabecera?.nombre ?? null) : final?.idPert ? nombreDeDivisor(final.idPert, datos) : null,
+      divisores,
+    }
   })
 
   const avisos: string[] = []
@@ -533,10 +560,10 @@ export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElemen
         `${e.tipo === "HILO" ? "Un hilo" : "Un puerto"} no debería estar conectado con dos; hay que revisar esa conectividad en la base.`,
     )
   }
-  // Rutas que no llegan a la OLT, agrupadas por dónde terminan.
+  // Rutas que no llegan a donde deben, agrupadas por dónde terminan.
   const cortes = new Map<string, { final: ExtremoDePaso; rutas: number[] }>()
   rutas.forEach((r, i) => {
-    if (r.llegaALaOlt) return
+    if (r.llega) return
     const final = caminos[i][caminos[i].length - 1]
     const clave = final.id ?? `ruta-${i}`
     const corte = cortes.get(clave) ?? { final, rutas: [] }
@@ -554,11 +581,11 @@ export function armarTablaHaciaArriba(pasos: PasoDeTrace[], datos: DatosDeElemen
     const porque =
       final.tipo === "HILO"
         ? ", que no tiene más conexiones registradas."
-        : puerto?.tipoPert === "DIV" && puerto.sentido === "S"
+        : haciaArriba && puerto?.tipoPert === "DIV" && puerto.sentido === "S"
           ? ", y la entrada de ese divisor no tiene recorrido hacia arriba en la caché."
           : "."
     const donde = describir(final, datos)
-    avisos.push(`${quien} a la OLT: termina en ${donde}${donde.endsWith("…") && porque === "." ? "" : porque}`)
+    avisos.push(`${quien} ${haciaArriba ? "a la OLT" : "a un divisor"}: termina en ${donde}${donde.endsWith("…") && porque === "." ? "" : porque}`)
   }
   // Elementos que la caché nombra y la base no tiene.
   const sinDatos = new Set(
@@ -616,15 +643,23 @@ function normalizarElementos(v: unknown): ElementoDelRecorrido[] {
 const textos = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [])
 
 /** Lee la tabla como la reenvía la ruta. */
-function normalizarTabla(v: unknown): TablaHaciaArriba | null {
+function normalizarTabla(v: unknown): TablaDelTrace | null {
   if (!v || typeof v !== "object") return null
   const o = v as Record<string, unknown>
   if (!Array.isArray(o.rutas)) return null
-  const rutas = o.rutas.flatMap((r): RutaHaciaArriba[] => {
+  const rutas = o.rutas.flatMap((r): RutaDelTrace[] => {
     if (!r || typeof r !== "object") return []
     const x = r as Record<string, unknown>
     const filas = normalizarElementos(x.filas)
-    return [{ filas, sumaM: numero(x.sumaM) ?? sumaDeLongitudes(filas), llegaALaOlt: x.llegaALaOlt === true, divisores: textos(x.divisores) }]
+    return [
+      {
+        filas,
+        sumaM: numero(x.sumaM) ?? sumaDeLongitudes(filas),
+        llega: x.llega === true,
+        final: texto(x.final),
+        divisores: textos(x.divisores),
+      },
+    ]
   })
   return { rutas, avisos: textos(o.avisos) }
 }

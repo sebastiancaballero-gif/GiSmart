@@ -563,6 +563,36 @@ export function traceStyle() {
 }
 
 /**
+ * El elemento ubicado desde la tabla del trace (el pin de una fila): queda
+ * resaltado en fucsia hasta que se ubica otro o se quita el recorrido.
+ *
+ * El fucsia sale de comparar (distancia perceptual OKLab) los candidatos con
+ * todo lo que ya pinta el mapa: es el más lejano de todos (lo más cercano es el
+ * violeta del buscador) y el de más contraste contra el cian del recorrido, que
+ * es su complementario. El amarillo, la otra opción clásica, se confunde con
+ * las vías y el pasto del mapa base y casi no se separa del cian. Lleva borde
+ * blanco y sombra oscura: se lee igual sobre el mapa claro, el oscuro y el
+ * recorrido.
+ */
+export const RESALTE_COLOR = "#d500f9"
+const RESALTE_SOMBRA = "rgba(15, 23, 42, 0.55)"
+
+const resalteDeLinea = [
+  new Style({ stroke: new Stroke({ color: RESALTE_SOMBRA, width: 14, lineCap: "round", lineJoin: "round" }) }),
+  new Style({ stroke: new Stroke({ color: "#ffffff", width: 10, lineCap: "round", lineJoin: "round" }) }),
+  new Style({ stroke: new Stroke({ color: RESALTE_COLOR, width: 6, lineCap: "round", lineJoin: "round" }) }),
+]
+
+// Un anillo alrededor del símbolo de la cubierta, sin taparlo.
+const anilloDeResalte = (color: string, width: number) =>
+  new Style({ image: new CircleStyle({ radius: MUFA_SYMBOL_RADIUS + 8, stroke: new Stroke({ color, width }), declutterMode: "none" }) })
+const resalteDePunto = [anilloDeResalte(RESALTE_SOMBRA, 8), anilloDeResalte("#ffffff", 6), anilloDeResalte(RESALTE_COLOR, 3.5)]
+
+export function resalteStyle(feature: Feature<Geometry>) {
+  return feature.getGeometry()?.getType() === "Point" ? resalteDePunto : resalteDeLinea
+}
+
+/**
  * Marca roja sobre el elemento activo: el seleccionado o el que se está
  * consultando. Entre 185 mufas juntas, y con cables que se cruzan, el resalte
  * de selección no bastaba para saber de un vistazo cuál era.

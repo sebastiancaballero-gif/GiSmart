@@ -18,16 +18,16 @@ import {
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, EncabezadoVentana, Rotulo, type ManejadorDeVentana, type Mensaje } from "@/components/ventana-sig"
 import type { AccesoAlMapa } from "@/components/network-map"
-import { TablaTraceArriba } from "@/components/tabla-trace-arriba"
+import { TablaTrace } from "@/components/tabla-trace"
 import { crearXlsx, descargarArchivo } from "@/lib/excel"
 import {
   obtenerTrace,
   type DireccionTrace,
   type ElementoDelRecorrido,
   type PasoDeTrace,
-  type TablaHaciaArriba,
+  type TablaDelTrace,
 } from "@/lib/map/trace"
-import { hojaDelTraceHaciaArriba, origenDeLaRuta } from "@/lib/map/trace-excel"
+import { hojaDelTrace, origenDeLaRuta } from "@/lib/map/trace-excel"
 
 /**
  * «Recorrido del trace» (ribbon: Red de fibra → Trace). Se pega el UUID de un
@@ -91,8 +91,8 @@ type Resumen = {
   cruzaDivisor: boolean
   /** Los pasos tal como vienen de la caché, para la lista de la ventana. */
   lista: PasoDeTrace[]
-  /** La tabla del trace hacia arriba (`null` hacia abajo). */
-  tabla: TablaHaciaArriba | null
+  /** La tabla del trace, en los dos sentidos. */
+  tabla: TablaDelTrace | null
   errorTabla: { mensaje: string; detalle?: string } | null
 }
 
@@ -254,8 +254,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       calculadoEn: r.calculadoEn,
       cruzaDivisor: r.tramos.length > 0,
       lista: r.pasos,
-      tabla: direccion === "UPSTREAM" ? r.tabla : null,
-      errorTabla: direccion === "UPSTREAM" ? r.errorTabla : null,
+      tabla: r.tabla,
+      errorTabla: r.errorTabla,
     })
     // Con la tabla la ventana crece: se encuadra cuando ya tiene su tamaño,
     // para que no tape el recorrido.
@@ -278,7 +278,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     }
   }
 
-  /** «Exportar a Excel»: la ruta que se ve de la tabla del trace hacia arriba, con su contexto y la suma. */
+  /** «Exportar a Excel»: la ruta que se ve de la tabla del trace, con su contexto y la suma. */
   function exportarExcel() {
     const tabla = resumen?.tabla
     const elegida = tabla?.rutas[ruta]
@@ -294,13 +294,14 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     }
   }
 
-  function descargarElExcel(resumen: Resumen, tabla: TablaHaciaArriba, elegida: TablaHaciaArriba["rutas"][number]) {
+  function descargarElExcel(resumen: Resumen, tabla: TablaDelTrace, elegida: TablaDelTrace["rutas"][number]) {
     const ahora = new Date()
     const fecha = (d: Date) =>
       d.toLocaleString("es-CO", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })
     const calculado = resumen.calculadoEn ? new Date(resumen.calculadoEn) : null
     const datos = crearXlsx(
-      hojaDelTraceHaciaArriba({
+      hojaDelTrace({
+        direccion: resumen.direccion,
         ruta: elegida,
         origen: desde?.etiqueta ?? null,
         idOrigen: resumen.idOrigen,
@@ -316,7 +317,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     )
     const dia = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`
     const nombre = paraArchivo(desde?.etiqueta ?? origenDeLaRuta(elegida) ?? resumen.idOrigen.slice(0, 8))
-    descargarArchivo(datos, `trace-hacia-arriba-${nombre}${tabla.rutas.length > 1 ? `-ruta-${ruta + 1}` : ""}-${dia}.xlsx`)
+    descargarArchivo(datos, `trace-${resumen.direccion === "UPSTREAM" ? "hacia-arriba" : "hacia-abajo"}-${nombre}${tabla.rutas.length > 1 ? `-ruta-${ruta + 1}` : ""}-${dia}.xlsx`)
   }
 
   /** Lleva el mapa a la cubierta o al cable de una fila de la tabla, en el espacio que deja libre la ventana. */
@@ -480,6 +481,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     consultaRef.current++
     setCargando(null)
     setMensaje(null)
+    // El resalte es de una fila de la tabla: se va con ella (la línea queda).
+    setUbicada(null)
+    mapa.api.current?.quitarResalte()
     setAbierta(false)
     const volver = desde?.volver
     setDesde(null)
@@ -699,8 +703,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
             </div>
           </div>
 
-          {/* Hacia arriba, la tabla que pidió el ingeniero (ver TablaTraceArriba). */}
-          {resumen?.direccion === "UPSTREAM" && resumen.errorTabla && (
+          {/* La tabla que pidió el ingeniero, en los dos sentidos (ver TablaTrace). */}
+          {resumen?.errorTabla && (
             <p role="alert" className="rounded-lg bg-destructive/8 px-2.5 py-2 text-[11px] text-destructive">
               {resumen.errorTabla.mensaje}
               {resumen.errorTabla.detalle && (
@@ -708,13 +712,15 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               )}
             </p>
           )}
-          {resumen?.direccion === "UPSTREAM" && resumen.tabla && (
-            <TablaTraceArriba
+          {resumen?.tabla && (
+            <TablaTrace
+              direccion={resumen.direccion}
               tabla={resumen.tabla}
               ruta={ruta}
               onRuta={(i) => {
                 setRuta(i)
                 setUbicada(null)
+                mapa.api.current?.quitarResalte()
               }}
               onExportar={exportarExcel}
               onUbicar={ubicar}
@@ -726,8 +732,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
 
           {/* Los pasos que guarda la caché, como pide el ingeniero que se
               muestren. Una cubierta del mapa se puede pulsar: el mapa la lleva
-              al espacio que deja libre la ventana y la destella. Hacia arriba
-              ya está la tabla, así que la lista no se repite. */}
+              al espacio que deja libre la ventana y la resalta. Con la tabla
+              la lista no se repite: queda para cuando la tabla no se pudo armar. */}
           {resumen && !resumen.tabla && (
             <div className="flex flex-col gap-1.5">
               <button

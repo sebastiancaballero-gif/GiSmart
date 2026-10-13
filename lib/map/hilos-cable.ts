@@ -154,6 +154,16 @@ export function colorParaMostrar(nombre: string | null, posicion: number | null)
   return Number.isInteger(posicion) && (posicion as number) > 0 ? fiberColor(posicion as number).hex : null
 }
 
+/** Texto oscuro o claro sobre un color, según lo claro que sea: el número dentro de la bolita del hilo. */
+export function textoSobre(hex: string): string {
+  const n = Number.parseInt(hex.replace("#", "").slice(0, 6), 16)
+  if (!Number.isFinite(n)) return "#ffffff"
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#0f172a" : "#ffffff"
+}
+
 /** Clasifica lo que responde `GET /api/cables/{id}/hilos`. */
 export function clasificarRespuestaHilos(status: number, cuerpo: unknown): ResultadoHilos {
   if (status < 200 || status >= 300) {

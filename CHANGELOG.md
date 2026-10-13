@@ -10,6 +10,18 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.0 — 13 de octubre de 2026
+
+- **Trace hacia abajo con su tabla:** las mismas columnas, la Suma y **Exportar a Excel** que
+  hacia arriba. Va del origen hasta la entrada del divisor de la cubierta siguiente, donde
+  termina la caché; si sale de la central, la central va primero.
+- **Código ubica de un hilo:** su número, en la bolita de su color, como en Gestión de hilos;
+  «Elemento ubica» dice el buffer («Buffer 5») con el color del buffer.
+- **Resaltado:** el pin de una fila deja el cable o la cubierta resaltados en fucsia en el
+  mapa (antes era un destello que se perdía sobre el cian del recorrido), y la fila queda
+  marcada con el mismo color. La leyenda lo explica. El fucsia se eligió midiendo cuál se
+  distingue más de todo lo que ya pinta el mapa.
+
 ## 1.4.1 — 13 de octubre de 2026
 
 Revisión de lo que se puede escribir o pegar en cada campo, y de lo que llega al servidor.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { exigirSesion } from "@/lib/auth-server"
 import {
-  armarTablaHaciaArriba,
+  armarTablaDelTrace,
   direccionDeUrl,
   elementosDelRecorrido,
   geometria,
@@ -12,7 +12,7 @@ import {
   rutasDelRecorrido,
   type DatosDeElementos,
   type PasoDeTrace,
-  type TablaHaciaArriba,
+  type TablaDelTrace,
 } from "@/lib/map/trace"
 import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion } from "@/lib/supabase-servidor"
 
@@ -129,7 +129,7 @@ const positivo = (v: unknown) => {
 }
 
 /**
- * Lo que casi no cambia y se repite en cada recorrido hacia arriba: los
+ * Lo que casi no cambia y se repite en cada recorrido: los
  * divisores con su puerto de entrada, las cubiertas (etiqueta y nivel), las
  * tarjetas y bandejas, los equipos (OLT, ODF) y las cabeceras. Se lee entero
  * una vez y vale dos minutos; así cada trace hace 3 o 4 viajes a la base en
@@ -294,7 +294,7 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
 }
 
 /**
- * Lo que hace falta para la tabla del trace hacia arriba, con los hilos y los
+ * Lo que hace falta para la tabla del trace, con los hilos y los
  * puertos ya leídos: los cables de los hilos (siempre de la base: su largo es
  * la Suma) y, del catálogo, los divisores, cubiertas, tarjetas, equipos y
  * cabeceras (lo que falte, de la base).
@@ -393,19 +393,21 @@ function responder(cuerpo: unknown, inicio: number, origen: "base" | "memoria") 
  * Mientras `geom_path` llegue vacía devuelve además los cables del recorrido:
  * el cable de cada hilo según `tab_fiber.hilo_cable`, que el mapa resalta.
  *
- * Hacia arriba:
- * - si el recorrido termina en la salida de un divisor, sigue con el de su
- *   entrada (`tramos`; ver `continuarPorLosDivisores`), y los cables a pintar
- *   son los de todo el camino;
- * - devuelve `tabla`: la tabla que pidió el ingeniero (cada puerto e hilo con
- *   dónde está y en qué contenedor, y la central), una por ruta, con avisos de
- *   lo que no cuadra en los datos. Si sus datos no se pueden leer, el
- *   recorrido sale igual y `errorTabla` dice por qué.
+ * Hacia arriba, si el recorrido termina en la salida de un divisor, sigue con
+ * el de su entrada (`tramos`; ver `continuarPorLosDivisores`), y los cables a
+ * pintar son los de todo el camino. Hacia abajo la caché termina en la entrada
+ * del divisor siguiente y ahí se queda: pasarlo abriría el recorrido en todas
+ * sus salidas.
+ *
+ * En los dos sentidos devuelve `tabla`: la tabla que pidió el ingeniero (cada
+ * puerto e hilo con dónde está y en qué contenedor, y la central), una por
+ * ruta, con avisos de lo que no cuadra en los datos. Si sus datos no se pueden
+ * leer, el recorrido sale igual y `errorTabla` dice por qué.
  *
  * Para que sea rápido: lo que casi no cambia sale de un catálogo en memoria
  * (ver `Catalogo`), lo demás se lee en paralelo por tandas, y la misma
- * respuesta vale un minuto. Hacia abajo son 2 viajes a la base; hacia arriba,
- * 3, más 1 por cada divisor que cruza.
+ * respuesta vale un minuto. Son 3 viajes a la base, más 1 por cada divisor que
+ * cruza hacia arriba.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ direccion: string; id: string }> }) {
   const sinSesion = exigirSesion(request)
@@ -435,8 +437,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
   if (guardada && guardada.hasta > Date.now()) return responder(guardada.cuerpo, inicio, "memoria")
 
   const haciaArriba = direccion === "UPSTREAM"
-  // Hacia arriba el catálogo se pide ya, en paralelo con el recorrido.
-  const catalogoListo = haciaArriba ? leerCatalogo() : null
+  // El catálogo (para la tabla) se pide ya, en paralelo con el recorrido.
+  const catalogoListo = leerCatalogo()
 
   try {
     // Una fila por origen y sentido; si algún día hubiera dos, vale la más reciente.
@@ -478,7 +480,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
 
     const pasos = normalizarPasos(fila.path_secuencia)
     const pedido = tramoDe(id, fila, pasos)
-    const catalogoDelTrace = catalogoListo ? await catalogoListo : catalogoVacio()
+    const catalogoDelTrace = await catalogoListo
 
     // Hacia arriba, el camino entero hasta la OLT. Si continuar falla, el
     // recorrido de la caché sale igual y la tabla lo avisa.
@@ -495,11 +497,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
       }
     }
 
-    // Los hilos (para pintar sus cables y para la tabla) y, hacia arriba, los
-    // puertos (para la tabla), en el mismo viaje.
+    // Los hilos (para pintar sus cables y para la tabla) y los puertos (para
+    // la tabla), en el mismo viaje.
     const conGeometria = pedido.geomPath !== null && tramos.every((t) => t.geomPath !== null)
-    const hilos = conGeometria && !haciaArriba ? [] : hilosDelRecorrido(unidos)
-    const puertosIds = haciaArriba ? elementosDelRecorrido(unidos).flatMap((e) => (e.tipo !== "HILO" && e.id ? [e.id] : [])) : []
+    const hilos = hilosDelRecorrido(unidos)
+    const puertosIds = elementosDelRecorrido(unidos).flatMap((e) => (e.tipo !== "HILO" && e.id ? [e.id] : []))
     const [lecturaHilos, lecturaPuertos] = await Promise.allSettled([
       filasPorId<FilaDeHilo>("tab_fiber", "hilo_cable", COLUMNAS_HILO, hilos),
       filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, puertosIds),
@@ -523,30 +525,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
       if (typeof cable === "string" && !cables.includes(cable)) cables.push(cable)
     }
 
-    let tabla: TablaHaciaArriba | null = null
+    let tabla: TablaDelTrace | null = null
     let errorTabla = null
-    if (haciaArriba) {
-      try {
-        if (lecturaPuertos.status === "rejected") throw lecturaPuertos.reason
-        tabla = armarTablaHaciaArriba(unidos, await datosDeElementos(filasDeHilo, lecturaPuertos.value, catalogoDelTrace), id)
-        if (cortado) {
-          tabla.avisos.unshift(
-            `El recorrido cruza más de ${MAX_DIVISORES_EN_SERIE} divisores seguidos; la tabla llega hasta el ${MAX_DIVISORES_EN_SERIE}.º. Puede haber un ciclo en la conectividad.`,
-          )
-        }
-        if (errorContinuar) {
-          const { detalle } = detalleSoloEnDesarrollo(errorContinuar)
-          tabla.avisos.unshift(
-            `No se pudo seguir el recorrido más allá del divisor donde termina en la caché; la tabla llega hasta ahí.${detalle ? ` (${detalle})` : ""}`,
-          )
-        }
-      } catch (e) {
-        const detalle = e instanceof Error ? e.message : String(e)
-        console.error(`[trace ${id}] tabla de elementos: ${detalle}`)
-        errorTabla = {
-          message: "Se encontró el recorrido, pero no se pudieron leer los datos de sus elementos para la tabla.",
-          ...detalleSoloEnDesarrollo(detalle),
-        }
+    try {
+      if (lecturaPuertos.status === "rejected") throw lecturaPuertos.reason
+      tabla = armarTablaDelTrace(unidos, await datosDeElementos(filasDeHilo, lecturaPuertos.value, catalogoDelTrace), id, direccion)
+      if (cortado) {
+        tabla.avisos.unshift(
+          `El recorrido cruza más de ${MAX_DIVISORES_EN_SERIE} divisores seguidos; la tabla llega hasta el ${MAX_DIVISORES_EN_SERIE}.º. Puede haber un ciclo en la conectividad.`,
+        )
+      }
+      if (errorContinuar) {
+        const { detalle } = detalleSoloEnDesarrollo(errorContinuar)
+        tabla.avisos.unshift(
+          `No se pudo seguir el recorrido más allá del divisor donde termina en la caché; la tabla llega hasta ahí.${detalle ? ` (${detalle})` : ""}`,
+        )
+      }
+    } catch (e) {
+      const detalle = e instanceof Error ? e.message : String(e)
+      console.error(`[trace ${id}] tabla de elementos: ${detalle}`)
+      errorTabla = {
+        message: "Se encontró el recorrido, pero no se pudieron leer los datos de sus elementos para la tabla.",
+        ...detalleSoloEnDesarrollo(detalle),
       }
     }
 

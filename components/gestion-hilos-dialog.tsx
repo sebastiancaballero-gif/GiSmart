@@ -35,6 +35,7 @@ import {
 } from "@/components/ventana-sig"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { AccesoAlMapa, CableElegido } from "@/components/network-map"
+import { BolitaDeHilo } from "@/components/bolita-de-hilo"
 import { colorParaMostrar, obtenerHilosDeCable, type HiloDeCable, type ResultadoHilos } from "@/lib/map/hilos-cable"
 import type { DireccionTrace } from "@/lib/map/trace"
 
@@ -58,16 +59,6 @@ import type { DireccionTrace } from "@/lib/map/trace"
  * Los hilos salen de `tab_fiber.fn_obtener_hilos_cable_json`. Los botones de
  * corte y recorrido están puestos pero sin funcionar: faltan sus funciones.
  */
-
-/** Texto oscuro o claro sobre un color, según lo claro que sea. */
-function textoSobre(hex: string): string {
-  const n = Number.parseInt(hex.replace("#", "").slice(0, 6), 16)
-  if (!Number.isFinite(n)) return "#ffffff"
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#0f172a" : "#ffffff"
-}
 
 /**
  * Un color por su nombre. Sin nombre no se inventa: antes, si la función no
@@ -98,18 +89,10 @@ function NumeroDeBuffer({ hilo }: { hilo: HiloDeCable }) {
   )
 }
 
-/** Número del hilo en una bolita de su color, como se ve en la bandeja. */
+/** Número del hilo en una bolita de su color, como se ve en la bandeja (la misma de la tabla del trace). */
 function NumeroDeHilo({ hilo }: { hilo: HiloDeCable }) {
   if (hilo.numero === null) return <Vacio />
-  const color = colorParaMostrar(hilo.colorHilo, hilo.numero)
-  return (
-    <span
-      className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ring-1 ring-foreground/15"
-      style={color ? { backgroundColor: color, color: textoSobre(color) } : undefined}
-    >
-      {hilo.numero}
-    </span>
-  )
+  return <BolitaDeHilo numero={hilo.numero} color={hilo.colorHilo} />
 }
 
 function Etiqueta({ texto, tono = "neutro" }: { texto: string | null; tono?: "ok" | "aviso" | "neutro" }) {

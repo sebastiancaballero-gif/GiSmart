@@ -16,14 +16,14 @@ const {
   clasificarRespuestaTrace,
   geometria,
   direccionDeUrl,
-  armarTablaHaciaArriba,
+  armarTablaDelTrace,
   elementosDelRecorrido,
   sumaDeLongitudes,
   rutasDelRecorrido,
   pasoPorDentroDelDivisor,
 } = await import("../lib/map/trace.ts")
 const { crearXlsx } = await import("../lib/excel.ts")
-const { hojaDelTraceHaciaArriba, origenDeLaRuta } = await import("../lib/map/trace-excel.ts")
+const { hojaDelTrace, origenDeLaRuta } = await import("../lib/map/trace-excel.ts")
 const { espacioLibre, margenParaZona } = await import("../lib/map/espacio-libre.ts")
 const { emitirToken } = await import("../lib/auth-server.ts")
 const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
@@ -169,7 +169,7 @@ console.log("\n4) LA RUTA GET /api/traces/{downstream|upstream}/{id}\n")
   comprobar("petición válida pasa las validaciones (sin Supabase: 500)", valida.status === 500, `HTTP ${valida.status}`)
 }
 
-console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
+console.log("\n5) TABLA DEL TRACE (HACIA ARRIBA Y HACIA ABAJO)\n")
 {
   // Datos de la base para todos los casos: cubiertas de primer y segundo nivel,
   // un divisor 1x8 en cada una, el ODF y la OLT de la central.
@@ -225,11 +225,15 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
   ])
   comprobar("elementos en orden y sin repetir", elementosDelRecorrido(pasos).map((e) => e.id).join(",") === "pd,h2,h1,pb,pt")
   comprobar("una sola ruta aunque se repita el último paso", rutasDelRecorrido(pasos, "pd").length === 1)
-  const tabla = armarTablaHaciaArriba(pasos, datos, "pd")
+  const tabla = armarTablaDelTrace(pasos, datos, "pd")
   const [ruta] = tabla.rutas
   const filas = ruta.filas
   comprobar("puerto de divisor: divisor 1, Cub nivel 1 CO19", linea(filas[0]) === "Puerto|E1|Divisor|1||Cub nivel 1|CO19", linea(filas[0]))
-  comprobar("hilo: buffer, longitud del cable y cable", linea(filas[1]) === "Hilo|56|Buffer|5|116.65|Cable|2103630", linea(filas[1]))
+  comprobar(
+    "hilo: su buffer, su número en Código ubica (como en Gestión de hilos), la longitud del cable y el cable",
+    linea(filas[1]) === "Hilo|56|Buffer 5|56|116.65|Cable|2103630",
+    linea(filas[1]),
+  )
   comprobar("puerto de bandeja: bandeja 144, ODF 1", linea(filas[3]) === "Puerto|44|Bandeja|144||ODF|1", linea(filas[3]))
   comprobar("puerto de tarjeta sin nombre: su número, tarjeta 6, OLT 1", linea(filas[4]) === "Puerto|6|Tarjeta|6||OLT|1", linea(filas[4]))
   comprobar("al final, la central", linea(filas[5]) === "Central|HUB LA UNION|||||" && filas.length === 6, linea(filas.at(-1)))
@@ -240,13 +244,13 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
     [filas[0].codigo, filas[0].codigoContenedor, filas[1].codigo, filas[1].codigoContenedor, filas[3].codigo, filas[3].codigoContenedor, filas[5].codigo].join(),
   )
   comprobar("suma de longitudes al centímetro", ruta.sumaM === 2703.17 && sumaDeLongitudes(filas) === 2703.17, String(ruta.sumaM))
-  comprobar("llega a la OLT y no hay avisos", ruta.llegaALaOlt && tabla.avisos.length === 0, tabla.avisos.join(" / "))
+  comprobar("llega a la OLT, a su central, y no hay avisos", ruta.llega && ruta.final === "HUB LA UNION" && tabla.avisos.length === 0, tabla.avisos.join(" / "))
   comprobar(
     "para la ventana: la cubierta del divisor, el cable y los colores del hilo",
     filas[0].idCubierta === "cu" && filas[0].funcionCubierta === "Primer nivel" && filas[1].idCable === "c2" &&
       filas[1].colorHilo === "Negro" && filas[1].colorBuffer === "Gris",
   )
-  const segundo = armarTablaHaciaArriba(pasos.slice(0, 1), { ...datos, cubiertas: { cu: { etiqueta: "CO7", funcion: "Segundo nivel" } } }, "pd")
+  const segundo = armarTablaDelTrace(pasos.slice(0, 1), { ...datos, cubiertas: { cu: { etiqueta: "CO7", funcion: "Segundo nivel" } } }, "pd")
   comprobar("cubierta de segundo nivel: Cub nivel 2", segundo.rutas[0].filas[0].contenedor === "Cub nivel 2")
 
   // Un hilo fusionado con dos (pasa en la caché): una ruta por camino, sin
@@ -260,7 +264,7 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
     paso(4, P("pb"), P("pt"), { tipo_contenedor: "OLT" }),
     paso(4, P("pb2"), P("pt2"), { tipo_contenedor: "OLT" }),
   ])
-  const bifurcada = armarTablaHaciaArriba(abierto, datos, "pd")
+  const bifurcada = armarTablaDelTrace(abierto, datos, "pd")
   comprobar(
     "bifurcación: dos rutas, cada una con su camino",
     bifurcada.rutas.length === 2 &&
@@ -283,12 +287,12 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
     pasoPorDentroDelDivisor("ps", "pd", "d1"),
     ...pasos,
   ]
-  const conDivisor = armarTablaHaciaArriba(cruzado, datos, "hn")
+  const conDivisor = armarTablaDelTrace(cruzado, datos, "hn")
   comprobar(
     "cruce del divisor: de la salida a la entrada y sigue hasta la central",
     conDivisor.rutas.length === 1 &&
       conDivisor.rutas[0].filas.map((f) => f.nombre).join(",") === "21,S3,E1,56,56,44,6,HUB LA UNION" &&
-      conDivisor.rutas[0].llegaALaOlt,
+      conDivisor.rutas[0].llega,
     conDivisor.rutas[0]?.filas.map((f) => f.nombre).join(","),
   )
   comprobar(
@@ -298,28 +302,28 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
   )
   comprobar("el paso por dentro del divisor no suma longitud", conDivisor.rutas[0].sumaM === 2747.75, String(conDivisor.rutas[0].sumaM))
 
-  const cortado = armarTablaHaciaArriba(normalizarPasos([paso(1, P("pn"), H("hn"))]), datos, "pn")
+  const cortado = armarTablaDelTrace(normalizarPasos([paso(1, P("pn"), H("hn"))]), datos, "pn")
   comprobar(
     "se corta en un hilo: no llega a la OLT y el aviso dice dónde",
-    !cortado.rutas[0].llegaALaOlt &&
+    !cortado.rutas[0].llega &&
       cortado.avisos[0] === "El recorrido no llega a la OLT: termina en el hilo 21 del cable 2102701, que no tiene más conexiones registradas.",
     cortado.avisos[0],
   )
-  const sinEntrada = armarTablaHaciaArriba(normalizarPasos([paso(1, H("hn"), P("ps"))]), datos, "hn")
+  const sinEntrada = armarTablaDelTrace(normalizarPasos([paso(1, H("hn"), P("ps"))]), datos, "hn")
   comprobar(
     "termina en la salida de un divisor sin recorrido de su entrada: el aviso lo dice",
     sinEntrada.avisos[0]?.endsWith("termina en el puerto S3 del divisor 1 (1x8PC) de CO19, y la entrada de ese divisor no tiene recorrido hacia arriba en la caché."),
     sinEntrada.avisos[0],
   )
   const vacios = { hilos: {}, cables: {}, puertos: {}, tarjetas: {}, equipos: {}, divisores: {}, cubiertas: {}, cabeceras: {} }
-  const sinDatos = armarTablaHaciaArriba(pasos, vacios, "pd")
+  const sinDatos = armarTablaDelTrace(pasos, vacios, "pd")
   comprobar(
     "sin datos de la base: filas con lo que se sepa (el UUID siempre) y el aviso",
     sinDatos.rutas[0].filas.length === 5 && sinDatos.rutas[0].filas[1].contenedor === "Cable" && sinDatos.rutas[0].filas[1].codigo === "h2" &&
       sinDatos.avisos.some((a) => a.startsWith("5 elementos del recorrido no están en la base")),
     sinDatos.avisos.join(" / "),
   )
-  const suelto = armarTablaHaciaArriba([...pasos, ...normalizarPasos([paso(9, H("hb"), P("pb2"))])], datos, "pd")
+  const suelto = armarTablaDelTrace([...pasos, ...normalizarPasos([paso(9, H("hb"), P("pb2"))])], datos, "pd")
   comprobar(
     "pasos que no encadenan con el origen: el aviso los cuenta",
     suelto.avisos.some((a) => a.startsWith("2 elementos de la caché no encadenan")),
@@ -328,11 +332,45 @@ console.log("\n5) TABLA DEL TRACE HACIA ARRIBA\n")
   const ciclo = normalizarPasos([paso(1, H("h1"), H("h2")), paso(2, H("h2"), H("h1"))])
   comprobar("un ciclo en los pasos no se recorre para siempre", rutasDelRecorrido(ciclo, "h1").length === 1)
   const abanico = normalizarPasos(Array.from({ length: 9 }, (_, i) => paso(1, P("pd"), H(`r${i}`))))
-  const muchas = armarTablaHaciaArriba(abanico, datos, "pd")
+  const muchas = armarTablaDelTrace(abanico, datos, "pd")
   comprobar(
     "más de 8 caminos: se muestran 8 y se avisa",
     muchas.rutas.length === 8 && muchas.avisos[0] === "El recorrido se abre en más de 8 caminos; la tabla muestra los primeros 8.",
     muchas.avisos[0],
+  )
+
+  // Hacia abajo: de un puerto de la OLT a la entrada del divisor de CO19, donde
+  // termina la caché (no cruza divisores: se abriría en todas sus salidas).
+  const bajada = normalizarPasos([
+    paso(1, P("pt"), P("pb"), { tipo_contenedor: "OLT", tipo_conexion: "PATCHCORD" }),
+    paso(2, P("pb"), H("h1"), { tipo_contenedor: "ODF", tipo_conexion: "PIGTAIL" }),
+    paso(3, H("h1"), H("h2")),
+    paso(4, H("h2"), P("pd")),
+  ])
+  const abajo = armarTablaDelTrace(bajada, datos, "pt", "DOWNSTREAM")
+  comprobar(
+    "hacia abajo: la central primero (sale de ella) y después en el orden del recorrido",
+    abajo.rutas.length === 1 && abajo.rutas[0].filas.map((f) => f.nombre).join(",") === "HUB LA UNION,6,44,56,56,E1",
+    abajo.rutas[0]?.filas.map((f) => f.nombre).join(","),
+  )
+  comprobar(
+    "hacia abajo: llega a la entrada del divisor y lo nombra, sin avisos",
+    abajo.rutas[0].llega && abajo.rutas[0].final === "divisor 1 (1x8PC) de CO19" && abajo.avisos.length === 0,
+    `${abajo.rutas[0].final} / ${abajo.avisos.join(" / ")}`,
+  )
+  comprobar(
+    "hacia abajo: el hilo con su buffer y su número, y la suma de los cables",
+    linea(abajo.rutas[0].filas[3]) === "Hilo|56|Buffer 5|56|2586.52|Cable|2100555" && abajo.rutas[0].sumaM === 2703.17,
+    `${linea(abajo.rutas[0].filas[3])} · ${abajo.rutas[0].sumaM}`,
+  )
+  const desdeHilo = armarTablaDelTrace(normalizarPasos([paso(1, H("h1"), H("h2")), paso(2, H("h2"), P("pd"))]), datos, "h1", "DOWNSTREAM")
+  comprobar("hacia abajo desde un hilo: sin central, y llega al divisor", desdeHilo.rutas[0].filas.every((f) => f.tipo !== "Central") && desdeHilo.rutas[0].llega)
+  const sueltoAbajo = armarTablaDelTrace(normalizarPasos([paso(1, P("ps"), H("hn"))]), datos, "ps", "DOWNSTREAM")
+  comprobar(
+    "hacia abajo se corta en un hilo: no llega a un divisor y el aviso dice dónde",
+    !sueltoAbajo.rutas[0].llega &&
+      sueltoAbajo.avisos[0] === "El recorrido no llega a un divisor: termina en el hilo 21 del cable 2102701, que no tiene más conexiones registradas.",
+    sueltoAbajo.avisos[0],
   )
 
   const r = clasificarRespuestaTrace(
@@ -399,15 +437,17 @@ console.log("\n6) EXCEL (.xlsx)\n")
   // La hoja del trace: contexto, encabezado, filas, Suma con fórmula y avisos.
   const ruta = {
     filas: [
-      { tipo: "Hilo", codigo: "21", ubica: "Buffer", codigoUbica: "2", longitudM: 44.58, contenedor: "Cable", codigoContenedor: "2102701" },
+      { tipo: "Hilo", codigo: "21", ubica: "Buffer 2", codigoUbica: "21", longitudM: 44.58, contenedor: "Cable", codigoContenedor: "2102701", nombre: "21", nombreContenedor: "2102701" },
       { tipo: "Puerto", codigo: "S3", ubica: "Divisor", codigoUbica: "1", longitudM: null, contenedor: "Cub nivel 1", codigoContenedor: "CO06" },
       { tipo: "Central", codigo: "01a0dfa5-a770-7f3f-8d26-c13ec2a30807", ubica: null, codigoUbica: null, longitudM: null, contenedor: null, codigoContenedor: null, nombre: "HUB LA UNION" },
     ],
     sumaM: 44.58,
-    llegaALaOlt: true,
+    llega: true,
+    final: "HUB LA UNION",
     divisores: ["divisor 1 (1x8PC) de CO06, de S3 a E1"],
   }
-  const h = hojaDelTraceHaciaArriba({
+  const h = hojaDelTrace({
+    direccion: "UPSTREAM",
     ruta,
     origen: "Hilo 21 del cable 2102701",
     idOrigen: "01a0e8eb-a10e-7ac2-b47c-2f035ae45d86",
@@ -458,6 +498,31 @@ console.log("\n6) EXCEL (.xlsx)\n")
     xlsx.includes('name="TraceHaciaArriba" displayName="TraceHaciaArriba" ref="A5:G9" totalsRowCount="1"') &&
       xlsx.includes('<autoFilter ref="A5:G8"/>') && xlsx.includes('<tableColumn id="4" name="Código ubica" totalsRowLabel="Suma"/>') &&
       xlsx.includes('<tableColumn id="5" name="Longitud (m)" totalsRowFunction="sum"/>'),
+  )
+
+  // Hacia abajo: la central va primero, el título y la tabla dicen el sentido.
+  const hojaAbajo = hojaDelTrace({
+    direccion: "DOWNSTREAM",
+    ruta: { filas: [ruta.filas[2], ruta.filas[0], ruta.filas[1]], sumaM: 44.58, llega: true, final: "divisor 1 (1x8PC) de CO06", divisores: [] },
+    origen: null,
+    idOrigen: "01a0f9bf-be87-7162-9356-103bd07f0451",
+    numeroDeRuta: 1,
+    totalDeRutas: 1,
+    pasos: 16,
+    atenuacionDb: 0.4,
+    calculadoEn: null,
+    exportadoEn: "13 oct 2026",
+    avisos: [],
+  })
+  const sumaAbajo = hojaAbajo.filas.find((f) => f.celdas[3] === "Suma")
+  comprobar(
+    "hacia abajo: título con el origen (no la central), a dónde llega y su propia tabla de Excel",
+    hojaAbajo.nombre === "Trace hacia abajo" &&
+      hojaAbajo.filas[0].celdas[0] === "Trace hacia abajo — Hilo 21 del cable 2102701" &&
+      String(hojaAbajo.filas[1].celdas[0]).includes("llega al divisor 1 (1x8PC) de CO06") &&
+      hojaAbajo.tabla?.nombre === "TraceHaciaAbajo" &&
+      sumaAbajo?.celdas[4].formula === "SUBTOTAL(109,TraceHaciaAbajo[Longitud (m)])",
+    `${hojaAbajo.filas[0].celdas[0]} / ${hojaAbajo.filas[1].celdas[0]}`,
   )
 }
 
