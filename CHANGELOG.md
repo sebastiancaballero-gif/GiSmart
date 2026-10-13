@@ -10,6 +10,18 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.4 — 13 de octubre de 2026
+
+- **Trace desde Gestión de hilos:** al pedir otro recorrido, la ventana ya no muestra un momento
+  la tabla del anterior bajo el hilo nuevo, ni la deja ahí si la consulta falla: se limpia y
+  dice «Calculando…» hasta que llega el nuevo.
+- **Origen del trace:** acepta el UUID entre llaves y en mayúsculas, como lo copian ArcGIS
+  o SQL Server ({01A0…}); antes decía que no era un UUID.
+- **Revisión:** auditoría de seguridad, pruebas de conectividad y el trace en modo
+  producción, sin novedades del lado de la aplicación. Las fallas de conectividad son de la
+  función `get_json_conectividad_cubierta` en la base (pide `pe.id_equipo`, que ahora es
+  `id_equipo_pert`). El informe `pnpm run datos` vuelve a leer `conectividad_fina`.
+
 ## 1.5.3 — 13 de octubre de 2026
 
 Revisión del trace contra la base y pruebas de lo que puede fallar.

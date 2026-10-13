@@ -68,13 +68,18 @@ export type ManejadorDelTrace = ManejadorDeVentana & {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** Lo pegado puede venir de una consulta SQL: `'01a0…'::uuid`, con comillas o espacios. */
+/**
+ * Lo pegado puede venir de una consulta SQL (`'01a0…'::uuid`, con comillas o
+ * espacios) o de ArcGIS o SQL Server, entre llaves y en mayúsculas ({01A0…}).
+ */
 function limpiarUuid(valor: string): string {
   return valor
     .trim()
     .replace(/::uuid$/i, "")
     .replace(/^['"]+|['"]+$/g, "")
+    .replace(/^\{|\}$/g, "")
     .trim()
+    .toLowerCase()
 }
 
 const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWNSTREAM: "hacia abajo" }
@@ -180,11 +185,13 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
   async function recorrer(pegado: string, direccion: DireccionTrace) {
     const id = limpiarUuid(pegado)
     if (!UUID.test(id)) {
+      setCargando(null)
       setMensaje({ texto: "Pega el UUID de un puerto o de un hilo: 36 caracteres con guiones.", tono: "aviso" })
       return
     }
     const api = mapa.api.current
     if (!api) {
+      setCargando(null)
       setMensaje({ texto: "El mapa todavía no está listo. Espera a que cargue y vuelve a intentarlo.", tono: "aviso" })
       return
     }
@@ -192,6 +199,10 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     setOrigen(id)
     setCargando(direccion)
     setMensaje(null)
+    // Lo del recorrido anterior no es de este origen ni de este sentido: la
+    // tabla y la línea se quitan mientras llega el nuevo. Antes la tabla vieja
+    // quedaba bajo el hilo nuevo y, si la consulta fallaba, se quedaba ahí.
+    limpiarAnterior()
     const r = await obtenerTrace(id, direccion)
     if (consulta !== consultaRef.current) return
     setCargando(null)
@@ -277,6 +288,14 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     } else {
       setMensaje({ texto: `${recorrido}.`, tono: "info" })
     }
+  }
+
+  /** Quita el recorrido que se veía (tabla, fila marcada y línea del mapa) antes de pedir otro. */
+  function limpiarAnterior() {
+    setResumen(null)
+    setUbicada(null)
+    setVerPasos(false)
+    mapa.api.current?.limpiarRecorrido()
   }
 
   /** «Exportar a Excel»: la ruta que se ve de la tabla del trace, con su contexto y la suma. */
@@ -503,6 +522,12 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     },
     recorrer: (id, direccion, elegido) => {
       mapa.api.current?.abandonarEleccion()
+      // Lo que llegara de antes ya no vale, y la ventana se abre sin el recorrido
+      // anterior y ya «calculando»: no se ve un momento la tabla de otro hilo.
+      consultaRef.current++
+      limpiarAnterior()
+      setMensaje(null)
+      setCargando(direccion)
       setOrigen(id)
       setDesde(elegido ?? null)
       setMinimizada(false)

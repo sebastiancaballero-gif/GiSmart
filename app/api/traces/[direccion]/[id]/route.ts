@@ -472,7 +472,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
   }
   let id = ""
   try {
-    id = decodeURIComponent(crudo).trim()
+    // En minúsculas, como los guarda la base: las rutas se arman comparando el origen con los pasos.
+    id = decodeURIComponent(crudo).trim().toLowerCase()
   } catch {
     // Un % suelto en la URL: no es un UUID.
   }
