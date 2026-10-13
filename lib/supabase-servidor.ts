@@ -20,20 +20,29 @@ import { exigirSesion } from "@/lib/auth-server"
  */
 const ESPERA_MAXIMA_MS = 15_000
 
+/**
+ * `fetch` con el tope de espera. Si lo que corta es el tope, el error sale como
+ * `AbortError`: el cliente de Supabase reintenta tres veces los fallos de red
+ * (con esperas de 1, 2 y 4 s) y el error propio del tope (`TimeoutError`) lo
+ * tomaba por uno, así que una base que no respondía tenía la ruta colgada
+ * 67 s en vez de 15. Un `AbortError` no lo reintenta.
+ */
+async function fetchConTope(entrada: Parameters<typeof fetch>[0], opciones?: RequestInit): Promise<Response> {
+  const tope = AbortSignal.timeout(ESPERA_MAXIMA_MS)
+  try {
+    return await fetch(entrada, { ...opciones, signal: opciones?.signal ? AbortSignal.any([opciones.signal, tope]) : tope })
+  } catch (error) {
+    if (tope.aborted) throw new DOMException(`Supabase no respondió en ${ESPERA_MAXIMA_MS / 1000} s.`, "AbortError")
+    throw error
+  }
+}
+
 const crearCliente = (url: string, clave: string, esquema: string) =>
   createClient(url, clave, {
     db: { schema: esquema },
     // En el servidor no hay sesión de Supabase que guardar ni renovar.
     auth: { persistSession: false, autoRefreshToken: false },
-    global: {
-      fetch: (entrada, opciones) =>
-        fetch(entrada, {
-          ...opciones,
-          signal: opciones?.signal
-            ? AbortSignal.any([opciones.signal, AbortSignal.timeout(ESPERA_MAXIMA_MS)])
-            : AbortSignal.timeout(ESPERA_MAXIMA_MS),
-        }),
-    },
+    global: { fetch: fetchConTope },
   })
 
 type ClienteSupabase = ReturnType<typeof crearCliente>

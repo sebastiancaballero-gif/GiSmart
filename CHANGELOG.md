@@ -10,6 +10,23 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.3 — 13 de octubre de 2026
+
+Revisión del trace contra la base y pruebas de lo que puede fallar.
+
+- **Verificado:** en los 1762 recorridos, la tabla dice lo mismo que la base (hilos,
+  cables, longitudes, puertos, divisores, equipos, central); los 11 526 pasos de la caché
+  siguen en la conectividad de hoy; la caché coincide con la función del trace; los hilos
+  coinciden con Gestión de hilos.
+- **Base que no responde:** la consulta se corta a los 15 s. Antes el cliente de Supabase
+  la reintentaba tres veces y tardaba 67 s (vale para todas las rutas, también el login).
+  El mensaje dice que la base no respondió a tiempo o que no se pudo conectar.
+- **Sin recorrido:** la ventana dice por qué (puerto de la OLT, salida o entrada de divisor,
+  hilo suelto) en vez de «el UUID no existe», que no era cierto.
+- **Respuesta que no es un recorrido** (vacía o rota): lo dice como error.
+- **Muchos avisos:** se desplazan en su recuadro y la tabla queda a la vista.
+- **Pruebas:** `pnpm run trace-ruta` (en `pnpm verificar`) y `pnpm run auditar-trace`.
+
 ## 1.5.2 — 13 de octubre de 2026
 
 - **Tabla del trace más fácil de leer:** el cable, la cubierta o el equipo de cada fila se

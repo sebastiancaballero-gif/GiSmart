@@ -52,6 +52,8 @@ export type ResultadoTrace =
       estado: "ok"
       /** Si la caché tiene un recorrido para ese origen y sentido. */
       encontrado: boolean
+      /** Si no lo tiene, por qué, en palabras («Es la salida S3 del divisor 2…»); `null` si no se sabe. */
+      motivo: string | null
       pasos: PasoDeTrace[]
       /**
        * Los pasos del recorrido según la tabla (`total_pasos`). Puede ser menos
@@ -706,10 +708,16 @@ export function clasificarRespuestaTrace(status: number, cuerpo: unknown): Resul
   }
   const c = (cuerpo ?? {}) as Record<string, unknown>
   const pasos = normalizarPasos(cuerpo)
+  // Ni el dato de si se encontró ni pasos: no es un recorrido (una página de un
+  // proxy, una respuesta cortada). Antes salía «no hay recorrido» y no era eso.
+  if (typeof c.encontrado !== "boolean" && pasos.length === 0) {
+    return { estado: "error", mensaje: "El servidor respondió algo que no es un recorrido. Vuelve a intentarlo; si sigue pasando, hay que revisar el servidor." }
+  }
   return {
     estado: "ok",
     // Una respuesta sin el dato se toma por encontrada si trae pasos.
     encontrado: typeof c.encontrado === "boolean" ? c.encontrado : pasos.length > 0,
+    motivo: texto(c.motivo),
     pasos,
     totalPasos: numero(c.totalPasos) ?? new Set(pasos.map((p) => p.paso)).size,
     cables: Array.isArray(c.cables) ? c.cables.filter((x): x is string => typeof x === "string") : [],

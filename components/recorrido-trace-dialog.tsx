@@ -208,9 +208,10 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       api.limpiarRecorrido()
       setResumen(null)
       setMensaje({
+        // El porqué lo dice la ruta cuando lo sabe (una salida de divisor, un puerto de la OLT…).
         texto: r.encontrado
           ? `El recorrido calculado ${SENTIDO[direccion]} desde ese origen no tiene pasos.`
-          : `No hay un recorrido ${SENTIDO[direccion]} calculado para ese origen: el UUID no existe o no tiene conectividad en ese sentido.`,
+          : (r.motivo ?? `No hay un recorrido ${SENTIDO[direccion]} calculado para ese origen: el UUID no existe o no tiene conectividad en ese sentido.`),
         tono: "aviso",
       })
       return

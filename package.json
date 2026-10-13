@@ -1,6 +1,6 @@
 {
   "name": "gismart",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "packageManager": "pnpm@11.17.0",
   "scripts": {
@@ -18,6 +18,8 @@
     "hilos": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-hilos.mjs",
     "red": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-red-de-fibra.mjs",
     "trace": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-trace.mjs",
+    "trace-ruta": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-trace-ruta.mjs",
+    "auditar-trace": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/auditar-trace.mjs",
     "login": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-login.mjs",
     "capas": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-capas.mjs",
     "entradas": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-entradas.mjs"

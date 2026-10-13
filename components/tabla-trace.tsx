@@ -311,7 +311,8 @@ export function TablaTrace({
       {abierta && tabla.avisos.length > 0 && (
         <div
           role="note"
-          className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/8 px-2.5 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-200"
+          // Con muchos avisos la tabla quedaba fuera de la vista: se desplazan por dentro.
+          className="flex max-h-24 gap-2 overflow-y-auto rounded-lg border border-amber-500/30 bg-amber-500/8 px-2.5 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-200"
         >
           <TriangleAlert className="mt-px size-3.5 shrink-0 text-amber-600" aria-hidden="true" />
           {tabla.avisos.length === 1 ? (

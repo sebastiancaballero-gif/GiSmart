@@ -17,7 +17,11 @@ import {
 import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion } from "@/lib/supabase-servidor"
 
 /** Lo que se le dice a quien usa el mapa cuando la tabla de caché no se puede leer. */
-function mensajeDeCache(codigo: string | undefined): string {
+function mensajeDeCache(codigo: string | undefined, mensaje = ""): string {
+  // Sin código: no llegó a responder la base. «AbortError» es el tope de espera
+  // (ver fetchConTope en lib/supabase-servidor.ts); lo demás, que no se alcanzó.
+  if (!codigo && mensaje.startsWith("AbortError")) return "La base no respondió a tiempo al leer el recorrido. Vuelve a intentarlo en un momento."
+  if (!codigo && mensaje) return "No se pudo conectar con la base para leer el recorrido. Revisa la conexión del servidor."
   switch (codigo) {
     case "42501":
       return "La base no permite leer la caché del trace: falta un permiso sobre tab_fiber.element_connection."
@@ -294,6 +298,53 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
 }
 
 /**
+ * Por qué un origen no tiene recorrido en ese sentido, en palabras. La caché
+ * (y la función del trace) no cruzan un divisor ni siguen más allá de la OLT:
+ * un puerto de la OLT no tiene nada hacia arriba, una salida de divisor no sube
+ * y una entrada no baja (se abriría en todas sus salidas). Antes la ventana
+ * decía siempre «el UUID no existe o no tiene conectividad», y estos sí existen
+ * y sí la tienen. `null` si no se pudo averiguar: queda el mensaje general.
+ */
+async function motivoSinRecorrido(id: string, haciaArriba: boolean, catalogo: Catalogo): Promise<string | null> {
+  try {
+    const [puertos, hilos] = await Promise.all([
+      filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, [id]),
+      filasPorId<FilaDeHilo>("tab_fiber", "hilo_cable", COLUMNAS_HILO, [id]),
+    ])
+    const sentido = haciaArriba ? "hacia arriba" : "hacia abajo"
+    const puerto = puertos[0]
+    if (puerto) {
+      const nombre = puerto.nombre ?? (puerto.numero_puerto !== null ? String(puerto.numero_puerto) : "sin nombre")
+      if (puerto.tipo_equipo_pert === "TJT" && haciaArriba) {
+        return `Es el puerto ${nombre} de una tarjeta de la OLT: ahí empieza la red y hacia arriba no hay más. Recórrelo hacia abajo.`
+      }
+      if (puerto.tipo_equipo_pert === "DIV" && puerto.id_equipo_pert) {
+        const divisor = catalogo.divisores.get(puerto.id_equipo_pert)
+        const cubierta = divisor?.id_cubierta_ubica ? catalogo.cubiertas.get(divisor.id_cubierta_ubica) : undefined
+        // «del divisor 2 (1x8PC) de CO19» o, si no está en el catálogo, «de un divisor».
+        const delDivisor = divisor
+          ? `del divisor ${divisor.num_divisor ?? "sin número"}${divisor.modelo_divisor ? ` (${divisor.modelo_divisor})` : ""}${cubierta?.etiqueta ? ` de ${cubierta.etiqueta}` : ""}`
+          : "de un divisor"
+        if (haciaArriba && puerto.dir_principal_senhal === "S") {
+          const entrada = catalogo.entradaDeDivisor.get(puerto.id_equipo_pert)
+          return `Es la salida ${nombre} ${delDivisor}: la caché no sube desde una salida. Recorre hacia arriba desde su entrada${entrada ? ` (UUID ${entrada})` : ""}.`
+        }
+        if (!haciaArriba && puerto.dir_principal_senhal === "E") {
+          return `Es la entrada ${nombre} ${delDivisor}: hacia abajo se abre en todas sus salidas. Recorre hacia abajo desde una de ellas.`
+        }
+      }
+      return `El puerto ${nombre} no tiene conexiones ${sentido} en la caché del trace.`
+    }
+    const hilo = hilos[0]
+    if (hilo) return `El hilo ${hilo.numero_hilo ?? "sin número"} no tiene conexiones ${sentido}: el recorrido termina en él.`
+    return "Ese UUID no es de ningún puerto ni hilo de la base."
+  } catch (e) {
+    console.error(`[trace ${id}] motivo sin recorrido: ${e instanceof Error ? e.message : String(e)}`)
+    return null
+  }
+}
+
+/**
  * Lo que hace falta para la tabla del trace, con los hilos y los
  * puertos ya leídos: los cables de los hilos (siempre de la base: su largo es
  * la Suma) y, del catálogo, los divisores, cubiertas, tarjetas, equipos y
@@ -453,7 +504,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
       console.error(`[element_connection ${id} ${direccion}] ${error.code} ${error.message}`)
       return NextResponse.json(
         {
-          message: mensajeDeCache(error.code),
+          message: mensajeDeCache(error.code, error.message),
           ...detalleSoloEnDesarrollo(`element_connection → ${error.code}: ${error.message}`),
         },
         { status: 502 },
@@ -473,6 +524,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
         tramos: [],
         tabla: null,
         errorTabla: null,
+        motivo: await motivoSinRecorrido(id, haciaArriba, await catalogoListo),
       }
       guardarRespuesta(llave, vacia)
       return responder(vacia, inicio, "base")

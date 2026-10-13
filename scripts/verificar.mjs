@@ -25,6 +25,7 @@ const PASOS = [
   ["Gestión de hilos", `${PRUEBAS} scripts/probar-hilos.mjs`],
   ["Redes/Nodo y GPON", `${PRUEBAS} scripts/probar-red-de-fibra.mjs`],
   ["Recorrido del trace", `${PRUEBAS} scripts/probar-trace.mjs`],
+  ["Ruta del trace contra una base de mentira", `${PRUEBAS} scripts/probar-trace-ruta.mjs`],
   ["Capas del mapa por páginas", `${PRUEBAS} scripts/probar-capas.mjs`],
   ["Entradas raras y textos pegados", `${PRUEBAS} scripts/probar-entradas.mjs`],
 ]

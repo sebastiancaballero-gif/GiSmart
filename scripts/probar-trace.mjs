@@ -133,6 +133,14 @@ console.log("\n3) RESPUESTA DE LA RUTA\n")
   comprobar("sin total_pasos: los números de paso distintos", sinTotal.estado === "ok" && sinTotal.totalPasos === 3)
   const noEsta = clasificarRespuestaTrace(200, { encontrado: false, pasos: [], totalPasos: 0, cables: [], geomPath: null })
   comprobar("200 sin recorrido en la caché: encontrado en falso", noEsta.estado === "ok" && !noEsta.encontrado && noEsta.pasos.length === 0)
+  const conMotivo = clasificarRespuestaTrace(200, { encontrado: false, pasos: [], motivo: "Es la salida S3 del divisor 2." })
+  comprobar("sin recorrido, con el porqué de la ruta", conMotivo.estado === "ok" && conMotivo.motivo === "Es la salida S3 del divisor 2.")
+  const noEsRecorrido = [null, "", "hola", [1, 2, 3], {}, { otra: "cosa" }].map((cuerpo) => clasificarRespuestaTrace(200, cuerpo))
+  comprobar(
+    "200 con algo que no es un recorrido (vacío, texto, basura): un error, no «no hay recorrido»",
+    noEsRecorrido.every((r) => r.estado === "error" && r.mensaje.startsWith("El servidor respondió algo que no es un recorrido")),
+    noEsRecorrido.map((r) => r.estado).join(","),
+  )
   const sinAtenuacion = clasificarRespuestaTrace(200, { encontrado: true, pasos: normalizarPasos(CACHE) })
   comprobar("sin atenuación de la tabla: la del último paso", sinAtenuacion.estado === "ok" && sinAtenuacion.atenuacionTotal === 0.15)
   const error = clasificarRespuestaTrace(502, { message: "No se pudo leer el recorrido en la caché del trace.", detalle: "XX: algo" })
