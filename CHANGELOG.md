@@ -10,6 +10,12 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.6 — 14 de octubre de 2026
+
+- **El hilo elegido en el trace:** dice el identificador del cable («Hilo 55 del cable
+  01a0e04f-…»), el mismo de la columna «Identificador contenedor»; el código (2102262) sale
+  al pasar el mouse. El título del Excel también; el nombre del archivo sigue con el código.
+
 ## 1.5.5 — 14 de octubre de 2026
 
 - **Tabla del trace con los nombres que pidieron:** Tipo elemento, Identificador elemento,

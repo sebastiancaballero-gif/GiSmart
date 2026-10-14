@@ -52,8 +52,10 @@ import { hojaDelTrace, origenDeLaRuta } from "@/lib/map/trace-excel"
 
 /** De dónde viene el origen cuando lo elige otra ventana. */
 export type OrigenElegido = {
-  /** Qué es: «Hilo 13 del cable 2100555». */
+  /** Qué es, con el identificador del cable: «Hilo 13 del cable 01a0e04f-…». */
   etiqueta: string
+  /** Lo mismo con lo que se lee, al pasar el mouse: «Hilo 13 del cable 2100555». */
+  titulo?: string
   /** El color del hilo, para su muestra. */
   color?: string | null
   /** Al cerrar la ventana se vuelve ahí (p. ej. a Gestión de hilos). */
@@ -336,7 +338,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       ahora,
     )
     const dia = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`
-    const nombre = paraArchivo(desde?.etiqueta ?? origenDeLaRuta(elegida) ?? resumen.idOrigen.slice(0, 8))
+    // El nombre del archivo con lo que se lee («hilo-55-del-cable-2102262»), no con el UUID del cable.
+    const nombre = paraArchivo(origenDeLaRuta(elegida) ?? desde?.titulo ?? desde?.etiqueta ?? resumen.idOrigen.slice(0, 8))
     descargarArchivo(datos, `trace-${resumen.direccion === "UPSTREAM" ? "hacia-arriba" : "hacia-abajo"}-${nombre}${tabla.rutas.length > 1 ? `-ruta-${ruta + 1}` : ""}-${dia}.xlsx`)
   }
 
@@ -633,7 +636,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               ) : (
                 <Cable className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
               )}
-              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{desde.etiqueta}</span>
+              <span title={desde.titulo ?? desde.etiqueta} className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+                {desde.etiqueta}
+              </span>
               {desde.volver && (
                 <button
                   type="button"

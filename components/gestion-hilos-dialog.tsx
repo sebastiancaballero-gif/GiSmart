@@ -191,8 +191,12 @@ const clave = (g: string, c: string) => `${g}-${c}`
 
 type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
 
-/** Cómo se presenta el hilo en «Recorrido del trace»: su nombre y su color. */
-export type HiloParaRecorrer = { etiqueta: string; color: string | null }
+/**
+ * Cómo se presenta el hilo en «Recorrido del trace»: con el identificador del
+ * cable (su UUID, como en la tabla del trace), lo que se lee al pasar el mouse
+ * y su color.
+ */
+export type HiloParaRecorrer = { etiqueta: string; titulo: string; color: string | null }
 
 /**
  * La ventana con su estado: abierta o no y el cable elegido. Si hay un cable
@@ -420,7 +424,8 @@ function VentanaHilos({
       setMensaje({ texto: PENDIENTE(direccion === "UPSTREAM" ? "Hacia la fuente" : "Hacia abajo"), tono: "info" })
     } else {
       onRecorrer(hiloElegido.uuid, direccion, {
-        etiqueta: `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.codigo}`,
+        etiqueta: `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.id ?? cable.codigo}`,
+        titulo: `Hilo ${hiloElegido.numero ?? ""} del cable ${cable.codigo}`,
         color: colorElegido,
       })
     }
