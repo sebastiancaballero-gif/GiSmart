@@ -293,3 +293,95 @@ begin
   end if;
   raise notice 'Listo: las % cubiertas devuelven solo sus conexiones.', bien;
 end $$;
+
+
+-- PASO 5. Bandejas necesarias (corridos los pasos 2 y 4).
+--
+-- La base no tiene las bandejas de ninguna cubierta (cantidad_bandejas es 0 en
+-- las 185, bandeja_empalme está vacía y num_bandeja es 0 en todas las
+-- fusiones), y la función da can_band_inst por los divisores: 0 en las de
+-- empalme, 2 en CO02 con 40 fusiones. El esquema pone 12 fusiones por bandeja
+-- y descartaba las que no cabían (113 en 9 cubiertas, «sin bandeja
+-- disponible»). Ahora can_band_inst es al menos las bandejas que necesitan sus
+-- fusiones de hilo a hilo (12 por bandeja, o la capacidad que declare la
+-- bandeja); si la base trae más, quedan esas. Comprueba en cada cubierta que
+-- alcancen y que el resto del JSON quede idéntico; si no, no se guarda nada.
+do $$
+declare
+  definicion text := pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
+  tipo text := pg_get_function_result('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
+  nueva text;
+  cub record;
+  j jsonb;
+  antes jsonb := '{}'::jsonb;
+  fusiones int;
+  capacidad int;
+  bien int := 0;
+  mal int := 0;
+  primer_error text;
+begin
+  if position('bandejas_necesarias' in definicion) > 0 then
+    raise notice 'La función ya calcula las bandejas necesarias: no se cambió nada.';
+    return;
+  end if;
+  if tipo not in ('json', 'jsonb') then
+    raise exception 'La función devuelve %, no json: no se cambió nada.', tipo;
+  end if;
+
+  -- Lo que devuelve hoy cada cubierta, para comparar después.
+  for cub in select id from geo_fiber.cubierta_empalme loop
+    antes := antes || jsonb_build_object(cub.id::text, public.get_json_conectividad_cubierta(cub.id)::jsonb);
+  end loop;
+
+  -- Cada «RETURN algo;» devuelve lo mismo con can_band_inst al menos las
+  -- bandejas que necesitan sus fusiones de hilo a hilo.
+  nueva := regexp_replace(definicion, '\mRETURN\s+([^;]+);',
+    'RETURN (select (case when bandejas_necesarias.n > coalesce((bn_r.j ->> ''can_band_inst'')::int, 0)
+                     then jsonb_set(bn_r.j, ''{can_band_inst}'', to_jsonb(bandejas_necesarias.n)) else bn_r.j end)::' || tipo || '
+             from (select (\1)::jsonb as j) bn_r,
+             lateral (select ceil(count(*)::numeric / coalesce(nullif((bn_r.j -> ''Bandejas'' -> 0 ->> ''Capacidad_fusiones'')::int, 0), 12))::int as n
+                        from jsonb_array_elements(coalesce(bn_r.j -> ''Bandejas'', ''[]''::jsonb)) as bn_b(v),
+                             jsonb_array_elements(coalesce(bn_b.v -> ''Conectividades'', ''[]''::jsonb)) as bn_c(v)
+                       where (bn_c.v -> ''origen'' ->> ''hilo_id'') is not null
+                         and (bn_c.v -> ''destino'' ->> ''hilo_id'') is not null) bandejas_necesarias);',
+    'gi');
+  if nueva = definicion then
+    raise exception 'No se encontró el RETURN de la función. No se cambió nada.';
+  end if;
+  execute nueva;
+
+  for cub in select id, etiqueta from geo_fiber.cubierta_empalme loop
+    begin
+      j := public.get_json_conectividad_cubierta(cub.id)::jsonb;
+      select count(*) into fusiones
+        from jsonb_array_elements(coalesce(j -> 'Bandejas', '[]'::jsonb)) as b,
+             jsonb_array_elements(coalesce(b -> 'Conectividades', '[]'::jsonb)) as c
+       where (c -> 'origen' ->> 'hilo_id') is not null and (c -> 'destino' ->> 'hilo_id') is not null;
+      capacidad := coalesce(nullif((j -> 'Bandejas' -> 0 ->> 'Capacidad_fusiones')::int, 0), 12);
+      if coalesce((j ->> 'can_band_inst')::int, 0) * capacidad < fusiones then
+        mal := mal + 1;
+        if primer_error is null then
+          primer_error := coalesce(cub.etiqueta, cub.id::text) || ': ' || fusiones || ' fusiones y ' || coalesce(j ->> 'can_band_inst', '0') || ' bandejas';
+        end if;
+      elsif (j - 'can_band_inst') is distinct from ((antes -> cub.id::text) - 'can_band_inst') then
+        mal := mal + 1;
+        if primer_error is null then
+          primer_error := coalesce(cub.etiqueta, cub.id::text) || ': cambió algo más que las bandejas';
+        end if;
+      else
+        bien := bien + 1;
+      end if;
+    exception when others then
+      mal := mal + 1;
+      if primer_error is null then
+        primer_error := coalesce(cub.etiqueta, cub.id::text) || ': ' || sqlstate || ' ' || sqlerrm;
+      end if;
+    end;
+  end loop;
+
+  if mal > 0 then
+    -- La excepción deshace el CREATE OR REPLACE de arriba: la función queda como estaba.
+    raise exception 'No se guardó nada: % de % cubiertas no quedan bien. Primer caso: %', mal, bien + mal, primer_error;
+  end if;
+  raise notice 'Listo: las % cubiertas tienen bandejas para todas sus fusiones.', bien;
+end $$;
