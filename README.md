@@ -714,12 +714,16 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   vacía; hoy tiene 182 cables y el mapa los dibuja. El historial está en
   [`docs/base-de-datos.md`](docs/base-de-datos.md) y los permisos que se habían perdido
   se restauraron con [`docs/sql/permisos-service-role.sql`](docs/sql/permisos-service-role.sql).
-- **La función `get_json_conectividad_cubierta` falla** (10 de octubre de 2026): busca la
-  columna `pe.id_equipo` de `puerto_equipo`, que ahora se llama `id_equipo_pert`. La ruta
-  `/api/mufas/{id}/conectividad` responde con ese error (y la ventana lo muestra) hasta
-  que se corrija la función en la base. Al 14 de octubre falla en las 185 cubiertas; se
-  corrige con [`docs/sql/arreglar-conectividad-puerto-equipo.sql`](docs/sql/arreglar-conectividad-puerto-equipo.sql)
-  en el editor SQL de Supabase (la clave de la aplicación no puede cambiar funciones).
+- **La función `get_json_conectividad_cubierta`** (resuelto el 14 de octubre de 2026): tras
+  la recarga de tablas de octubre fallaba en las 185 cubiertas porque leía columnas con
+  nombres viejos (`puerto_equipo`, `divisor_optico`, `conectividad_fina`) y traía también
+  las conexiones de la otra punta de cada cable. Se corrigió en la base con
+  [`docs/sql/arreglar-conectividad-puerto-equipo.sql`](docs/sql/arreglar-conectividad-puerto-equipo.sql)
+  (pasos 2 y 4, en el editor SQL de Supabase: la clave de la aplicación no puede cambiar
+  funciones). Hoy responden las 185 con sus 796 conexiones. **Pendiente del esquemático:**
+  no dibuja los divisores ni las 234 conexiones entre un hilo y un puerto de divisor (68
+  cubiertas); las descarta con el aviso «el hilo de destino undefined no existe»
+  (`lib/schematic/mufa-field-data.ts`, de Dario).
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.
