@@ -307,6 +307,7 @@ export default function DashboardPage() {
           <DashboardHeader
             subtitle={location}
             onNavigate={handleNavigate}
+            cerca={center}
             elementos={indice}
             onElegirElemento={handleElegirElemento}
             pedirFoco={pedirFocoBusqueda}

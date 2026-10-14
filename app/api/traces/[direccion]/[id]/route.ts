@@ -18,10 +18,13 @@ import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion } fr
 
 /** Lo que se le dice a quien usa el mapa cuando la tabla de caché no se puede leer. */
 function mensajeDeCache(codigo: string | undefined, mensaje = ""): string {
-  // Sin código: no llegó a responder la base. «AbortError» es el tope de espera
-  // (ver fetchConTope en lib/supabase-servidor.ts); lo demás, que no se alcanzó.
-  if (!codigo && mensaje.startsWith("AbortError")) return "La base no respondió a tiempo al leer el recorrido. Vuelve a intentarlo en un momento."
-  if (!codigo && mensaje) return "No se pudo conectar con la base para leer el recorrido. Revisa la conexión del servidor."
+  // Sin código de PostgREST. «AbortError» o «TimeoutError» es el tope de espera
+  // (ver fetchConTope en lib/supabase-servidor.ts; un cuerpo que se corta al
+  // leerlo llega como TimeoutError); «TypeError» o «FetchError», que no se
+  // alcanzó la base. Lo demás (un 503 sin código, por ejemplo) sí respondió:
+  // queda el mensaje general.
+  if (!codigo && /^(AbortError|TimeoutError)/.test(mensaje)) return "La base no respondió a tiempo al leer el recorrido. Vuelve a intentarlo en un momento."
+  if (!codigo && /^(TypeError|FetchError)/.test(mensaje)) return "No se pudo conectar con la base para leer el recorrido. Revisa la conexión del servidor."
   switch (codigo) {
     case "42501":
       return "La base no permite leer la caché del trace: falta un permiso sobre tab_fiber.element_connection."
@@ -155,6 +158,8 @@ type Catalogo = {
 }
 
 const VIGENCIA_CATALOGO_MS = 2 * 60_000
+/** Si el catálogo no se pudo leer, cuánto se espera antes de volver a intentarlo. */
+const ESPERA_TRAS_FALLA_MS = 30_000
 let catalogo: { valor: Promise<Catalogo>; hasta: number } | null = null
 
 const porId = <T extends { id: string }>(filas: T[]) => new Map(filas.map((f) => [f.id, f]))
@@ -198,7 +203,10 @@ function leerCatalogo(): Promise<Catalogo> {
     catalogo = { valor, hasta: ahora + VIGENCIA_CATALOGO_MS }
     valor.catch((e) => {
       console.error(`[trace] catálogo: ${e instanceof Error ? e.message : String(e)}`)
-      if (catalogo?.valor === valor) catalogo = null
+      // No se vuelve a leer en cada trace (son seis tablas enteras): por un
+      // rato vale un catálogo vacío, que se va llenando con lo que se lee en el
+      // momento. Antes, una tabla sin permiso hacía releer las seis cada vez.
+      if (catalogo?.valor === valor) catalogo = { valor: Promise.resolve(catalogoVacio()), hasta: Date.now() + ESPERA_TRAS_FALLA_MS }
     })
   }
   return catalogo.valor.catch(catalogoVacio)
@@ -297,6 +305,12 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
   return { unidos, tramos, cortado }
 }
 
+/** De esos orígenes, los que tienen recorrido en la caché en ese sentido. */
+async function conRecorrido(ids: string[], direccion: "UPSTREAM" | "DOWNSTREAM"): Promise<Set<string>> {
+  const filas = await filasPorId<{ id_origen: string; direccion: string }>("tab_fiber", "element_connection", "id_origen, direccion", ids, "id_origen")
+  return new Set(filas.filter((f) => f.direccion === direccion).map((f) => f.id_origen))
+}
+
 /**
  * Por qué un origen no tiene recorrido en ese sentido, en palabras. La caché
  * (y la función del trace) no cruzan un divisor ni siguen más allá de la OLT:
@@ -327,16 +341,31 @@ async function motivoSinRecorrido(id: string, haciaArriba: boolean, catalogo: Ca
           : "de un divisor"
         if (haciaArriba && puerto.dir_principal_senhal === "S") {
           const entrada = catalogo.entradaDeDivisor.get(puerto.id_equipo_pert)
-          return `Es la salida ${nombre} ${delDivisor}: la caché no sube desde una salida. Recorre hacia arriba desde su entrada${entrada ? ` (UUID ${entrada})` : ""}.`
+          // Solo se sugiere la entrada si desde ella sí se sube.
+          const sube = entrada ? (await conRecorrido([entrada], "UPSTREAM")).size > 0 : false
+          return sube
+            ? `Es la salida ${nombre} ${delDivisor}: la caché no sube desde una salida. Recorre hacia arriba desde su entrada (UUID ${entrada}).`
+            : `Es la salida ${nombre} ${delDivisor}: la caché no sube desde una salida, y la entrada de ese divisor tampoco tiene recorrido hacia arriba (no tiene conexiones registradas).`
         }
         if (!haciaArriba && puerto.dir_principal_senhal === "E") {
-          return `Es la entrada ${nombre} ${delDivisor}: hacia abajo se abre en todas sus salidas. Recorre hacia abajo desde una de ellas.`
+          // Las salidas del divisor que sí bajan, por su nombre.
+          const salidas = (await filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, [puerto.id_equipo_pert], "id_equipo_pert")).filter(
+            (q) => q.dir_principal_senhal === "S",
+          )
+          const bajan = await conRecorrido(salidas.map((q) => q.id), "DOWNSTREAM")
+          const nombres = salidas.filter((q) => bajan.has(q.id)).map((q) => q.nombre ?? String(q.numero_puerto ?? "?"))
+          return nombres.length > 0
+            ? `Es la entrada ${nombre} ${delDivisor}: hacia abajo se abre en sus salidas. Recorre hacia abajo desde una de ellas: ${nombres.join(", ")}.`
+            : `Es la entrada ${nombre} ${delDivisor}: hacia abajo se abre en sus salidas, y ninguna tiene recorrido hacia abajo en la caché.`
         }
       }
       return `El puerto ${nombre} no tiene conexiones ${sentido} en la caché del trace.`
     }
     const hilo = hilos[0]
-    if (hilo) return `El hilo ${hilo.numero_hilo ?? "sin número"} no tiene conexiones ${sentido}: el recorrido termina en él.`
+    if (hilo) {
+      const [cable] = hilo.id_cable ? await filasPorId<{ id: string; codigo: string | null }>("geo_fiber", "cable_fibra", "id, codigo", [hilo.id_cable]) : []
+      return `El hilo ${hilo.numero_hilo ?? "sin número"}${cable?.codigo ? ` del cable ${cable.codigo}` : ""} no tiene conexiones ${sentido}: el recorrido termina en él.`
+    }
     return "Ese UUID no es de ningún puerto ni hilo de la base."
   } catch (e) {
     console.error(`[trace ${id}] motivo sin recorrido: ${e instanceof Error ? e.message : String(e)}`)
@@ -502,7 +531,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
       .order("fecha_calculo", { ascending: false })
       .limit(1)
     if (error) {
-      console.error(`[element_connection ${id} ${direccion}] ${error.code} ${error.message}`)
+      console.error(`[element_connection ${id} ${direccion}] ${error.code || "sin código"} ${error.message}`)
       return NextResponse.json(
         {
           message: mensajeDeCache(error.code, error.message),
@@ -527,7 +556,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
         errorTabla: null,
         motivo: await motivoSinRecorrido(id, haciaArriba, await catalogoListo),
       }
-      guardarRespuesta(llave, vacia)
+      // Sin el porqué (la base falló al averiguarlo) no se guarda: el siguiente intento lo vuelve a buscar.
+      if (vacia.motivo !== null) guardarRespuesta(llave, vacia)
       return responder(vacia, inicio, "base")
     }
 

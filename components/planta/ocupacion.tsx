@@ -154,9 +154,10 @@ export function VentanaOcupacionCables({ open, onOpenChange, nodos }: PropsDeVen
             ))}
           </select>
         </label>
+        {/* Pendiente como los demás: relleno en azul parecía que ya funcionaba. */}
         <Boton
           icono={FileBarChart}
-          principal
+          pendiente
           deshabilitado={!nodo}
           onClick={() => v.pendiente("Generar reporte")}
         >

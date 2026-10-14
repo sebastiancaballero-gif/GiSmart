@@ -3,7 +3,7 @@
  *
  * No necesita la base ni el navegador. Se corre con `pnpm run busqueda`.
  */
-const { buscarElementos, normalizar, leerCoordenada, textoDeCoordenada } = await import("../lib/map/busqueda.ts")
+const { buscarElementos, normalizar, leerCoordenada, textoDeCoordenada, coordenadaFueraDeRango } = await import("../lib/map/busqueda.ts")
 
 let fallos = 0
 let pruebas = 0
@@ -77,11 +77,17 @@ console.log("\n5) COORDENADAS\n")
   comprobar("sin espacio después de la coma", igual(leerCoordenada("4.5333,-76.0883"), 4.5333, -76.0883))
   comprobar("separadas por espacios", igual(leerCoordenada("  4.5333   -76.0883 "), 4.5333, -76.0883))
   comprobar("con punto y coma", igual(leerCoordenada("4.5333; -76.0883"), 4.5333, -76.0883))
+  comprobar("al revés (longitud, latitud): se entiende la que cae en Colombia, no la Antártida", igual(leerCoordenada("-76.1, 4.53"), 4.53, -76.1))
+  comprobar("en otro país, la lectura directa se respeta", igual(leerCoordenada("40.4168, -3.7038"), 40.4168, -3.7038))
+  comprobar(
+    "fuera de rango: se avisa (no se busca como dirección)",
+    coordenadaFueraDeRango("91.5, 181.2") && coordenadaFueraDeRango("-95, 100") && !coordenadaFueraDeRango("91, 181") && !coordenadaFueraDeRango("4.53, -76.1"),
+  )
   comprobar("coma decimal, como en Colombia", igual(leerCoordenada("4,5333 -76,0883"), 4.5333, -76.0883))
   comprobar("coma decimal con punto y coma", igual(leerCoordenada("4,5333; -76,0883"), 4.5333, -76.0883))
   comprobar("con el símbolo de grados", igual(leerCoordenada("4.5333°, -76.0883°"), 4.5333, -76.0883))
   comprobar("longitud primero, si pasa de 90: se da vuelta", igual(leerCoordenada("-100.5, 20.1"), 20.1, -100.5))
-  comprobar("si los dos caben como latitud, se lee latitud, longitud", igual(leerCoordenada("-76.0883, 4.5333"), -76.0883, 4.5333))
+  comprobar("si los dos caben como latitud, gana la lectura que cae en Colombia (no la Antártida)", igual(leerCoordenada("-76.0883, 4.5333"), 4.5333, -76.0883))
   comprobar("un código de cable no es coordenada", leerCoordenada("2109680") === null)
   comprobar("«3 4» no es coordenada (sin decimales ni signo)", leerCoordenada("3 4") === null)
   comprobar("«4,5» es un número con coma, no una coordenada", leerCoordenada("4,5") === null)

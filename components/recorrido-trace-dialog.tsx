@@ -21,7 +21,9 @@ import type { AccesoAlMapa } from "@/components/network-map"
 import { TablaTrace } from "@/components/tabla-trace"
 import { crearXlsx, descargarArchivo } from "@/lib/excel"
 import {
+  DIRECCION_EN_URL,
   obtenerTrace,
+  resumenDeRuta,
   type DireccionTrace,
   type ElementoDelRecorrido,
   type PasoDeTrace,
@@ -71,17 +73,23 @@ export type ManejadorDelTrace = ManejadorDeVentana & {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * Lo pegado puede venir de una consulta SQL (`'01a0…'::uuid`, con comillas o
- * espacios) o de ArcGIS o SQL Server, entre llaves y en mayúsculas ({01A0…}).
+ * Lo pegado puede venir de una consulta SQL (`'01a0…'::uuid;`, con comillas,
+ * coma o espacios), de ArcGIS o SQL Server (entre llaves y en mayúsculas,
+ * {01A0…}), como URN (`urn:uuid:…`), sin guiones (32 cifras, como lo acepta
+ * Postgres) o con caracteres invisibles de un correo o un PDF.
  */
 function limpiarUuid(valor: string): string {
-  return valor
-    .trim()
-    .replace(/::uuid$/i, "")
-    .replace(/^['"]+|['"]+$/g, "")
-    .replace(/^\{|\}$/g, "")
-    .trim()
-    .toLowerCase()
+  let v = valor.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().toLowerCase()
+  // Lo que lo envuelve, en cualquier orden.
+  for (let i = 0; i < 4; i++) {
+    v = v
+      .replace(/^urn:uuid:/, "")
+      .replace(/[;,]+$/, "")
+      .replace(/::uuid$/, "")
+      .replace(/^['"{]+|['"}]+$/g, "")
+      .trim()
+  }
+  return /^[0-9a-f]{32}$/.test(v) ? `${v.slice(0, 8)}-${v.slice(8, 12)}-${v.slice(12, 16)}-${v.slice(16, 20)}-${v.slice(20)}` : v
 }
 
 const SENTIDO: Record<DireccionTrace, string> = { UPSTREAM: "hacia arriba", DOWNSTREAM: "hacia abajo" }
@@ -96,8 +104,10 @@ type Resumen = {
   calculadoEn: string | null
   /** Si el camino pasa por dentro de un divisor: su pérdida no está en la atenuación de la caché. */
   cruzaDivisor: boolean
-  /** Los pasos tal como vienen de la caché, para la lista de la ventana. */
-  lista: PasoDeTrace[]
+  /** Los pasos de todo el camino (con los de los tramos que siguen pasando un divisor). */
+  todos: PasoDeTrace[]
+  /** Los mismos, para la lista de la ventana: numerados seguido y con la atenuación acumulada de todo el camino. */
+  lista: { paso: PasoDeTrace; numero: number; acumulada: number | null }[]
   /** La tabla del trace, en los dos sentidos. */
   tabla: TablaDelTrace | null
   errorTabla: { mensaje: string; detalle?: string } | null
@@ -167,6 +177,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
   const aplicadoRef = useRef({ x: 0, y: 0 })
   const arrastreRef = useRef<{ x0: number; y0: number; base: { x: number; y: number }; caja: DOMRect } | null>(null)
   const reencuadreRef = useRef<number | undefined>(undefined)
+  /** El recorrido que pide otra ventana sale un momento después de abrir; si se cierra antes, no sale. */
+  const temporizadorRef = useRef<number | undefined>(undefined)
   // Si se pide otro recorrido (o se cierra) antes de que llegue el anterior,
   // la respuesta vieja se descarta.
   const consultaRef = useRef(0)
@@ -188,6 +200,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     const id = limpiarUuid(pegado)
     if (!UUID.test(id)) {
       setCargando(null)
+      // El recorrido que se veía no es el de lo que está escrito ahora.
+      consultaRef.current++
+      limpiarAnterior()
       setMensaje({ texto: "Pega el UUID de un puerto o de un hilo: 36 caracteres con guiones.", tono: "aviso" })
       return
     }
@@ -213,7 +228,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       setMensaje({
         texto: r.mensaje,
         tono: "error",
-        detalle: `tab_fiber.element_connection${r.detalle ? ` → ${r.detalle}` : ""}`,
+        // Dónde falló: la consulta que se hizo, y lo que dijo el servidor si lo dijo.
+        detalle: `/api/traces/${DIRECCION_EN_URL[direccion]}/${id}${r.detalle ? ` → ${r.detalle}` : ""}`,
       })
       return
     }
@@ -267,7 +283,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       largoM: hayLinea ? pintado.largoM : null,
       calculadoEn: r.calculadoEn,
       cruzaDivisor: r.tramos.length > 0,
-      lista: r.pasos,
+      todos,
+      lista: listaDePasos(recorridos),
       tabla: r.tabla,
       errorTabla: r.errorTabla,
     })
@@ -290,6 +307,24 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     } else {
       setMensaje({ texto: `${recorrido}.`, tono: "info" })
     }
+  }
+
+  /**
+   * Los pasos de cada tramo, uno tras otro, numerados seguido; la atenuación
+   * acumulada de cada tramo se suma a la de los anteriores (en la caché cada
+   * tramo empieza de cero).
+   */
+  function listaDePasos(recorridos: { pasos: PasoDeTrace[]; atenuacionTotal?: number | null }[]): Resumen["lista"] {
+    const lista: Resumen["lista"] = []
+    let base: number | null = 0
+    for (const x of recorridos) {
+      for (const paso of x.pasos) {
+        lista.push({ paso, numero: lista.length + 1, acumulada: base !== null && paso.atenuacionAcumulada !== null ? Math.round((base + paso.atenuacionAcumulada) * 100) / 100 : null })
+      }
+      const total = x.atenuacionTotal ?? x.pasos.at(-1)?.atenuacionAcumulada ?? null
+      base = base !== null && total !== null ? base + total : null
+    }
+    return lista
   }
 
   /** Quita el recorrido que se veía (tabla, fila marcada y línea del mapa) antes de pedir otro. */
@@ -329,8 +364,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
         idOrigen: resumen.idOrigen,
         numeroDeRuta: ruta + 1,
         totalDeRutas: tabla.rutas.length,
-        pasos: resumen.pasos,
-        atenuacionDb: resumen.atenuacionDb,
+        pasos: pasosVisibles,
+        atenuacionDb: atenuacionVisible,
         calculadoEn: calculado && !Number.isNaN(calculado.getTime()) ? fecha(calculado) : null,
         exportadoEn: fecha(ahora),
         avisos: tabla.avisos,
@@ -432,6 +467,14 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     reencuadrar()
   }
 
+  /** El sistema canceló el arrastre: la ventana vuelve a donde estaba (las coordenadas de la cancelación no sirven). */
+  function cancelarArrastre() {
+    if (!arrastreRef.current) return
+    arrastreRef.current = null
+    const { x, y } = aplicadoRef.current
+    if (ventanaRef.current) ventanaRef.current.style.transform = x || y ? `translate(${x}px, ${y}px)` : ""
+  }
+
   /** Con el foco en el botón de mover: flechas de 24 px (con Mayús, 96), Inicio la devuelve. */
   function moverConTeclado(e: React.KeyboardEvent<HTMLButtonElement>) {
     if (e.key === "Home") {
@@ -470,6 +513,9 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       const lugar = { x: deseado.x + dx, y: deseado.y + dy }
       if (lugar.x !== aplicado.x || lugar.y !== aplicado.y) {
         aplicadoRef.current = lugar
+        // En el momento, no al volver a dibujar: si se mide otra vez antes
+        // (resize y ResizeObserver seguidos), la caja ya está donde quedó.
+        if (ventanaRef.current) ventanaRef.current.style.transform = `translate(${lugar.x}px, ${lugar.y}px)`
         setDesplazamiento(lugar)
       }
     }
@@ -502,6 +548,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
   function cerrar() {
     // Lo que estuviera en camino ya no se pinta: la ventana se cerró.
     consultaRef.current++
+    window.clearTimeout(temporizadorRef.current)
     setCargando(null)
     setMensaje(null)
     // El resalte es de una fila de la tabla: se va con ella (la línea queda).
@@ -519,6 +566,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
     abrir: () => {
       // Una elección en el mapa que siguiera esperando ya no vale.
       mapa.api.current?.abandonarEleccion()
+      window.clearTimeout(temporizadorRef.current)
       setDesde(null)
       setMinimizada(false)
       setAbierta(true)
@@ -537,11 +585,18 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       setAbierta(true)
       // Un momento después de abrir: el encuadre necesita la ventana ya
       // dibujada para dejarle libre su espacio.
-      window.setTimeout(() => void recorrer(id, direccion), 80)
+      window.clearTimeout(temporizadorRef.current)
+      temporizadorRef.current = window.setTimeout(() => void recorrer(id, direccion), 80)
     },
   }))
 
   const largoVisible = resumen?.tabla?.rutas[ruta]?.sumaM ?? resumen?.largoM ?? null
+  // Si el recorrido se abre en ramas, los pasos y la atenuación son los de la
+  // ruta elegida (los de la caché son del recorrido entero).
+  const rutaVista = resumen?.tabla && resumen.tabla.rutas.length > 1 ? resumen.tabla.rutas[ruta] : undefined
+  const deLaRuta = resumen && rutaVista ? resumenDeRuta(rutaVista, resumen.todos) : null
+  const pasosVisibles = deLaRuta?.pasos ?? resumen?.pasos ?? 0
+  const atenuacionVisible = deLaRuta ? deLaRuta.atenuacionDb : (resumen?.atenuacionDb ?? null)
   const ancha = Boolean(resumen?.tabla || resumen?.errorTabla)
 
   const barra: Mensaje =
@@ -579,7 +634,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
           onPointerDown={empezarArrastre}
           onPointerMove={arrastrar}
           onPointerUp={soltar}
-          onPointerCancel={soltar}
+          onPointerCancel={cancelarArrastre}
           onDoubleClick={(e) => {
             if (!(e.target as HTMLElement).closest("button")) volverASuLugar()
           }}
@@ -590,7 +645,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
             titulo="Recorrido del trace"
             descripcion={
               resumen
-                ? `${resumen.pasos} ${resumen.pasos === 1 ? "paso" : "pasos"} ${SENTIDO[resumen.direccion]}${
+                ? `${pasosVisibles} ${pasosVisibles === 1 ? "paso" : "pasos"} ${SENTIDO[resumen.direccion]}${
                     minimizada && largoVisible !== null ? ` · ${textoDeLargo(largoVisible)}` : ", pintado en el mapa."
                   }`
                 : "Desde un puerto o un hilo; se pinta en el mapa."
@@ -636,7 +691,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               ) : (
                 <Cable className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
               )}
-              <span title={desde.titulo ?? desde.etiqueta} className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+              <span title={desde.titulo ?? desde.etiqueta} className="min-w-0 flex-1 text-xs font-semibold text-foreground [overflow-wrap:anywhere]">
                 {desde.etiqueta}
               </span>
               {desde.volver && (
@@ -711,16 +766,16 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
                 {resumen ? (
                   <>
                     <span className="text-[11px] text-muted-foreground">
-                      {resumen.atenuacionDb !== null && (
+                      {atenuacionVisible !== null && (
                         <span
                           title={resumen.cruzaDivisor ? "La atenuación de la caché no incluye la pérdida del divisor" : undefined}
                         >
-                          {resumen.atenuacionDb.toLocaleString("es-CO", { minimumFractionDigits: 2 })} dB
+                          {atenuacionVisible.toLocaleString("es-CO", { minimumFractionDigits: 2 })} dB
                           {resumen.cruzaDivisor && " sin el divisor"}
                           {" · "}
                         </span>
                       )}
-                      {resumen.pasos} {resumen.pasos === 1 ? "paso" : "pasos"}
+                      {pasosVisibles} {pasosVisibles === 1 ? "paso" : "pasos"}
                     </span>
                     <span className="text-lg font-bold leading-none tracking-tight text-foreground">
                       {/* Con la tabla, el largo es su suma: la ventana dice un solo número. */}
@@ -778,11 +833,11 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
               </button>
               {verPasos && (
                 <ol className="max-h-[min(13rem,30vh)] divide-y divide-border overflow-y-auto rounded-xl border border-border bg-card text-[11px] shadow-sm animate-in fade-in duration-200 motion-reduce:animate-none">
-                  {resumen.lista.map((p, i) => {
+                  {resumen.lista.map(({ paso: p, numero, acumulada }, i) => {
                     const cubierta = cubiertaDe(p.contenedor)
                     const contenido = (
                       <>
-                        <span className="w-5 shrink-0 text-right font-semibold tabular-nums text-muted-foreground">{p.paso}</span>
+                        <span className="w-5 shrink-0 text-right font-semibold tabular-nums text-muted-foreground">{numero}</span>
                         <span className="flex min-w-0 flex-1 flex-col leading-tight">
                           <span className="flex items-center gap-1 truncate font-semibold text-foreground">
                             {cubierta && <MapPin className="size-3 shrink-0 text-primary" aria-hidden="true" />}
@@ -793,7 +848,7 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
                           </span>
                         </span>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {p.atenuacionAcumulada !== null ? `${p.atenuacionAcumulada.toLocaleString("es-CO", { minimumFractionDigits: 2 })} dB` : "—"}
+                          {acumulada !== null ? `${acumulada.toLocaleString("es-CO", { minimumFractionDigits: 2 })} dB` : "—"}
                         </span>
                       </>
                     )

@@ -23,6 +23,7 @@ import { getCurrentTheme, toggleTheme } from "@/lib/theme"
 import { fetchConSesion, getUser } from "@/lib/auth"
 import {
   buscarElementos,
+  coordenadaFueraDeRango,
   leerCoordenada,
   textoDeCoordenada,
   type Coordenada,
@@ -63,6 +64,7 @@ export function DashboardHeader({
   subtitle = "Valle del Cauca, Colombia",
   backHref,
   onNavigate,
+  cerca,
   elementos,
   onElegirElemento,
   pedirFoco = 0,
@@ -76,6 +78,8 @@ export function DashboardHeader({
    * allí y marcar el punto con `etiqueta`.
    */
   onNavigate?: (target: { lon: number; lat: number; zoom?: number; etiqueta?: string }) => void
+  /** El centro del mapa: las direcciones de alrededor salen primero. */
+  cerca?: { lon: number; lat: number } | null
   /** Elementos de la red por los que también se puede buscar (ver lib/map/busqueda.ts). */
   elementos?: ElementoBuscable[]
   /** Se llama al elegir un elemento de la red en el buscador. */
@@ -133,6 +137,9 @@ export function DashboardHeader({
   // nadie, así que aparecen desde la primera letra («3/4», «CO01»).
   const enLaRed = useMemo(() => buscarElementos(elementos ?? [], query), [elementos, query])
   const coordenada = useMemo(() => leerCoordenada(query), [query])
+  // Con forma de coordenada pero imposible (latitud de más de 90…): se avisa en
+  // vez de buscarla como dirección.
+  const fueraDeRango = !coordenada && coordenadaFueraDeRango(query)
   const texto = query.trim()
 
   // Direcciones: solo al pedirlas, con la última opción de la lista («Buscar
@@ -147,7 +154,9 @@ export function DashboardHeader({
     setSearchError(null)
     setSearching(true)
     try {
-      const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(termino)}`)
+      // Con el centro del mapa, primero salen las direcciones de por ahí.
+      const cercaDe = cerca ? `&lon=${cerca.lon}&lat=${cerca.lat}` : ""
+      const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(termino)}${cercaDe}`)
       const data = await res.json().catch(() => null)
       if (consulta !== consultaRef.current) return
       // Antes un fallo del servicio se leía como «Sin resultados.».
@@ -167,7 +176,7 @@ export function DashboardHeader({
     }
   }
 
-  const ofrecerDirecciones = texto.length >= 3 && !coordenada && buscadoEn !== texto
+  const ofrecerDirecciones = texto.length >= 3 && !coordenada && !fueraDeRango && buscadoEn !== texto
   const opciones: Opcion[] = useMemo(
     () => [
       ...(coordenada ? [{ tipo: "coordenada" as const, coordenada }] : []),
@@ -179,7 +188,11 @@ export function DashboardHeader({
   )
   // El aviso de la búsqueda de direcciones (sin resultados o con error) solo
   // tiene sentido para el texto que se buscó.
-  const mensaje = buscadoEn === texto ? searchError : null
+  const mensaje = fueraDeRango
+    ? "No es una coordenada posible: la latitud va de -90 a 90 y la longitud de -180 a 180."
+    : buscadoEn === texto
+      ? searchError
+      : null
   const listaAbierta = openResults && texto !== "" && (opciones.length > 0 || mensaje !== null || searching)
 
   // Cierra la lista (y el buscador en pantallas angostas) al hacer click fuera.
@@ -330,14 +343,15 @@ export function DashboardHeader({
             aria-autocomplete="list"
             aria-activedescendant={listaAbierta && opciones[activa] ? idOpcion(activa) : undefined}
             // `text-ellipsis`: el texto de ayuda no cabe entero y se cortaba a
-            // media letra detrás de «Ctrl K»; así termina en «…».
-            className="h-9 w-full min-w-0 flex-1 bg-background pl-9 pr-14 text-ellipsis md:w-64 lg:w-80"
+            // media letra detrás de «Ctrl K»; así termina en «…». Con el foco
+            // el atajo ya no hace falta: se esconde y el texto usa ese lugar.
+            className="peer h-9 w-full min-w-0 flex-1 bg-background pl-9 pr-14 text-ellipsis focus:pr-3 md:w-64 lg:w-80"
           />
           {searching ? (
             <Loader2 className="absolute right-12 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground md:right-3" />
           ) : (
             query === "" && (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-px font-sans text-[10px] font-medium text-muted-foreground md:block">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-px font-sans text-[10px] font-medium text-muted-foreground peer-focus:!hidden md:block">
                 Ctrl K
               </kbd>
             )

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { clienteSupabase, faltaConfiguracion } from "@/lib/supabase-servidor"
+import { ESPERA_MAXIMA_MS, clienteSupabase, faltaConfiguracion } from "@/lib/supabase-servidor"
 
 /**
  * Vistas que ya se comprobó que no existen, con el momento en que se vio.
@@ -164,6 +164,9 @@ async function servirDesdeTabla({
         ...(pagina === 0 ? { Prefer: "count=exact" } : {}),
       },
       cache: "no-store",
+      // El mismo tope que las demás consultas: sin él, una base que no responde
+      // dejaba la ruta colgada.
+      signal: AbortSignal.timeout(ESPERA_MAXIMA_MS),
     })
 
     if (!res.ok) {

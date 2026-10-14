@@ -101,26 +101,47 @@ const CON_PUNTO = /^([-+]?\d+(?:\.\d+)?)\s*[,;\s]\s*([-+]?\d+(?:\.\d+)?)$/
 // punto y coma: «4,5333 -76,0883», «4,5333; -76,0883».
 const CON_COMA = /^([-+]?\d+(?:,\d+)?)\s*(?:;|\s)\s*([-+]?\d+(?:,\d+)?)$/
 
-/**
- * La coordenada escrita en el buscador, o `null` si no es una. Se lee como
- * latitud, longitud (el orden de Google Maps y del GPS); si el primer número
- * no cabe como latitud y el segundo sí, se entiende al revés. Para no
- * confundir un código con una coordenada, al menos uno de los dos números debe
- * llevar decimales o signo.
- */
-export function leerCoordenada(texto: string): Coordenada | null {
+/** Los dos números de lo escrito, si tiene forma de coordenada (con decimales o signo en alguno). */
+function numerosDeCoordenada(texto: string): [number, number] | null {
   const limpio = texto.replace(/°/g, "").trim()
   const partes = CON_PUNTO.exec(limpio) ?? CON_COMA.exec(limpio)
   if (!partes) return null
   const [a, b] = [partes[1], partes[2]]
   if (![a, b].some((n) => /[.,]|^[-+]/.test(n))) return null
-
   const x = Number(a.replace(",", "."))
   const y = Number(b.replace(",", "."))
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lon: y }
-  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lon: x }
-  return null
+  return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null
+}
+
+/** Colombia, con margen: la red está ahí. */
+const enColombia = ({ lat, lon }: Coordenada) => lat >= -4.5 && lat <= 13.5 && lon >= -82 && lon <= -66
+
+/**
+ * La coordenada escrita en el buscador, o `null` si no es una. Se lee como
+ * latitud, longitud (el orden de Google Maps y del GPS); si el primer número
+ * no cabe como latitud y el segundo sí, se entiende al revés. Si las dos
+ * lecturas valen, gana la que cae en Colombia: «-76.1, 4.53» es la red al
+ * revés, no un punto en la Antártida (latitud -76,1), como se leía antes.
+ * Para no confundir un código con una coordenada, al menos uno de los dos
+ * números debe llevar decimales o signo.
+ */
+export function leerCoordenada(texto: string): Coordenada | null {
+  const numeros = numerosDeCoordenada(texto)
+  if (!numeros) return null
+  const [x, y] = numeros
+  const directa = Math.abs(x) <= 90 && Math.abs(y) <= 180 ? { lat: x, lon: y } : null
+  const alReves = Math.abs(y) <= 90 && Math.abs(x) <= 180 ? { lat: y, lon: x } : null
+  if (directa && alReves && !enColombia(directa) && enColombia(alReves)) return alReves
+  return directa ?? alReves
+}
+
+/**
+ * Si lo escrito tiene forma de coordenada (con decimales o signo) pero no es
+ * una posible: una latitud de más de 90 o una longitud de más de 180. Antes se
+ * buscaba como dirección y devolvía calles de otra ciudad.
+ */
+export function coordenadaFueraDeRango(texto: string): boolean {
+  return numerosDeCoordenada(texto) !== null && leerCoordenada(texto) === null
 }
 
 /** «4.53330, -76.08830»: cinco decimales, cerca de un metro. */

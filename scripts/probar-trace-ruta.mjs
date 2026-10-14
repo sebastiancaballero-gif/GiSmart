@@ -222,9 +222,9 @@ console.log("\n1b) SIN RECORRIDO EN ESE SENTIDO: LA VENTANA DICE POR QUÉ\n")
       ID.pdS,
       `Es la salida S3 del divisor 2 (1x8PC) de CO19: la caché no sube desde una salida. Recorre hacia arriba desde su entrada (UUID ${ID.pdE}).`,
     ],
-    ["una entrada de divisor hacia abajo", "downstream", ID.pdE, "Es la entrada E1 del divisor 2 (1x8PC) de CO19: hacia abajo se abre en todas sus salidas. Recorre hacia abajo desde una de ellas."],
+    ["una entrada de divisor hacia abajo, sin salidas que bajen", "downstream", ID.pdE, "Es la entrada E1 del divisor 2 (1x8PC) de CO19: hacia abajo se abre en sus salidas, y ninguna tiene recorrido hacia abajo en la caché."],
     ["un puerto del ODF sin recorrido", "upstream", ID.pb, "El puerto 43 no tiene conexiones hacia arriba en la caché del trace."],
-    ["un hilo sin recorrido", "downstream", ID.h1, "El hilo 55 no tiene conexiones hacia abajo: el recorrido termina en él."],
+    ["un hilo sin recorrido, con su cable", "downstream", ID.h1, "El hilo 55 del cable 2100555 no tiene conexiones hacia abajo: el recorrido termina en él."],
     ["un UUID que no es de nada", "downstream", u(999), "Ese UUID no es de ningún puerto ni hilo de la base."],
   ]
   for (const [nombre, direccion, id, esperado] of casos) {
@@ -232,8 +232,34 @@ console.log("\n1b) SIN RECORRIDO EN ESE SENTIDO: LA VENTANA DICE POR QUÉ\n")
     comprobar(nombre, r.status === 200 && !r.r.encontrado && r.r.motivo === esperado, r.r.motivo ?? "sin motivo")
   }
   preparar({}, { "tab_fiber.puerto_equipo": (q) => (q.includes("id=in.") ? { status: 500, cuerpo: { code: "XX000", message: "se cayó" } } : null) })
-  const sinMotivo = await pedir(await rutaNueva(), "upstream", ID.pt)
+  const rutaSinMotivo = await rutaNueva()
+  const GET2 = () => rutaSinMotivo
+  const sinMotivo = await pedir(rutaSinMotivo, "upstream", ID.pt)
   comprobar("si no se puede averiguar el porqué: sin motivo (queda el mensaje general), sin error", sinMotivo.status === 200 && sinMotivo.r.motivo === null)
+  fallas = {}
+  const despues = await pedir(GET2(), "upstream", ID.pt)
+  comprobar("  y esa respuesta sin porqué no se guardó: al reintentar lo dice", despues.origen === "base" && despues.r.motivo?.startsWith("Es el puerto 5"), despues.r.motivo ?? "sin motivo")
+
+  // Una salida del divisor que sí baja: la entrada la nombra.
+  preparar({
+    "tab_fiber.element_connection": [
+      ...base()["tab_fiber.element_connection"],
+      fila(ID.pdS, "DOWNSTREAM", [paso(1, P(ID.pdS), H(ID.h3), { tipo_contenedor: "DIVISOR", id_contenedor: ID.d1 })]),
+    ],
+  })
+  const conSalida = await pedir(await rutaNueva(), "downstream", ID.pdE)
+  comprobar(
+    "una entrada de divisor hacia abajo: nombra las salidas que sí bajan",
+    conSalida.r.motivo === "Es la entrada E1 del divisor 2 (1x8PC) de CO19: hacia abajo se abre en sus salidas. Recorre hacia abajo desde una de ellas: S3.",
+    conSalida.r.motivo ?? "sin motivo",
+  )
+
+  // El catálogo que falla siempre (una tabla sin permiso) no se relee en cada trace.
+  preparar({}, { "geo_infra.cabecera_central": (q) => (q.includes("offset=") ? { status: 403, cuerpo: { code: "42501", message: "sin permiso" } } : null) })
+  const GET3 = await rutaNueva()
+  for (const dir of ["upstream", "downstream", "upstream"]) await pedir(GET3, dir, dir === "upstream" ? ID.h3 : ID.pt)
+  const lecturasEnteras = consultas.filter((c) => c.llave === "tab_fiber.divisor_optico" && c.url.includes("offset=")).length
+  comprobar("un catálogo que falla no se vuelve a leer entero en cada trace (espera 30 s)", lecturasEnteras === 1, `${lecturasEnteras} lecturas de divisor_optico`)
 }
 
 console.log("\n2) LA BASE RESPONDE CON ERROR\n")

@@ -286,34 +286,27 @@ function SidebarExpandedContent({
                       className="h-5 w-8 animate-pulse rounded-md bg-muted"
                       aria-label="Cargando conteo"
                     />
-                  ) : (
-                    // Con filtro puesto se muestran las dos cifras. Antes decía
-                    // «185» mientras el mapa enseñaba 21, y con el desglose
-                    // plegado no había forma de notar que había un filtro.
-                    <Badge variant={filtrada ? "default" : "secondary"} className="tabular-nums">
-                      {filtrada ? (
-                        <>
-                          {visibles}
-                          <span className="opacity-60">/{layer.count}</span>
-                        </>
-                      ) : (
-                        layer.count
-                      )}
-                    </Badge>
-                  )}
-
-                  {/* Quitar el filtro sin tener que desplegar el desglose. */}
-                  {filtrada && (
+                  ) : filtrada ? (
+                    // Con filtro puesto se muestran las dos cifras (antes decía
+                    // «185» mientras el mapa enseñaba 21), y la misma insignia
+                    // quita el filtro sin desplegar el desglose. Era un botón
+                    // aparte y el nombre de la capa quedaba en «Cubi…».
                     <Tooltip label={`Quitar el filtro de ${layer.label}`}>
                       <button
                         type="button"
                         onClick={() => onClearItems?.(layer.id)}
-                        className="rounded-md p-1 text-primary outline-none transition hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring/50"
-                        aria-label={`Quitar el filtro de ${layer.label}`}
+                        aria-label={`Quitar el filtro de ${layer.label} (se ven ${visibles} de ${layer.count})`}
+                        className="flex shrink-0 items-center gap-0.5 rounded-md bg-primary px-1.5 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
                       >
-                        <FilterX className="size-4" />
+                        {visibles}
+                        <span className="opacity-60">/{layer.count}</span>
+                        <FilterX className="ml-0.5 size-3" aria-hidden="true" />
                       </button>
                     </Tooltip>
+                  ) : (
+                    <Badge variant="secondary" className="tabular-nums">
+                      {layer.count}
+                    </Badge>
                   )}
                   {/* Encuadrar sobre la capa: útil para saltar a una capa con
                       pocos elementos, como las cabeceras, sin buscarla a mano. */}

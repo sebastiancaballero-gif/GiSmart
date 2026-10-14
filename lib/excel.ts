@@ -80,8 +80,10 @@ const escapar = (texto: string) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    // Caracteres de control que el XML no admite.
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    // Lo que el XML no admite: caracteres de control, U+FFFE y U+FFFF, y
+    // mitades sueltas de un par sustituto (Excel rechazaba la hoja).
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, "")
+    .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "")
 
 /** «A», «B», …, «Z», «AA»… */
 export function columna(indice: number): string {

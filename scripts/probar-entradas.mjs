@@ -24,7 +24,12 @@ globalThis.fetch = async (url, init) => {
   const u = new URL(typeof url === "string" ? url : url instanceof URL ? url.href : url.url)
   if (u.hostname.includes("nominatim")) {
     aNominatim.push(u)
-    const cuerpo = u.pathname.includes("reverse") ? { address: { city: "Cartago", state: "Valle del Cauca", country: "Colombia" } } : []
+    const repetida = { display_name: "Calle 16, San Luis, La Unión, Valle del Cauca, Colombia", lat: "4.53", lon: "-76.1", type: "residential" }
+    const cuerpo = u.pathname.includes("reverse")
+      ? { address: { city: "Cartago", state: "Valle del Cauca", country: "Colombia" } }
+      : u.searchParams.get("q")?.includes("repetida")
+        ? [repetida, repetida, { ...repetida, display_name: "Calle 16, La Unión, Antioquia, Colombia" }]
+        : []
     return new Response(JSON.stringify(cuerpo), { status: 200, headers: { "content-type": "application/json" } })
   }
   return fetchOriginal(url, init)
@@ -90,6 +95,17 @@ console.log("\n2) BUSCAR UNA DIRECCIÓN\n")
   comprobar("«ab» con invisibles: muy corta (400) y no sale", corta.status === 400 && corta.enviado === null, `${corta.status}`)
   const sucia = await buscar("la\u0000 unión\n\tvalle‮")
   comprobar("con invisibles en medio: sale sin ellos", sucia.status === 200 && sucia.enviado === "la unión valle", JSON.stringify(sucia.enviado))
+  aNominatim.length = 0
+  const conCentro = await GET(new Request(`http://local/api/geocode?q=${encodeURIComponent("calle repetida")}&lon=-76.1&lat=4.53`, { headers: conSesion }))
+  const respuesta = await conCentro.json()
+  comprobar(
+    "con el centro del mapa: se prefieren las de alrededor y sin repetidas",
+    aNominatim[0]?.searchParams.get("viewbox") === "-76.6,5.03,-75.6,4.03" && respuesta.results.length === 2,
+    `${aNominatim[0]?.searchParams.get("viewbox")} · ${respuesta.results.length} resultados`,
+  )
+  aNominatim.length = 0
+  await GET(new Request(`http://local/api/geocode?q=${encodeURIComponent("la unión")}&lon=0x10&lat=abc`, { headers: conSesion }))
+  comprobar("un centro mal escrito se ignora (sin viewbox)", aNominatim[0] && !aNominatim[0].searchParams.has("viewbox"))
   const larga = await buscar("a".repeat(121))
   comprobar("más de 120 caracteres: 400 y no sale", larga.status === 400 && larga.enviado === null, `${larga.status}`)
 }
@@ -156,6 +172,9 @@ console.log("\n5) NOMBRES Y TEXTOS\n")
   comprobar("tildes, eñes y emojis se quedan", sinInvisibles("ñandú 🧵 Cañón") === "ñandú 🧵 Cañón")
   comprobar("detecta los invisibles", tieneInvisibles("ab​c") && !tieneInvisibles("Cubierta CO19 — ñ"))
   comprobar(`un nombre pegado de 200 000 caracteres queda en ${MAX_NOMBRE}`, limpiarNombre("x".repeat(200_000)).length === MAX_NOMBRE)
+  comprobar("los emojis compuestos no se parten (👨‍👩‍👧, banderas con etiquetas)", limpiarNombre("Familia 👨‍👩‍👧") === "Familia 👨‍👩‍👧")
+  const conEmojiAlFinal = limpiarNombre("x".repeat(MAX_NOMBRE - 1) + "🧵🧵")
+  comprobar("el tope no corta un emoji por la mitad", conEmojiAlFinal === "x".repeat(MAX_NOMBRE - 1) + "🧵", JSON.stringify(conEmojiAlFinal.slice(-3)))
   comprobar("un nombre pegado de Excel con salto de línea queda en una línea", limpiarNombre("CO19\r\n") === "CO19 ", JSON.stringify(limpiarNombre("CO19\r\n")))
 
   const { colorParaMostrar } = await import("../lib/map/hilos-cable.ts")

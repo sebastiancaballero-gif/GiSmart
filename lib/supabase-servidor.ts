@@ -18,7 +18,7 @@ import { exigirSesion } from "@/lib/auth-server"
  * los 20–30 s, pero sin este tope la ruta seguía colgada en el servidor; así
  * la consulta se corta y la ruta responde con su error de siempre.
  */
-const ESPERA_MAXIMA_MS = 15_000
+export const ESPERA_MAXIMA_MS = 15_000
 
 /**
  * `fetch` con el tope de espera. Si lo que corta es el tope, el error sale como

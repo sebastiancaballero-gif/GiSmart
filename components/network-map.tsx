@@ -908,6 +908,14 @@ function MapaDeRed({
       // Un recorrido nuevo: lo resaltado del anterior ya no vale.
       resalteSource.clear()
       setHayResalte(false)
+      // La ficha del elemento seleccionado (el cable de Gestión de hilos)
+      // tapaba el único espacio libre al lado de la ventana del trace, y en
+      // 1366×768 el recorrido no se veía. Se cierra; Gestión de hilos guarda
+      // su cable igual.
+      editSelectRef.current?.getFeatures().clear()
+      setSelected(null)
+      setSchemaOpen(false)
+      setInfoOpen(false)
       const porId = new globalThis.Map<unknown, Feature<Geometry>>(fiberSource.getFeatures().map((f) => [f.get("id"), f]))
       const faltan: string[] = []
       let largoM = 0
@@ -979,12 +987,12 @@ function MapaDeRed({
       // El espacio donde debe quedar, en píxeles del mapa.
       const libre = espacioLibre(caja, ventana, { ancho: 60, alto: 60 }, lasTapasDelMapa())
       const extent = geometria.getExtent()
-      // Con un margen del 20 %; un punto no cambia la resolución.
-      const resolucion = Math.max(
-        actual,
-        getWidth(extent) / ((libre.x1 - libre.x0) * 0.8),
-        getHeight(extent) / ((libre.y1 - libre.y0) * 0.8),
-      )
+      // Con un margen del 20 %. Un punto no cambia la resolución; una línea se
+      // ve entera y también se acerca (hasta el zoom 18): antes solo se
+      // alejaba, y un cable corto quedaba en un recuadro de 8 × 4 px.
+      const paraVerla = Math.max(getWidth(extent) / ((libre.x1 - libre.x0) * 0.8), getHeight(extent) / ((libre.y1 - libre.y0) * 0.8))
+      const resolucion =
+        geometria instanceof Point ? Math.max(actual, paraVerla) : Math.max(paraVerla, view.getResolutionForZoom(18))
       const [x, y] = getCenter(extent)
       const dx = (libre.x0 + libre.x1) / 2 - caja.width / 2
       const dy = (libre.y0 + libre.y1) / 2 - caja.height / 2

@@ -614,6 +614,29 @@ export function armarTablaDelTrace(
   return { rutas, avisos }
 }
 
+/**
+ * Los pasos y la atenuación de una ruta de la tabla: los de los pasos de la
+ * caché que unen una fila con la siguiente. En un recorrido que se abre en
+ * ramas de distinto largo, los totales de la caché son los del recorrido
+ * entero, no los de la rama elegida. El cruce por dentro de un divisor no es
+ * un paso de la caché (y la caché no trae su pérdida). Si a algún paso le falta
+ * la atenuación, la de la ruta queda en `null`.
+ */
+export function resumenDeRuta(ruta: RutaDelTrace, pasos: PasoDeTrace[]): { pasos: number; atenuacionDb: number | null } {
+  const elementos = ruta.filas.filter((f) => f.tipo !== "Central").map((f) => f.codigo)
+  let cuantos = 0
+  let db = 0
+  let completa = true
+  for (let i = 0; i + 1 < elementos.length; i++) {
+    const p = pasos.find((x) => x.origen.id === elementos[i] && x.destino.id === elementos[i + 1])
+    if (!p) continue
+    cuantos++
+    if (p.atenuacionDb === null) completa = false
+    else db += p.atenuacionDb
+  }
+  return { pasos: cuantos, atenuacionDb: completa ? Math.round(db * 100) / 100 : null }
+}
+
 /** La suma de las longitudes de la tabla (las de los hilos), al centímetro. */
 export function sumaDeLongitudes(filas: ElementoDelRecorrido[]): number {
   return Math.round(filas.reduce((suma, f) => suma + (f.longitudM ?? 0), 0) * 100) / 100

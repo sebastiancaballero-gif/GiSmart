@@ -293,7 +293,8 @@ function VentanaRedesNodo({
                     mono={false}
                   />
                 </div>
-                <Boton icono={Download} principal onClick={cargarCubiertas} deshabilitado={!nodo}>
+                {/* Pendiente como los demás: relleno en azul parecía que ya funcionaba. */}
+                <Boton icono={Download} pendiente onClick={cargarCubiertas} deshabilitado={!nodo}>
                   Cargar cubiertas
                 </Boton>
               </div>
@@ -426,9 +427,7 @@ function VentanaRedesNodo({
                       titulo={`${actual.titulo} de ${nodo.nombre}`}
                       texto={`Pulsa «Cargar cubiertas» para ver ${actual.queMuestra}.`}
                     >
-                      {/* Secundario: el azul relleno es el de arriba, junto al nodo.
-                          Con los dos en azul competían por ser «la» acción. */}
-                      <Boton icono={Download} onClick={cargarCubiertas}>
+                      <Boton icono={Download} pendiente onClick={cargarCubiertas}>
                         Cargar cubiertas
                       </Boton>
                     </EstadoVacio>

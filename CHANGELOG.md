@@ -10,6 +10,52 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.6.0 — 14 de octubre de 2026
+
+Pruebas repartidas en cinco frentes (ventana del trace, tablero, seguridad, datos y
+código) y lo que salió de ellas.
+
+- **Trace desde Gestión de hilos en 1366×768:** la ficha del cable tapaba el único espacio
+  libre junto a la ventana y el recorrido no se veía. Ahora la ficha se cierra al pintarlo.
+  En 1366×657 la ventana ocupa casi todo el mapa: se minimiza para verlo.
+- **Recorridos que se abren en ramas:** los pasos y la atenuación son los de la ruta
+  elegida, en la ventana y en el Excel (antes eran los del recorrido entero).
+- **Lista de pasos:** incluye los tramos que siguen después de un divisor, numerados
+  seguido y con la atenuación acumulada de todo el camino.
+- **Sin recorrido, por qué:** la salida de un divisor sugiere su entrada solo si desde
+  ella se sube; la entrada de un divisor nombra las salidas que sí bajan; un hilo dice de
+  qué cable es. Si la base falla al averiguarlo, esa respuesta no se guarda.
+- **Origen del trace:** acepta `urn:uuid:`, el UUID sin guiones, con punto y coma al final
+  o con caracteres invisibles pegados de un correo. Un texto que no es UUID quita el
+  recorrido anterior. El detalle de un error dice la consulta que falló.
+- **Ventana del trace:** no salta al cambiar el tamaño de la pantalla; si el sistema
+  cancela un arrastre, vuelve a su lugar; un recorrido pedido desde Hilos no sale si la
+  ventana se cierra antes. La «Suma» queda fija al desplazar la tabla de lado, el hilo
+  elegido se lee entero y, hacia abajo, dice de qué central sale (también en el Excel).
+- **Pin de un cable:** un cable corto se acerca hasta verse; antes solo se alejaba.
+- **Excel del trace:** «Número» va como número (ordena el 2 antes que el 10) y los
+  caracteres que Excel rechazaba ya no dañan la hoja.
+- **Gestión de hilos:** en el celular y en 1366×657 la tabla quedaba de 2 px de alto;
+  ahora guarda su alto y la ventana se desplaza.
+- **Buscador:** las direcciones de alrededor del mapa salen primero y sin repetidas; una
+  coordenada escrita al revés se entiende (gana la lectura que cae en Colombia) y una
+  imposible se avisa en vez de buscarse como dirección. «Ctrl K» ya no tapa lo escrito.
+- **Panel de capas:** con un filtro puesto, la cifra «21/185» es el botón que lo quita, y
+  el nombre de la capa ya no se corta.
+- **Botones pendientes:** «Generar reporte» y «Cargar cubiertas» se ven como pendientes;
+  en azul parecían funcionar.
+- **Nombres con emojis:** los compuestos (familias, banderas) no se parten y el tope de
+  80 caracteres no corta uno por la mitad.
+- **Seguridad:** el login y el logout rechazan las peticiones que manda otra web; el
+  cuerpo del login se lee con tope también cuando llega por partes (256 MB ocupaban 1 GB
+  de memoria); mandar miles de nombres inventados ya no desbloquea una cuenta; un
+  secreto débil en producción se detecta antes de consultar la base; las respuestas de
+  `/api` llevan `Cache-Control: private, no-store`.
+- **Base que no responde:** la carga de capas desde las tablas también se corta a los
+  15 s; si el catálogo del trace no se puede leer, se reintenta a los 30 s y no en cada
+  trace; el mensaje distingue tiempo agotado, sin conexión y los demás errores.
+- **`pnpm run datos`:** avisa cuando no pudo comprobar el sentido de los cables.
+
 ## 1.5.6 — 14 de octubre de 2026
 
 - **El hilo elegido en el trace:** dice el identificador del cable («Hilo 55 del cable

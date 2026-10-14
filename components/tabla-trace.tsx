@@ -226,6 +226,7 @@ export function TablaTrace({
   const varias = tabla.rutas.length > 1
   const elementos = actual ? actual.filas.filter((f) => f.tipo !== "Central").length : 0
   const haciaArriba = direccion === "UPSTREAM"
+  const central = actual?.filas.find((f) => f.tipo === "Central")?.nombre ?? null
   // Hacia arriba se llega a la OLT (y su central); hacia abajo la caché termina
   // en la entrada del divisor de la cubierta siguiente.
   const llegada = !actual
@@ -259,6 +260,10 @@ export function TablaTrace({
           <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold tabular-nums text-muted-foreground">
             {elementos} {elementos === 1 ? "elemento" : "elementos"}
           </span>
+        )}
+        {/* Hacia abajo, la central de donde sale (hacia arriba ya va en «Llega a la OLT · …»). */}
+        {actual && !haciaArriba && central && (
+          <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">Sale de {central}</span>
         )}
         {actual && llegada && (
           <span
@@ -373,13 +378,16 @@ export function TablaTrace({
               ))}
             </tbody>
             <tfoot>
+              {/* «Suma» va en la primera columna, fija como ella: al desplazar de
+                  lado no se pierde. La fila queda por encima de las celdas fijas
+                  del cuerpo, que antes asomaban sobre ella («Hilo» bajo «Suma»). */}
               <tr className="[&>*]:sticky [&>*]:bottom-0 [&>*]:whitespace-nowrap [&>*]:bg-muted [&>*]:px-2 [&>*]:py-1.5 [&>*]:shadow-[inset_0_1px_0_var(--border)]">
-                <td colSpan={3} />
-                <th scope="row" className="text-left text-[10.5px] font-semibold text-muted-foreground">
+                <th scope="row" className="left-0 z-[3] border-r text-left text-[10.5px] font-semibold text-muted-foreground">
                   Suma
                 </th>
-                <td className="text-right text-xs font-bold tabular-nums text-foreground">{metros(actual.sumaM)} m</td>
-                <td colSpan={2} />
+                <td colSpan={3} className="z-[2]" />
+                <td className="z-[2] text-right text-xs font-bold tabular-nums text-foreground">{metros(actual.sumaM)} m</td>
+                <td colSpan={2} className="z-[2]" />
               </tr>
             </tfoot>
           </table>

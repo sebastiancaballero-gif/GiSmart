@@ -42,6 +42,20 @@ function secretoDeFirma(): string | null {
   return secreto
 }
 
+/** Si hay un secreto con el que se puede firmar (en producción, uno que no sea débil). */
+export function secretoValido(): boolean {
+  return secretoDeFirma() !== null
+}
+
+/**
+ * Si la petición la mandó otra página: el navegador marca así las que una
+ * web ajena hace que envíe a esta (iniciar o cerrar la sesión de alguien sin
+ * que lo sepa). Las del propio tablero llegan como «same-origin».
+ */
+export function vieneDeOtroSitio(request: Request): boolean {
+  return request.headers.get("sec-fetch-site") === "cross-site"
+}
+
 export type SesionToken = {
   sub: string
   role: string

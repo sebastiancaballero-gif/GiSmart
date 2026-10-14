@@ -52,7 +52,12 @@ const nextConfig = {
     unoptimized: true,
   },
   async headers() {
-    return [{ source: "/:path*", headers: cabecerasDeSeguridad }]
+    return [
+      { source: "/:path*", headers: cabecerasDeSeguridad },
+      // Las respuestas de la API son de una sesión: que ni el navegador ni un
+      // proxy en el camino las guarden. Solo /api/auth/sesion lo decía.
+      { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+    ]
   },
 }
 

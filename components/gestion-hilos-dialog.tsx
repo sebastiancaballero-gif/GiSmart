@@ -551,8 +551,10 @@ function VentanaHilos({
             )}
           </div>
 
-          {/* Pestaña, filtros y grilla */}
-          <div className="flex min-h-0 flex-col">
+          {/* Pestaña, filtros y grilla. No se encoge: con poco alto (1366×657, el
+              celular) se encogía hasta 2 px y las tarjetas se pisaban; ahora la
+              tabla guarda su alto y la ventana se desplaza. */}
+          <div className="flex shrink-0 flex-col">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <span className="rounded-t-lg border border-b-0 border-border bg-card px-3.5 py-1.5 text-xs font-semibold text-foreground">
                 Sección troncal

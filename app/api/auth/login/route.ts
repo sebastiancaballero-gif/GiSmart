@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { emitirToken, llegoPorHttps, ponerCookieDeSesion, verificarToken } from "@/lib/auth-server"
+import { emitirToken, llegoPorHttps, ponerCookieDeSesion, secretoValido, verificarToken, vieneDeOtroSitio } from "@/lib/auth-server"
 import { clienteSupabase } from "@/lib/supabase-servidor"
 import { esHash, hashClave, verificarClave, HASH_SENUELO } from "@/lib/password"
 import { tieneInvisibles } from "@/lib/texto"
@@ -61,10 +61,48 @@ function limpiarIntentos(ahora: number) {
   // más antiguas: `Map` conserva el orden de inserción.
   let sobran = intentos.size - MAX_VIGILADAS
   if (sobran <= 0) return
-  for (const nombre of intentos.keys()) {
-    if (sobran-- <= 0) break
+  for (const [nombre, registro] of intentos) {
+    if (sobran <= 0) break
+    // Una cuenta bloqueada no se suelta: antes, mandar miles de nombres
+    // inventados la sacaba del mapa y quedaba desbloqueada. Los bloqueos duran
+    // 30 s, así que el mapa no crece sin techo por esto.
+    if (registro.bloqueadaHasta > ahora) continue
     intentos.delete(nombre)
+    sobran--
   }
+}
+
+/**
+ * El cuerpo de la petición, leído hasta `max` bytes; `null` si es más grande,
+ * y ahí se deja de leer. `req.text()` lo leía entero aunque no dijera su tamaño
+ * (envío por partes): 256 MB ocupaban 1 GB de memoria antes de responder 413.
+ */
+async function leerConTope(req: Request, max: number): Promise<string | null> {
+  if (!req.body) return ""
+  const lector = req.body.getReader()
+  const partes: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await lector.read()
+      if (done) break
+      total += value.byteLength
+      if (total > max) {
+        await lector.cancel().catch(() => {})
+        return null
+      }
+      partes.push(value)
+    }
+  } catch {
+    return ""
+  }
+  const todo = new Uint8Array(total)
+  let posicion = 0
+  for (const parte of partes) {
+    todo.set(parte, posicion)
+    posicion += parte.byteLength
+  }
+  return new TextDecoder().decode(todo)
 }
 
 /**
@@ -81,7 +119,14 @@ function escaparComodines(valor: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY || !process.env.AUTH_JWT_SECRET) {
+  // Otra página no puede iniciar una sesión aquí por el navegador de alguien.
+  if (vieneDeOtroSitio(req)) {
+    return NextResponse.json({ message: "Solicitud no permitida.", field: null }, { status: 403 })
+  }
+  // Un secreto débil en producción se detecta aquí, antes de consultar la base y
+  // de calcular la clave: antes fallaba al final, con la clave correcta, como
+  // un error 500 sin explicación.
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY || !secretoValido()) {
     return NextResponse.json(
       { message: "El servidor de autenticación no está configurado. Revisa .env.local.", field: null },
       { status: 500 },
@@ -93,8 +138,8 @@ export async function POST(req: NextRequest) {
   if (Number(req.headers.get("content-length") ?? 0) > MAX_BYTES_CUERPO) {
     return NextResponse.json({ message: "Solicitud demasiado grande.", field: null }, { status: 413 })
   }
-  const texto = await req.text().catch(() => "")
-  if (texto.length > MAX_BYTES_CUERPO) {
+  const texto = await leerConTope(req, MAX_BYTES_CUERPO)
+  if (texto === null) {
     return NextResponse.json({ message: "Solicitud demasiado grande.", field: null }, { status: 413 })
   }
   let body: unknown = null

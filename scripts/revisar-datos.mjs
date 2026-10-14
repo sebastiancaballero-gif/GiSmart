@@ -227,7 +227,14 @@ if (cables.length && mencionadas.size && cabeceras.length) {
   }
   console.log(`   mufas que terminan solas (un solo cable): ${terminales}`)
   console.log(`   mufas que no llegan a la cabecera por cables: ${sueltas}`)
-  if (!alReves.length) console.log("   el sentido de todos los cables sale de la cabecera")
+  // Solo se puede decir algo del sentido de los cables a los que se llega desde
+  // la cabecera; antes se daba por bueno aunque no se hubiera llegado a ninguno.
+  const comprobables = cables.filter((c) => saltos.has(String(c.id_elem_from)) && saltos.has(String(c.id_elem_to))).length
+  if (comprobables === 0) {
+    aviso("no se pudo comprobar el sentido de los cables: desde la cabecera no se llega a ninguna cubierta por cables (¿el cable que sale de ella no tiene id_elem_to?)")
+  } else if (!alReves.length) {
+    console.log(`   el sentido de los ${comprobables} cables a los que se llega desde la cabecera sale de ella`)
+  }
 }
 
 // --- 3. geometrías sospechosas -------------------------------------------

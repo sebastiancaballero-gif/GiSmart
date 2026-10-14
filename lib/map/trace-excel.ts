@@ -29,7 +29,7 @@ export const COLUMNAS_TRACE = [
 export type DatosDelExcelDelTrace = {
   direccion: DireccionTrace
   ruta: RutaDelTrace
-  /** De dónde sale, en palabras: «Hilo 13 del cable 2100555»; si no se sabe, `null`. */
+  /** De dónde sale, en palabras: «Hilo 13 del cable 01a0e04f-…» (el identificador del cable); si no se sabe, `null`. */
   origen: string | null
   idOrigen: string
   /** Cuál de las rutas es, cuando el recorrido se abre en varias. */
@@ -56,11 +56,14 @@ const altoDeNota = (texto: string) => 14 * Math.max(1, Math.ceil(texto.length / 
  * llega elegido de otra ventana: «Hilo 21 del cable 2102701», «Puerto E1 del
  * divisor 1 de 7-ago», «Puerto 30 de la bandeja 144 del ODF 1».
  */
-export function origenDeLaRuta(ruta: RutaDelTrace): string | null {
+export function origenDeLaRuta(ruta: RutaDelTrace, conIdentificador = false): string | null {
   // Hacia abajo la central puede ir primero: el origen es lo que sigue.
   const f = ruta.filas.find((x) => x.tipo !== "Central")
   if (!f || f.tipo === "Central") return null
-  if (f.tipo === "Hilo") return `Hilo ${f.nombre ?? "?"}${f.nombreContenedor ? ` del cable ${f.nombreContenedor}` : ""}`
+  // Con identificador, el cable va por su UUID, como en la ventana; sin él, por
+  // su código (para el nombre del archivo).
+  const cable = conIdentificador ? (f.codigoContenedor ?? f.nombreContenedor) : f.nombreContenedor
+  if (f.tipo === "Hilo") return `Hilo ${f.nombre ?? "?"}${cable ? ` del cable ${cable}` : ""}`
   const enCubierta = f.ubica === "Divisor"
   const articulo = f.ubica === "Divisor" ? "del divisor" : f.ubica === "Bandeja" ? "de la bandeja" : f.ubica === "Tarjeta" ? "de la tarjeta" : f.ubica ? `de ${f.ubica}` : ""
   const donde = articulo ? ` ${articulo}${f.codigoUbica ? ` ${f.codigoUbica}` : ""}` : ""
@@ -87,6 +90,8 @@ export function hojaDelTrace(d: DatosDelExcelDelTrace): HojaXlsx {
       : "no llega a un divisor"
   const contexto = [
     d.origen ? `UUID ${d.idOrigen}` : `Origen ${d.idOrigen}`,
+    // Hacia abajo, la central de donde sale (en la tabla solo va su UUID).
+    !haciaArriba && d.ruta.filas[0]?.tipo === "Central" ? `sale de la central ${d.ruta.filas[0].nombre ?? d.ruta.filas[0].codigo}` : null,
     llegada,
     `${d.pasos} ${d.pasos === 1 ? "paso" : "pasos"}`,
     d.atenuacionDb !== null
@@ -106,7 +111,7 @@ export function hojaDelTrace(d: DatosDelExcelDelTrace): HojaXlsx {
   }
 
   nota(
-    `Trace ${SENTIDO[d.direccion]} — ${d.origen ?? origenDeLaRuta(d.ruta) ?? "desde un puerto o un hilo"}${d.totalDeRutas > 1 ? ` (ruta ${d.numeroDeRuta} de ${d.totalDeRutas})` : ""}`,
+    `Trace ${SENTIDO[d.direccion]} — ${d.origen ?? origenDeLaRuta(d.ruta, true) ?? "desde un puerto o un hilo"}${d.totalDeRutas > 1 ? ` (ruta ${d.numeroDeRuta} de ${d.totalDeRutas})` : ""}`,
     "titulo",
   )
   nota(contexto)
@@ -116,7 +121,9 @@ export function hojaDelTrace(d: DatosDelExcelDelTrace): HojaXlsx {
   filas.push({ celdas: [...COLUMNAS_TRACE], estilo: "encabezado" })
   const encabezado = filas.length
   for (const f of d.ruta.filas) {
-    filas.push({ celdas: [f.tipo, f.codigo, f.codigoUbica, f.ubica, f.longitudM, f.contenedor, f.codigoContenedor] })
+    // «Número» como número cuando lo es: como texto, Excel lo marcaba y ordenaba el 10 antes que el 2.
+    const numero = f.codigoUbica !== null && /^\d{1,15}$/.test(f.codigoUbica) ? Number(f.codigoUbica) : f.codigoUbica
+    filas.push({ celdas: [f.tipo, f.codigo, numero, f.ubica, f.longitudM, f.contenedor, f.codigoContenedor] })
   }
   // La Suma es la fila de totales de la tabla de Excel: no se mezcla con los
   // datos al filtrar ni al ordenar, y suma solo lo que se ve.
