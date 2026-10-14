@@ -89,8 +89,11 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   return (
     <aside
+      // En el celular, abierto flota sobre el mapa en vez de empujarlo: al
+      // empujarlo, el mapa quedaba de 100 px con el zoom encima de las
+      // herramientas.
       className={`flex shrink-0 flex-col overflow-hidden border-r border-border bg-card transition-[width] duration-200 ease-in-out ${
-        collapsed ? "w-12 items-center py-3" : "w-72"
+        collapsed ? "w-12 items-center py-3" : "w-72 max-sm:absolute max-sm:inset-y-0 max-sm:left-0 max-sm:shadow-2xl"
       }`}
     >
       {collapsed ? (

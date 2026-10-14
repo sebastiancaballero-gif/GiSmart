@@ -409,7 +409,8 @@ comparan sin mayúsculas, tildes ni guiones, así que un cambio de nombre en la 
 
 ### Panel de capas
 
-Cada capa muestra su símbolo real, su conteo y un ojo para ocultarla. Las de mufas y
+Cada capa muestra su símbolo real, su conteo y un ojo para ocultarla. En el celular,
+abierto flota sobre el mapa en vez de empujarlo (el mapa quedaba de 100 px). Las de mufas y
 fibra **se despliegan** con el desglose por categoría:
 
 - Mufas por `funcion_cub` (segundo nivel, primer nivel, empalme pasivo).

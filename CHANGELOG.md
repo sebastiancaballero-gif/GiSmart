@@ -10,6 +10,18 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.6.1 — 14 de octubre de 2026
+
+Retoques de vistas en el celular, tras revisar todas las pantallas en 1366×768,
+1366×657 y 390×844.
+
+- **Panel de capas en el celular:** abierto flota sobre el mapa. Antes lo empujaba y el
+  mapa quedaba de 100 px, con el zoom encima de las herramientas.
+- **Ventanas en el celular:** la frase bajo el título usa hasta dos líneas; en una se
+  cortaba a la mitad en ocho ventanas («Qué puerto de cada tarjeta de la OLT lle…»).
+- **Redes/Nodo en el celular:** «Nodo elegido» se lee entero; el botón «Cargar
+  cubiertas» pasa a la línea de abajo.
+
 ## 1.6.0 — 14 de octubre de 2026
 
 Pruebas repartidas en cinco frentes (ventana del trace, tablero, seguridad, datos y

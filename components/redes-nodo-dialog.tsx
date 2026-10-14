@@ -283,7 +283,9 @@ function VentanaRedesNodo({
               </div>
 
               <div className="flex flex-wrap items-end gap-2 md:col-span-2">
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                {/* Con un mínimo: en el celular el botón apretaba el campo hasta
+                    «HUB LA UNIO…»; ahora el botón baja a la línea siguiente. */}
+                <div className="flex min-w-48 flex-1 flex-col gap-1">
                   <Rotulo>Nodo elegido</Rotulo>
                   <Campo
                     etiqueta="Nodo elegido"

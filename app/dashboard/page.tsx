@@ -317,7 +317,12 @@ export default function DashboardPage() {
           <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
         </div>
         <div className="flex flex-1 overflow-hidden">
-          <div className="gismart-desde-izquierda flex shrink-0" style={{ "--retraso": "140ms" } as React.CSSProperties}>
+          {/* En el celular solo ocupa la franja del panel plegado: abierto, flota
+              sobre el mapa (ver DashboardSidebar). */}
+          <div
+            className="gismart-desde-izquierda relative z-30 flex shrink-0 max-sm:w-12"
+            style={{ "--retraso": "140ms" } as React.CSSProperties}
+          >
             <DashboardSidebar
               layers={layers}
               onToggleLayer={handleToggleLayer}

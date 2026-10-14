@@ -47,7 +47,9 @@ export function EncabezadoVentana({
         </span>
         <div className="min-w-0">
           <DialogTitle>{titulo}</DialogTitle>
-          <DialogDescription className="mt-0.5 truncate text-xs">{descripcion}</DialogDescription>
+          {/* En el celular, hasta dos líneas: en una se cortaba la mitad de la
+              frase («Qué puerto de cada tarjeta de la OLT lle…»). */}
+          <DialogDescription className="mt-0.5 line-clamp-2 text-xs sm:line-clamp-none sm:truncate">{descripcion}</DialogDescription>
         </div>
         {acciones && <div className="ml-auto flex shrink-0 items-center gap-0.5">{acciones}</div>}
       </div>
