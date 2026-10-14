@@ -6,9 +6,13 @@
 --     tipo_equipo -> tipo_equipo_pert
 --     tipo_puerto -> dir_principal_senhal   (E = entrada, S = salida, B = bandeja)
 --
+--   tab_fiber.divisor_optico (alias «d» en la función)
+--     id_cubierta -> id_cubierta_ubica
+--
 -- Síntoma (14 de octubre de 2026): «Conectividad fina» falla en las 185
 -- cubiertas, primero con «42703 column pe.id_equipo does not exist» y, ya
--- corregida esa, con «42703 column pe.tipo_puerto does not exist».
+-- corregida esa, con «42703 column pe.tipo_puerto does not exist» y luego
+-- «42703 column d.id_cubierta does not exist».
 --
 -- tipo_puerto no solo cambió de nombre: tenía 'IN' / 'OUT' y la columna nueva
 -- es del enum geo_fiber.enum_dir_signal ('E' / 'S' / 'B'). La función compara
@@ -56,7 +60,8 @@ order by l.n;
 -- PASO 2. Corregir y probar. Cambia esas columnas, vuelve a crear la función
 -- (CREATE OR REPLACE conserva sus permisos) y la prueba con TODAS las
 -- cubiertas. Si alguna sigue fallando, no se guarda nada: el error dice
--- cuántas fallan y el mensaje de la primera (mandárselo a quien la revise).
+-- cuántas fallan, el mensaje de la primera y todas las columnas que la
+-- función nombra y no existen (mandárselo a quien la revise).
 do $$
 declare
   definicion text := pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
@@ -65,6 +70,7 @@ declare
   bien int := 0;
   mal int := 0;
   primer_error text;
+  faltan text;
 begin
   if definicion !~* 'puerto_equipo\s+(as\s+)?pe\M' then
     raise exception 'En la función, «pe» no se declara como puerto_equipo. No se cambió nada: revisar el paso 1.';
@@ -76,6 +82,19 @@ begin
   -- tipo_puerto valía 'IN' / 'OUT'; la columna nueva, 'E' / 'S' / 'B'.
   nueva := regexp_replace(nueva, '\mpe\.tipo_puerto\M',
     '(case pe.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else pe.dir_principal_senhal::text end)', 'g');
+  -- divisor_optico (alias «d»): id_cubierta pasó a id_cubierta_ubica.
+  if nueva ~* 'divisor_optico\s+(as\s+)?d\M' then
+    nueva := regexp_replace(nueva, '\md\.id_cubierta\M', 'd.id_cubierta_ubica', 'g');
+  end if;
+
+  -- Las columnas que siguen sin existir en ninguna tabla, para el mensaje si
+  -- algo falla: la base solo avisa de la primera.
+  select string_agg(distinct m[1] || '.' || m[2], ', ')
+    into faltan
+    from regexp_matches(nueva, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'g') as m
+   where m[1] not in ('public', 'tab_fiber', 'geo_fiber', 'geo_infra', 'pg_catalog')
+     and m[2] not in (select column_name from information_schema.columns);
+
   if nueva <> definicion then
     execute nueva;
   end if;
@@ -94,7 +113,8 @@ begin
 
   if mal > 0 then
     -- La excepción deshace el CREATE OR REPLACE de arriba: la función queda como estaba.
-    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %', mal, bien + mal, primer_error;
+    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %. Columnas que no existen: %',
+      mal, bien + mal, primer_error, coalesce(faltan, 'ninguna');
   end if;
   raise notice 'Función corregida: las % cubiertas responden.', bien;
 end $$;
