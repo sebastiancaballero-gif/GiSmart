@@ -19,11 +19,11 @@ import type { DireccionTrace, ElementoDelRecorrido, TablaDelTrace } from "@/lib/
  * para leerla:
  *
  * - un hilo se reconoce como en Gestión de hilos: su número en la bolita de su
- *   color (Código ubica) y su buffer con el color del buffer (Elemento ubica);
+ *   color (Número) y su buffer con el color del buffer (Elemento ubica);
  * - las cubiertas, el color de su nivel, como en el mapa y la leyenda;
  * - el pin de una fila lleva el mapa a su cubierta o su cable y lo deja
  *   resaltado en ámbar; la fila queda marcada con el mismo ámbar;
- * - los códigos de elemento y contenedor son los UUID, en gris para que se lea
+ * - los identificadores de elemento y de contenedor son los UUID, en gris para que se lea
  *   primero lo demás (se seleccionan enteros con un click para copiarlos); lo
  *   que se lee va a la vista: el puerto (E1) junto a su tipo, y el cable
  *   (2102262), la cubierta (CO19) o el equipo junto a su contenedor, con el
@@ -146,14 +146,13 @@ function Fila({
         <span className="flex items-center gap-1.5" title={fila.tipo === "Central" && fila.nombre ? `Central ${fila.nombre}` : undefined}>
           <IconoDeTipo tipo={fila.tipo} />
           <span className="font-semibold text-foreground">{fila.tipo}</span>
-          {/* El puerto por su nombre (el número del hilo va en Código ubica; el nombre de la central, al pasar el mouse). */}
+          {/* El puerto por su nombre (el número del hilo va en Número; el nombre de la central, al pasar el mouse). */}
           {fila.tipo === "Puerto" && fila.nombre && <span className="text-muted-foreground">{fila.nombre}</span>}
         </span>
       </td>
       <td className={CELDA}>
         <Uuid valor={fila.codigo} nombre={esHilo ? `Hilo ${fila.nombre ?? "?"}` : fila.nombre} />
       </td>
-      <td className={`${CELDA} text-muted-foreground`}>{esHilo && fila.ubica ? <BufferDelHilo fila={fila} /> : (fila.ubica ?? "")}</td>
       <td className={CELDA}>
         {/* El número del hilo, en la bolita de su color, como en Gestión de hilos. */}
         {esHilo && fila.codigoUbica ? (
@@ -167,6 +166,7 @@ function Fila({
           <PastillaDeUbica valor={fila.codigoUbica} />
         ) : null}
       </td>
+      <td className={`${CELDA} text-muted-foreground`}>{esHilo && fila.ubica ? <BufferDelHilo fila={fila} /> : (fila.ubica ?? "")}</td>
       <td className={`${CELDA} text-right font-medium tabular-nums text-foreground`}>{fila.longitudM !== null ? metros(fila.longitudM) : ""}</td>
       <td className={CELDA}>
         <Contenedor fila={fila} />

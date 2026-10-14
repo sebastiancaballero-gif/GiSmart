@@ -238,7 +238,7 @@ console.log("\n5) TABLA DEL TRACE (HACIA ARRIBA Y HACIA ABAJO)\n")
   const filas = ruta.filas
   comprobar("puerto de divisor: divisor 1, Cub nivel 1 CO19", linea(filas[0]) === "Puerto|E1|Divisor|1||Cub nivel 1|CO19", linea(filas[0]))
   comprobar(
-    "hilo: su buffer, su número en Código ubica (como en Gestión de hilos), la longitud del cable y el cable",
+    "hilo: su buffer, su número en «Número» (como en Gestión de hilos), la longitud del cable y el cable",
     linea(filas[1]) === "Hilo|56|Buffer 5|56|116.65|Cable|2103630",
     linea(filas[1]),
   )
@@ -246,7 +246,7 @@ console.log("\n5) TABLA DEL TRACE (HACIA ARRIBA Y HACIA ABAJO)\n")
   comprobar("puerto de tarjeta sin nombre: su número, tarjeta 6, OLT 1", linea(filas[4]) === "Puerto|6|Tarjeta|6||OLT|1", linea(filas[4]))
   comprobar("al final, la central", linea(filas[5]) === "Central|HUB LA UNION|||||" && filas.length === 6, linea(filas.at(-1)))
   comprobar(
-    "Código elemento y Código contenedor son los UUID: puerto y cubierta, hilo y cable, puerto y equipo, la cabecera",
+    "Identificador elemento e Identificador contenedor son los UUID: puerto y cubierta, hilo y cable, puerto y equipo, la cabecera",
     [filas[0].codigo, filas[0].codigoContenedor, filas[1].codigo, filas[1].codigoContenedor, filas[3].codigo, filas[3].codigoContenedor, filas[5].codigo].join() ===
       "pd,cu,h2,c2,pb,e1,cab",
     [filas[0].codigo, filas[0].codigoContenedor, filas[1].codigo, filas[1].codigoContenedor, filas[3].codigo, filas[3].codigoContenedor, filas[5].codigo].join(),
@@ -494,6 +494,12 @@ console.log("\n6) EXCEL (.xlsx)\n")
     "la Suma suma la columna de longitud (solo lo visible al filtrar)",
     suma === 9 && h.filas[suma - 1].celdas[4].formula === "SUBTOTAL(109,TraceHaciaArriba[Longitud (m)])" && h.filas[suma - 1].celdas[4].valor === 44.58,
   )
+  comprobar(
+    "los nombres que pidieron y en su orden: el número del hilo en «Número», antes de «Elemento ubica»",
+    h.filas[encabezado - 1].celdas.join("|") === "Tipo elemento|Identificador elemento|Número|Elemento ubica|Longitud (m)|Contenedor|Identificador contenedor" &&
+      h.filas[encabezado].celdas.slice(0, 5).join("|") === "Hilo|21|21|Buffer 2|44.58",
+    h.filas[encabezado].celdas.slice(0, 5).join("|"),
+  )
   comprobar("los avisos van al final", String(h.filas.at(-1).celdas[0]).startsWith("• El recorrido se abre en 2") && h.horizontal === true)
   const xlsx = leer(crearXlsx(h))
   comprobar(
@@ -504,7 +510,8 @@ console.log("\n6) EXCEL (.xlsx)\n")
   comprobar(
     "la tabla: rango, filtro sin la Suma, columnas del encabezado y totales",
     xlsx.includes('name="TraceHaciaArriba" displayName="TraceHaciaArriba" ref="A5:G9" totalsRowCount="1"') &&
-      xlsx.includes('<autoFilter ref="A5:G8"/>') && xlsx.includes('<tableColumn id="4" name="Código ubica" totalsRowLabel="Suma"/>') &&
+      xlsx.includes('<autoFilter ref="A5:G8"/>') && xlsx.includes('<tableColumn id="3" name="Número"/>') && xlsx.includes('<tableColumn id="4" name="Elemento ubica" totalsRowLabel="Suma"/>') &&
+      xlsx.includes('<tableColumn id="7" name="Identificador contenedor"/>') &&
       xlsx.includes('<tableColumn id="5" name="Longitud (m)" totalsRowFunction="sum"/>'),
   )
 

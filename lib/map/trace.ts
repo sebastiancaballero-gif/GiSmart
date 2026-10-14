@@ -90,11 +90,11 @@ export type ResultadoTrace =
  *   («Cub nivel 1», «Cub nivel 2») y su etiqueta.
  * - Puerto de una tarjeta o una bandeja: ubica «Tarjeta» o «Bandeja» y su slot;
  *   contenedor el equipo (OLT u ODF) y su código.
- * - Hilo: ubica su buffer («Buffer 5»); código ubica, el número del hilo (el
+ * - Hilo: ubica su buffer («Buffer 5»); «Número», el número del hilo (el
  *   «Número» de Gestión de hilos); contenedor «Cable»; la longitud es la del
  *   cable (medida en campo o, si no hay, la calculada).
  *
- * «Código elemento» y «Código contenedor» son los UUID: del hilo o el puerto
+ * «Identificador elemento» e «Identificador contenedor» son los UUID: del hilo o el puerto
  * (de la cabecera en la fila de la central) y del cable, la cubierta o el
  * equipo (ODF, OLT) que lo contiene. Lo que se lee (hilo 56, cable 2103630,
  * CO19) va en `nombre` y `nombreContenedor`.

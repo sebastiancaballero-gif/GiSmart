@@ -10,6 +10,12 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.5.5 — 14 de octubre de 2026
+
+- **Tabla del trace con los nombres que pidieron:** Tipo elemento, Identificador elemento,
+  Número, Elemento ubica, Longitud, Contenedor e Identificador contenedor. «Número» es la
+  que se llamaba «Código ubica» y ahora va antes de «Elemento ubica». Igual en el Excel.
+
 ## 1.5.4 — 13 de octubre de 2026
 
 - **Trace desde Gestión de hilos:** al pedir otro recorrido, la ventana ya no muestra un momento

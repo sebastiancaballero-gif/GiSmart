@@ -10,15 +10,20 @@ import type { DireccionTrace, RutaDelTrace } from "@/lib/map/trace"
  * final, como en la ventana.
  */
 
-/** Las columnas de la tabla del trace, como las pidió el ingeniero. */
+/**
+ * Las columnas de la tabla del trace, con los nombres que pidieron (octubre de
+ * 2026): «Número» es la que antes se llamaba «Código ubica» y va antes de
+ * «Elemento ubica»; los códigos de elemento y contenedor (los UUID) se llaman
+ * «Identificador». La Longitud sigue en la quinta: la Suma la nombra.
+ */
 export const COLUMNAS_TRACE = [
   "Tipo elemento",
-  "Código elemento",
+  "Identificador elemento",
+  "Número",
   "Elemento ubica",
-  "Código ubica",
   "Longitud (m)",
   "Contenedor",
-  "Código contenedor",
+  "Identificador contenedor",
 ] as const
 
 export type DatosDelExcelDelTrace = {
@@ -111,7 +116,7 @@ export function hojaDelTrace(d: DatosDelExcelDelTrace): HojaXlsx {
   filas.push({ celdas: [...COLUMNAS_TRACE], estilo: "encabezado" })
   const encabezado = filas.length
   for (const f of d.ruta.filas) {
-    filas.push({ celdas: [f.tipo, f.codigo, f.ubica, f.codigoUbica, f.longitudM, f.contenedor, f.codigoContenedor] })
+    filas.push({ celdas: [f.tipo, f.codigo, f.codigoUbica, f.ubica, f.longitudM, f.contenedor, f.codigoContenedor] })
   }
   // La Suma es la fila de totales de la tabla de Excel: no se mezcla con los
   // datos al filtrar ni al ordenar, y suma solo lo que se ve.
@@ -130,7 +135,7 @@ export function hojaDelTrace(d: DatosDelExcelDelTrace): HojaXlsx {
   return {
     nombre: `Trace ${SENTIDO[d.direccion]}`,
     // Las dos columnas de código llevan UUID (36 caracteres).
-    anchos: [14, 38, 15, 13, 14, 14, 38],
+    anchos: [14, 38, 10, 15, 14, 14, 38],
     filas,
     combinar,
     filasFijas: encabezado,
