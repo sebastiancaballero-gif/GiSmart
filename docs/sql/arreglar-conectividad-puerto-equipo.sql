@@ -14,7 +14,13 @@
 --
 -- Síntoma (14 de octubre de 2026): «Conectividad fina» falla en las 185
 -- cubiertas. Al corregir cada columna salía la siguiente: pe.id_equipo,
--- pe.tipo_puerto, d.id_cubierta, cf.id_hilo_origen, pe_orig.id_equipo.
+-- pe.tipo_puerto, d.id_cubierta, cf.id_hilo_origen, pe_orig.id_equipo y
+-- "id_cubierta" (sin alias).
+--
+-- «id_cubierta» sin alias puede ser de divisor_optico (ahora
+-- id_cubierta_ubica) o de bandeja_empalme (ahora id_cubierta_emp): desde
+-- fuera no se sabe cuál. El paso 2 prueba las dos y se queda con la que hace
+-- responder a todas las cubiertas.
 --
 -- Dos no son solo un cambio de nombre:
 --
@@ -75,26 +81,32 @@ order by l.n;
 -- PASO 2. Corregir y probar. Cambia esas columnas, vuelve a crear la función
 -- (CREATE OR REPLACE conserva sus permisos) y la prueba con TODAS las
 -- cubiertas. Si alguna sigue fallando, no se guarda nada: el error dice
--- cuántas fallan, el mensaje de la primera y las columnas que siguen sin
--- existir en su tabla (mandárselo a quien la revise).
+-- cuántas fallan, el mensaje de la primera, las columnas que siguen sin
+-- existir en su tabla y las líneas de la función donde está el problema
+-- (mandárselo a quien la revise).
 do $$
 declare
   definicion text := pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
   nueva text := definicion;
+  candidata text;
+  variante text;
+  ganadora text;
   cub record;
-  bien int := 0;
-  mal int := 0;
+  bien int;
+  mal int;
   primer_error text;
+  error_variante text;
   faltan text;
+  columna text;
+  contexto text;
   a text;
   -- Lo que puede seguir a «tabla» sin ser su alias.
   no_alias text[] := array['on', 'where', 'join', 'left', 'right', 'inner', 'full', 'cross', 'group', 'order',
                            'limit', 'and', 'or', 'union', 'lateral', 'as', 'using', 'returns', 'language', 'set'];
 begin
-  -- \M exige fin de palabra: lo ya corregido (pe.id_equipo_pert) no vuelve a cambiar.
-
   -- Cada tabla puede ir con varios alias en la función (puerto_equipo va como
-  -- pe, pe_orig y pe_dest): se corrigen todos.
+  -- pe, pe_orig y pe_dest): se corrigen todos. \M exige fin de palabra: lo ya
+  -- corregido (pe.id_equipo_pert) no vuelve a cambiar.
 
   -- puerto_equipo
   for a in select distinct lower(m[1]) from regexp_matches(nueva, 'puerto_equipo\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
@@ -112,6 +124,12 @@ begin
     nueva := regexp_replace(nueva, '\m' || a || '\.id_cubierta\M', a || '.id_cubierta_ubica', 'g');
   end loop;
 
+  -- bandeja_empalme
+  for a in select distinct lower(m[1]) from regexp_matches(nueva, 'bandeja_empalme\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+           where lower(m[1]) <> all (no_alias) loop
+    nueva := regexp_replace(nueva, '\m' || a || '\.id_cubierta\M', a || '.id_cubierta_emp', 'g');
+  end loop;
+
   -- conectividad_fina
   for a in select distinct lower(m[1]) from regexp_matches(nueva, 'conectividad_fina\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
            where lower(m[1]) <> all (no_alias) loop
@@ -124,8 +142,7 @@ begin
     nueva := regexp_replace(nueva, '\m' || a || '\.tipo_elemento_(padre|hijo)\M', a || '.tip_elemento_\1', 'g');
   end loop;
 
-  -- Las columnas que siguen sin existir en su tabla (el paso 1, sobre la
-  -- versión corregida), para el mensaje si algo falla.
+  -- Las columnas que siguen sin existir en su tabla, para el mensaje si algo falla.
   with alias as (
     select distinct lower(m[3]) as alias, lower(m[1]) as esquema, lower(m[2]) as tabla
     from regexp_matches(nueva, '\m(tab_fiber|geo_fiber|geo_infra|public)\.([a-z_][a-z0-9_]*)\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
@@ -141,28 +158,63 @@ begin
    where not exists (select 1 from information_schema.columns c
                      where c.table_schema = t.esquema and c.table_name = t.tabla and c.column_name = u.columna);
 
-  if nueva <> definicion then
-    execute nueva;
-  end if;
-
-  for cub in select id, etiqueta from geo_fiber.cubierta_empalme loop
+  -- «id_cubierta» sin alias (ni punto, ni comillas: las claves del JSON no se
+  -- tocan): se prueba como columna de divisor_optico y como de
+  -- bandeja_empalme. Sin ella, una sola prueba.
+  foreach variante in array
+    case when nueva ~ '(?<![.a-z0-9_''"])id_cubierta(?![a-z0-9_''"])'
+         then array['id_cubierta_ubica', 'id_cubierta_emp'] else array[''] end
+  loop
+    candidata := case when variante = '' then nueva
+                      else regexp_replace(nueva, '(?<![.a-z0-9_''"])id_cubierta(?![a-z0-9_''"])', variante, 'g') end;
+    bien := 0;
+    mal := 0;
+    error_variante := null;
     begin
-      perform public.get_json_conectividad_cubierta(cub.id);
-      bien := bien + 1;
+      if candidata <> definicion then
+        execute candidata;
+      end if;
+      for cub in select id, etiqueta from geo_fiber.cubierta_empalme loop
+        begin
+          perform public.get_json_conectividad_cubierta(cub.id);
+          bien := bien + 1;
+        exception when others then
+          mal := mal + 1;
+          if error_variante is null then
+            error_variante := coalesce(cub.etiqueta, cub.id::text) || ': ' || sqlstate || ' ' || sqlerrm;
+          end if;
+        end;
+      end loop;
+      if mal > 0 then
+        -- Deshace el CREATE OR REPLACE de esta variante y se prueba la siguiente.
+        raise exception 'variante con fallas';
+      end if;
+      ganadora := variante;
     exception when others then
-      mal := mal + 1;
-      if primer_error is null then
-        primer_error := coalesce(cub.etiqueta, cub.id::text) || ': ' || sqlstate || ' ' || sqlerrm;
+      if sqlerrm <> 'variante con fallas' then
+        error_variante := sqlstate || ' ' || sqlerrm;
       end if;
     end;
+    exit when ganadora is not null;
+    primer_error := coalesce(primer_error || ' || ', '')
+      || case when variante = '' then '' else 'con ' || variante || ': ' end || error_variante;
+    columna := coalesce(columna,
+      substring(error_variante from 'column "?(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)"? does not exist'));
   end loop;
 
-  if mal > 0 then
-    -- La excepción deshace el CREATE OR REPLACE de arriba: la función queda como estaba.
-    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %. Columnas que no existen en su tabla: %',
-      mal, bien + mal, primer_error, coalesce(faltan, 'ninguna');
+  if ganadora is null then
+    -- Las líneas de la función donde aparece la columna del primer error.
+    if columna is not null then
+      select string_agg('línea ' || n || ': ' || trim(l), ' | ' order by n)
+        into contexto
+        from (select n, l from unnest(string_to_array(nueva, E'\n')) with ordinality as x(l, n)
+              where l ~ ('\m' || columna || '\M') limit 8) as y;
+    end if;
+    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %. Columnas que no existen en su tabla: %. Dónde: %',
+      mal, bien + mal, primer_error, coalesce(faltan, 'ninguna'), coalesce(contexto, '-');
   end if;
-  raise notice 'Función corregida: las % cubiertas responden.', bien;
+  raise notice 'Función corregida: las % cubiertas responden%.', bien,
+    case when ganadora = '' then '' else ' («id_cubierta» sin alias es ' || ganadora || ')' end;
 end $$;
 
 
