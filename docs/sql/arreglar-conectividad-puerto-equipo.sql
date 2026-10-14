@@ -10,6 +10,17 @@
 -- «42703 column pe.id_equipo does not exist», y «Conectividad fina» muestra ese
 -- error en todas.
 --
+-- Más tarde ese día, con pe.id_equipo ya corregida, las 185 fallan con
+-- «42703 column pe.tipo_puerto does not exist»: puerto_equipo ya no tiene
+-- tipo_puerto. Sus columnas de hoy: id, id_legacy, id_equipo_pert,
+-- tipo_equipo_pert, dir_principal_senhal (E 360, S 3112, B 144),
+-- numero_puerto, tipo_sfp, nombre (E1, S1…), tipo_conector (FUSION, SFP,
+-- LC/APC), tipo_est_ope, tipo_est_tec, atenuacion_conector_db,
+-- codigo_global_cubierta. Cuál reemplaza a tipo_puerto lo sabe quien hizo la
+-- función (si era entrada/salida, dir_principal_senhal, y entonces los valores
+-- que compare pueden haber cambiado también). El paso 1b lista todas las que
+-- faltan.
+--
 -- Ojo: tab_fiber.tarjeta_bandeja_eqp sigue llamando id_equipo y tipo_equipo a
 -- sus columnas. Por eso solo se cambia lo que va con el alias «pe», y solo si
 -- «pe» es puerto_equipo; si no lo es, el paso 2 no toca nada y avisa.
@@ -32,6 +43,29 @@ from unnest(string_to_array(
        pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure), E'\n'
      )) with ordinality as t(l, n)
 where l ~ '\mpe\.' or l ~* '\mpuerto_equipo\M';
+
+
+-- PASO 1b. Todas las columnas que la función nombra («alias.columna») y que no
+-- existen en ninguna tabla de la base. La base solo avisa de la primera que
+-- falla (el 14 de octubre, corregida pe.id_equipo, saltó pe.tipo_puerto); esto
+-- las muestra todas de una vez. Puede listar de más: columnas que la propia
+-- función calcula en una subconsulta con otro nombre. Las que sean de
+-- puerto_equipo se comparan con sus columnas de hoy (última columna).
+with def as (
+  select pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure) as d
+),
+nombradas as (
+  select distinct m[1] as alias, m[2] as columna
+  from def, regexp_matches(d, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'g') as m
+)
+select alias, columna,
+       (select string_agg(column_name, ', ' order by ordinal_position)
+          from information_schema.columns
+         where table_schema = 'tab_fiber' and table_name = 'puerto_equipo') as columnas_de_puerto_equipo
+from nombradas
+where alias not in ('public', 'tab_fiber', 'geo_fiber', 'geo_infra', 'pg_catalog')
+  and columna not in (select column_name from information_schema.columns)
+order by alias, columna;
 
 
 -- PASO 2. Reescribir la función con los nombres nuevos. Toma la definición
