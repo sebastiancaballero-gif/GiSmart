@@ -10,6 +10,13 @@
 -- cubiertas, primero con «42703 column pe.id_equipo does not exist» y, ya
 -- corregida esa, con «42703 column pe.tipo_puerto does not exist».
 --
+-- tipo_puerto no solo cambió de nombre: tenía 'IN' / 'OUT' y la columna nueva
+-- es del enum geo_fiber.enum_dir_signal ('E' / 'S' / 'B'). La función compara
+-- con 'IN' y 'OUT' («22P02 invalid input value for enum
+-- geo_fiber.enum_dir_signal: "IN"» al cambiar solo el nombre), así que se
+-- traduce el valor: E -> 'IN', S -> 'OUT' (B queda 'B'). Lo que compara y lo
+-- que devuelve la función sigue siendo lo de antes.
+--
 -- tab_fiber.tarjeta_bandeja_eqp sigue llamando id_equipo y tipo_equipo a sus
 -- columnas: por eso solo se cambia lo que va con el alias «pe», y solo si «pe»
 -- es puerto_equipo. Las claves del JSON que devuelve la función quedan igual,
@@ -66,7 +73,9 @@ begin
   -- \M exige fin de palabra: lo ya corregido (pe.id_equipo_pert) no vuelve a cambiar.
   nueva := regexp_replace(definicion, '\mpe\.id_equipo\M',   'pe.id_equipo_pert',      'g');
   nueva := regexp_replace(nueva,      '\mpe\.tipo_equipo\M', 'pe.tipo_equipo_pert',    'g');
-  nueva := regexp_replace(nueva,      '\mpe\.tipo_puerto\M', 'pe.dir_principal_senhal', 'g');
+  -- tipo_puerto valía 'IN' / 'OUT'; la columna nueva, 'E' / 'S' / 'B'.
+  nueva := regexp_replace(nueva, '\mpe\.tipo_puerto\M',
+    '(case pe.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else pe.dir_principal_senhal::text end)', 'g');
   if nueva <> definicion then
     execute nueva;
   end if;
