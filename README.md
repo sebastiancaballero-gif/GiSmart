@@ -716,7 +716,9 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
 - **La función `get_json_conectividad_cubierta` falla** (10 de octubre de 2026): busca la
   columna `pe.id_equipo` de `puerto_equipo`, que ahora se llama `id_equipo_pert`. La ruta
   `/api/mufas/{id}/conectividad` responde con ese error (y la ventana lo muestra) hasta
-  que se corrija la función en la base.
+  que se corrija la función en la base. Al 14 de octubre falla en las 185 cubiertas; se
+  corrige con [`docs/sql/arreglar-conectividad-puerto-equipo.sql`](docs/sql/arreglar-conectividad-puerto-equipo.sql)
+  en el editor SQL de Supabase (la clave de la aplicación no puede cambiar funciones).
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.
