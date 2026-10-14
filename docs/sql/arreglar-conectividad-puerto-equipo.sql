@@ -1,30 +1,36 @@
 -- Corrige public.get_json_conectividad_cubierta después de la recarga de
--- tab_fiber.puerto_equipo, que cambió los nombres de sus columnas:
+-- tablas de octubre de 2026, que cambió nombres de columnas que la función lee:
 --
---   tab_fiber.puerto_equipo (alias «pe» en la función)
---     id_equipo   -> id_equipo_pert         (ya corregida por Carlos)
+--   tab_fiber.puerto_equipo (alias «pe»)
+--     id_equipo   -> id_equipo_pert
 --     tipo_equipo -> tipo_equipo_pert
---     tipo_puerto -> dir_principal_senhal   (E = entrada, S = salida, B = bandeja)
---
---   tab_fiber.divisor_optico (alias «d» en la función)
+--     tipo_puerto -> dir_principal_senhal
+--   tab_fiber.divisor_optico (alias «d»)
 --     id_cubierta -> id_cubierta_ubica
+--   tab_fiber.conectividad_fina (alias «cf»)
+--     id_ubicacion -> id_contenedor (+ tipo_contenedor)
+--     *_origen     -> *_padre      (id_hilo_origen -> id_hilo_padre…)
+--     *_destino    -> *_hijo       (id_hilo_destino -> id_hilo_hijo…)
 --
 -- Síntoma (14 de octubre de 2026): «Conectividad fina» falla en las 185
--- cubiertas, primero con «42703 column pe.id_equipo does not exist» y, ya
--- corregida esa, con «42703 column pe.tipo_puerto does not exist» y luego
--- «42703 column d.id_cubierta does not exist».
+-- cubiertas. Al corregir cada columna salía la siguiente: pe.id_equipo,
+-- pe.tipo_puerto, d.id_cubierta, cf.id_hilo_origen.
 --
--- tipo_puerto no solo cambió de nombre: tenía 'IN' / 'OUT' y la columna nueva
--- es del enum geo_fiber.enum_dir_signal ('E' / 'S' / 'B'). La función compara
--- con 'IN' y 'OUT' («22P02 invalid input value for enum
--- geo_fiber.enum_dir_signal: "IN"» al cambiar solo el nombre), así que se
--- traduce el valor: E -> 'IN', S -> 'OUT' (B queda 'B'). Lo que compara y lo
--- que devuelve la función sigue siendo lo de antes.
+-- Dos no son solo un cambio de nombre:
+--
+-- * tipo_puerto valía 'IN' / 'OUT' y dir_principal_senhal es el enum
+--   geo_fiber.enum_dir_signal ('E' / 'S' / 'B'). La función compara con 'IN'
+--   y 'OUT', así que se traduce: E -> 'IN', S -> 'OUT' (B queda 'B').
+-- * id_ubicacion era la cubierta donde está la conexión. id_contenedor es la
+--   cubierta (tipo_contenedor 'CUB') o el divisor ('DIVISOR': las 95 salidas
+--   de divisor hacia un hilo), el ODF o la OLT. Para que las del divisor sigan
+--   saliendo en su cubierta, si el contenedor es un divisor se toma la
+--   cubierta del divisor.
 --
 -- tab_fiber.tarjeta_bandeja_eqp sigue llamando id_equipo y tipo_equipo a sus
--- columnas: por eso solo se cambia lo que va con el alias «pe», y solo si «pe»
--- es puerto_equipo. Las claves del JSON que devuelve la función quedan igual,
--- así que el esquemático de Dario no se entera.
+-- columnas: solo se cambia lo que va con cada alias, y solo si el alias es de
+-- esa tabla. Las claves del JSON que devuelve la función quedan igual, así
+-- que el esquemático de Dario no se entera.
 --
 -- Se corre en el editor SQL de Supabase, un paso a la vez (seleccionar el paso
 -- y ejecutar). Se puede correr más de una vez.
@@ -35,65 +41,96 @@
 select pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
 
 
--- PASO 1. Diagnóstico (solo lee). Las columnas que la función nombra y que no
--- existen en ninguna tabla, con la línea donde aparecen. La base solo avisa de
--- la primera que falla; esto las muestra todas. Puede listar alguna de más
--- (un nombre que la propia función calcula en una subconsulta).
+-- PASO 1. Diagnóstico (solo lee). Cada «alias.columna» de la función cuyo
+-- alias es de una tabla (tab_fiber.x alias) y cuya columna no está en esa
+-- tabla, con la línea donde aparece.
 with def as (
   select pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure) as d
 ),
 lineas as (
   select n, l from def, unnest(string_to_array(d, E'\n')) with ordinality as t(l, n)
 ),
+alias as (
+  select distinct lower(m[3]) as alias, lower(m[1]) as esquema, lower(m[2]) as tabla
+  from def, regexp_matches(d, '\m(tab_fiber|geo_fiber|geo_infra|public)\.([a-z_][a-z0-9_]*)\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+  where lower(m[3]) not in ('on', 'where', 'join', 'left', 'right', 'inner', 'full', 'cross', 'group', 'order',
+                            'limit', 'and', 'or', 'union', 'lateral', 'as', 'using', 'returns', 'language', 'set')
+),
+usos as (
+  select distinct lower(m[1]) as alias, lower(m[2]) as columna
+  from def, regexp_matches(d, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'gi') as m
+),
 faltan as (
-  select distinct m[1] as alias, m[2] as columna
-  from def, regexp_matches(d, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'g') as m
-  where m[1] not in ('public', 'tab_fiber', 'geo_fiber', 'geo_infra', 'pg_catalog')
-    and m[2] not in (select column_name from information_schema.columns)
+  select distinct u.alias, u.columna, a.esquema || '.' || a.tabla as tabla
+  from usos u join alias a using (alias)
+  where not exists (select 1 from information_schema.columns c
+                    where c.table_schema = a.esquema and c.table_name = a.tabla and c.column_name = u.columna)
 )
-select f.alias || '.' || f.columna as columna_que_falta, l.n as linea, trim(l.l) as texto
+select f.alias || '.' || f.columna as columna_que_falta, f.tabla, l.n as linea, trim(l.l) as texto
 from faltan f
-join lineas l on l.l ~ ('\m' || f.alias || '\.' || f.columna || '\M')
+join lineas l on l.l ~* ('\m' || f.alias || '\.' || f.columna || '\M')
 order by l.n;
 
 
 -- PASO 2. Corregir y probar. Cambia esas columnas, vuelve a crear la función
 -- (CREATE OR REPLACE conserva sus permisos) y la prueba con TODAS las
 -- cubiertas. Si alguna sigue fallando, no se guarda nada: el error dice
--- cuántas fallan, el mensaje de la primera y todas las columnas que la
--- función nombra y no existen (mandárselo a quien la revise).
+-- cuántas fallan, el mensaje de la primera y las columnas que siguen sin
+-- existir en su tabla (mandárselo a quien la revise).
 do $$
 declare
   definicion text := pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
-  nueva text;
+  nueva text := definicion;
   cub record;
   bien int := 0;
   mal int := 0;
   primer_error text;
   faltan text;
 begin
-  if definicion !~* 'puerto_equipo\s+(as\s+)?pe\M' then
-    raise exception 'En la función, «pe» no se declara como puerto_equipo. No se cambió nada: revisar el paso 1.';
+  -- \M exige fin de palabra: lo ya corregido (pe.id_equipo_pert) no vuelve a cambiar.
+
+  -- puerto_equipo (alias «pe»)
+  if nueva ~* 'puerto_equipo\s+(as\s+)?pe\M' then
+    nueva := regexp_replace(nueva, '\mpe\.id_equipo\M',   'pe.id_equipo_pert',   'g');
+    nueva := regexp_replace(nueva, '\mpe\.tipo_equipo\M', 'pe.tipo_equipo_pert', 'g');
+    -- tipo_puerto valía 'IN' / 'OUT'; la columna nueva, 'E' / 'S' / 'B'.
+    nueva := regexp_replace(nueva, '\mpe\.tipo_puerto\M',
+      '(case pe.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else pe.dir_principal_senhal::text end)', 'g');
   end if;
 
-  -- \M exige fin de palabra: lo ya corregido (pe.id_equipo_pert) no vuelve a cambiar.
-  nueva := regexp_replace(definicion, '\mpe\.id_equipo\M',   'pe.id_equipo_pert',      'g');
-  nueva := regexp_replace(nueva,      '\mpe\.tipo_equipo\M', 'pe.tipo_equipo_pert',    'g');
-  -- tipo_puerto valía 'IN' / 'OUT'; la columna nueva, 'E' / 'S' / 'B'.
-  nueva := regexp_replace(nueva, '\mpe\.tipo_puerto\M',
-    '(case pe.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else pe.dir_principal_senhal::text end)', 'g');
-  -- divisor_optico (alias «d»): id_cubierta pasó a id_cubierta_ubica.
+  -- divisor_optico (alias «d»)
   if nueva ~* 'divisor_optico\s+(as\s+)?d\M' then
     nueva := regexp_replace(nueva, '\md\.id_cubierta\M', 'd.id_cubierta_ubica', 'g');
   end if;
 
-  -- Las columnas que siguen sin existir en ninguna tabla, para el mensaje si
-  -- algo falla: la base solo avisa de la primera.
-  select string_agg(distinct m[1] || '.' || m[2], ', ')
+  -- conectividad_fina (alias «cf»)
+  if nueva ~* 'conectividad_fina\s+(as\s+)?cf\M' then
+    -- La cubierta donde está la conexión: la del divisor si el contenedor es un divisor.
+    nueva := regexp_replace(nueva, '\mcf\.id_ubicacion\M',
+      '(case when cf.tipo_contenedor = ''DIVISOR'' then (select dv.id_cubierta_ubica from tab_fiber.divisor_optico dv where dv.id = cf.id_contenedor) else cf.id_contenedor end)', 'g');
+    nueva := regexp_replace(nueva, '\mcf\.([a-z_]+)_origen\M',  'cf.\1_padre', 'g');
+    nueva := regexp_replace(nueva, '\mcf\.([a-z_]+)_destino\M', 'cf.\1_hijo',  'g');
+    -- tipo_elemento_* se llama ahora tip_elemento_*.
+    nueva := regexp_replace(nueva, '\mcf\.tipo_elemento_(padre|hijo)\M', 'cf.tip_elemento_\1', 'g');
+  end if;
+
+  -- Las columnas que siguen sin existir en su tabla (el paso 1, sobre la
+  -- versión corregida), para el mensaje si algo falla.
+  with alias as (
+    select distinct lower(m[3]) as alias, lower(m[1]) as esquema, lower(m[2]) as tabla
+    from regexp_matches(nueva, '\m(tab_fiber|geo_fiber|geo_infra|public)\.([a-z_][a-z0-9_]*)\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+    where lower(m[3]) not in ('on', 'where', 'join', 'left', 'right', 'inner', 'full', 'cross', 'group', 'order',
+                              'limit', 'and', 'or', 'union', 'lateral', 'as', 'using', 'returns', 'language', 'set')
+  ),
+  usos as (
+    select distinct lower(m[1]) as alias, lower(m[2]) as columna
+    from regexp_matches(nueva, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'gi') as m
+  )
+  select string_agg(distinct u.alias || '.' || u.columna || ' (' || a.tabla || ')', ', ')
     into faltan
-    from regexp_matches(nueva, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'g') as m
-   where m[1] not in ('public', 'tab_fiber', 'geo_fiber', 'geo_infra', 'pg_catalog')
-     and m[2] not in (select column_name from information_schema.columns);
+    from usos u join alias a using (alias)
+   where not exists (select 1 from information_schema.columns c
+                     where c.table_schema = a.esquema and c.table_name = a.tabla and c.column_name = u.columna);
 
   if nueva <> definicion then
     execute nueva;
@@ -113,7 +150,7 @@ begin
 
   if mal > 0 then
     -- La excepción deshace el CREATE OR REPLACE de arriba: la función queda como estaba.
-    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %. Columnas que no existen: %',
+    raise exception 'No se guardó nada: % de % cubiertas siguen fallando. Primer error: %. Columnas que no existen en su tabla: %',
       mal, bien + mal, primer_error, coalesce(faltan, 'ninguna');
   end if;
   raise notice 'Función corregida: las % cubiertas responden.', bien;
