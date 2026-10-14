@@ -222,3 +222,74 @@ end $$;
 select public.get_json_conectividad_cubierta(
   (select id from geo_fiber.cubierta_empalme where etiqueta = 'CO19' limit 1)
 );
+
+
+-- PASO 4. Solo las conexiones que están en la cubierta (corrido el paso 2).
+--
+-- La función elige las conexiones por los hilos de los cables de la
+-- cubierta, y cada cable llega a dos cubiertas: también traía las fusiones de
+-- la otra punta (1314 de 2110 el 14 de octubre, en 71 cubiertas), y el
+-- esquema las descartaba con «el hilo de origen … no existe». Ahora
+-- conectividad_fina dice dónde está cada conexión (id_contenedor: la cubierta,
+-- o uno de sus divisores), así que la tabla se filtra a las de la cubierta sin
+-- tocar el resto de la consulta. Prueba cada cubierta: debe devolver
+-- exactamente sus conexiones; si no, no se guarda nada.
+do $$
+declare
+  definicion text := pg_get_functiondef('public.get_json_conectividad_cubierta(uuid)'::regprocedure);
+  nueva text;
+  cub record;
+  j jsonb;
+  devueltas int;
+  locales int;
+  bien int := 0;
+  mal int := 0;
+  primer_error text;
+begin
+  if position('cf_local' in definicion) > 0 then
+    raise notice 'La función ya filtra las conexiones por cubierta: no se cambió nada.';
+    return;
+  end if;
+
+  -- «tab_fiber.conectividad_fina alias» pasa a «(solo las de la cubierta) alias».
+  nueva := regexp_replace(definicion,
+    'tab_fiber\.conectividad_fina(\s+(?:as\s+)?)(?!(?:on|where|join|left|right|inner|full|cross|group|order|limit|and|or|union|lateral|using)\M)([a-z_][a-z0-9_]*)\M',
+    '(select cf_local.* from tab_fiber.conectividad_fina cf_local where cf_local.id_contenedor = p_cubierta_id or cf_local.id_contenedor in (select dv.id from tab_fiber.divisor_optico dv where dv.id_cubierta_ubica = p_cubierta_id))\1\2',
+    'gi');
+  if nueva = definicion then
+    raise exception 'No se encontró tab_fiber.conectividad_fina con alias en la función. No se cambió nada.';
+  end if;
+  execute nueva;
+
+  for cub in select id, etiqueta from geo_fiber.cubierta_empalme loop
+    begin
+      j := public.get_json_conectividad_cubierta(cub.id)::jsonb;
+      select count(*) into devueltas
+        from jsonb_array_elements(coalesce(j -> 'Bandejas', '[]'::jsonb)) as b,
+             jsonb_array_elements(coalesce(b -> 'Conectividades', '[]'::jsonb)) as c;
+      select count(*) into locales
+        from tab_fiber.conectividad_fina x
+       where x.id_contenedor = cub.id
+          or x.id_contenedor in (select dv.id from tab_fiber.divisor_optico dv where dv.id_cubierta_ubica = cub.id);
+      if devueltas <> locales then
+        mal := mal + 1;
+        if primer_error is null then
+          primer_error := coalesce(cub.etiqueta, cub.id::text) || ': devuelve ' || devueltas || ' conexiones y tiene ' || locales;
+        end if;
+      else
+        bien := bien + 1;
+      end if;
+    exception when others then
+      mal := mal + 1;
+      if primer_error is null then
+        primer_error := coalesce(cub.etiqueta, cub.id::text) || ': ' || sqlstate || ' ' || sqlerrm;
+      end if;
+    end;
+  end loop;
+
+  if mal > 0 then
+    -- La excepción deshace el CREATE OR REPLACE de arriba: la función queda como estaba.
+    raise exception 'No se guardó nada: % de % cubiertas no quedan bien. Primer caso: %', mal, bien + mal, primer_error;
+  end if;
+  raise notice 'Listo: las % cubiertas devuelven solo sus conexiones.', bien;
+end $$;
