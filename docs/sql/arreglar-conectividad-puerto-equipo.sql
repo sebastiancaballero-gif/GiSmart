@@ -135,11 +135,11 @@ begin
     select distinct lower(m[1]) as alias, lower(m[2]) as columna
     from regexp_matches(nueva, '\m([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\M', 'gi') as m
   )
-  select string_agg(distinct u.alias || '.' || u.columna || ' (' || a.tabla || ')', ', ')
+  select string_agg(distinct u.alias || '.' || u.columna || ' (' || t.tabla || ')', ', ')
     into faltan
-    from usos u join alias a using (alias)
+    from usos u join alias t using (alias)
    where not exists (select 1 from information_schema.columns c
-                     where c.table_schema = a.esquema and c.table_name = a.tabla and c.column_name = u.columna);
+                     where c.table_schema = t.esquema and c.table_name = t.tabla and c.column_name = u.columna);
 
   if nueva <> definicion then
     execute nueva;
