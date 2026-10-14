@@ -724,6 +724,12 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   no dibuja los divisores ni las 234 conexiones entre un hilo y un puerto de divisor (68
   cubiertas); las descarta con el aviso «el hilo de destino undefined no existe»
   (`lib/schematic/mufa-field-data.ts`, de Dario).
+  **Pendiente de datos:** la base no tiene las bandejas de ninguna cubierta
+  (`cantidad_bandejas` en 0, `bandeja_empalme` vacía, `num_bandeja` en 0) y la función da
+  `can_band_inst` por los divisores; el esquema pone 12 fusiones por bandeja y descarta 113
+  en 9 cubiertas (la de empalme de la cabecera, la de CO90 y CO02 a CO09) con «sin bandeja
+  disponible». Los cables 2100555 y 2110412 ya están unidos a su cubierta de empalme
+  ([`docs/sql/unir-cables-a-su-cubierta.sql`](docs/sql/unir-cables-a-su-cubierta.sql)).
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.
