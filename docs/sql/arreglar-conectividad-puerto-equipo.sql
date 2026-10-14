@@ -1,20 +1,20 @@
 -- Corrige public.get_json_conectividad_cubierta después de la recarga de
 -- tablas de octubre de 2026, que cambió nombres de columnas que la función lee:
 --
---   tab_fiber.puerto_equipo (alias «pe»)
+--   tab_fiber.puerto_equipo (alias «pe», «pe_orig», «pe_dest»)
 --     id_equipo   -> id_equipo_pert
 --     tipo_equipo -> tipo_equipo_pert
 --     tipo_puerto -> dir_principal_senhal
---   tab_fiber.divisor_optico (alias «d»)
+--   tab_fiber.divisor_optico (alias «d»…)
 --     id_cubierta -> id_cubierta_ubica
---   tab_fiber.conectividad_fina (alias «cf»)
+--   tab_fiber.conectividad_fina (alias «cf»…)
 --     id_ubicacion -> id_contenedor (+ tipo_contenedor)
 --     *_origen     -> *_padre      (id_hilo_origen -> id_hilo_padre…)
 --     *_destino    -> *_hijo       (id_hilo_destino -> id_hilo_hijo…)
 --
 -- Síntoma (14 de octubre de 2026): «Conectividad fina» falla en las 185
 -- cubiertas. Al corregir cada columna salía la siguiente: pe.id_equipo,
--- pe.tipo_puerto, d.id_cubierta, cf.id_hilo_origen.
+-- pe.tipo_puerto, d.id_cubierta, cf.id_hilo_origen, pe_orig.id_equipo.
 --
 -- Dos no son solo un cambio de nombre:
 --
@@ -86,41 +86,50 @@ declare
   mal int := 0;
   primer_error text;
   faltan text;
+  a text;
+  -- Lo que puede seguir a «tabla» sin ser su alias.
+  no_alias text[] := array['on', 'where', 'join', 'left', 'right', 'inner', 'full', 'cross', 'group', 'order',
+                           'limit', 'and', 'or', 'union', 'lateral', 'as', 'using', 'returns', 'language', 'set'];
 begin
   -- \M exige fin de palabra: lo ya corregido (pe.id_equipo_pert) no vuelve a cambiar.
 
-  -- puerto_equipo (alias «pe»)
-  if nueva ~* 'puerto_equipo\s+(as\s+)?pe\M' then
-    nueva := regexp_replace(nueva, '\mpe\.id_equipo\M',   'pe.id_equipo_pert',   'g');
-    nueva := regexp_replace(nueva, '\mpe\.tipo_equipo\M', 'pe.tipo_equipo_pert', 'g');
+  -- Cada tabla puede ir con varios alias en la función (puerto_equipo va como
+  -- pe, pe_orig y pe_dest): se corrigen todos.
+
+  -- puerto_equipo
+  for a in select distinct lower(m[1]) from regexp_matches(nueva, 'puerto_equipo\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+           where lower(m[1]) <> all (no_alias) loop
+    nueva := regexp_replace(nueva, '\m' || a || '\.id_equipo\M',   a || '.id_equipo_pert',   'g');
+    nueva := regexp_replace(nueva, '\m' || a || '\.tipo_equipo\M', a || '.tipo_equipo_pert', 'g');
     -- tipo_puerto valía 'IN' / 'OUT'; la columna nueva, 'E' / 'S' / 'B'.
-    nueva := regexp_replace(nueva, '\mpe\.tipo_puerto\M',
-      '(case pe.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else pe.dir_principal_senhal::text end)', 'g');
-  end if;
+    nueva := regexp_replace(nueva, '\m' || a || '\.tipo_puerto\M',
+      format('(case %1$s.dir_principal_senhal when ''E'' then ''IN'' when ''S'' then ''OUT'' else %1$s.dir_principal_senhal::text end)', a), 'g');
+  end loop;
 
-  -- divisor_optico (alias «d»)
-  if nueva ~* 'divisor_optico\s+(as\s+)?d\M' then
-    nueva := regexp_replace(nueva, '\md\.id_cubierta\M', 'd.id_cubierta_ubica', 'g');
-  end if;
+  -- divisor_optico
+  for a in select distinct lower(m[1]) from regexp_matches(nueva, 'divisor_optico\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+           where lower(m[1]) <> all (no_alias) loop
+    nueva := regexp_replace(nueva, '\m' || a || '\.id_cubierta\M', a || '.id_cubierta_ubica', 'g');
+  end loop;
 
-  -- conectividad_fina (alias «cf»)
-  if nueva ~* 'conectividad_fina\s+(as\s+)?cf\M' then
+  -- conectividad_fina
+  for a in select distinct lower(m[1]) from regexp_matches(nueva, 'conectividad_fina\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
+           where lower(m[1]) <> all (no_alias) loop
     -- La cubierta donde está la conexión: la del divisor si el contenedor es un divisor.
-    nueva := regexp_replace(nueva, '\mcf\.id_ubicacion\M',
-      '(case when cf.tipo_contenedor = ''DIVISOR'' then (select dv.id_cubierta_ubica from tab_fiber.divisor_optico dv where dv.id = cf.id_contenedor) else cf.id_contenedor end)', 'g');
-    nueva := regexp_replace(nueva, '\mcf\.([a-z_]+)_origen\M',  'cf.\1_padre', 'g');
-    nueva := regexp_replace(nueva, '\mcf\.([a-z_]+)_destino\M', 'cf.\1_hijo',  'g');
+    nueva := regexp_replace(nueva, '\m' || a || '\.id_ubicacion\M',
+      format('(case when %1$s.tipo_contenedor = ''DIVISOR'' then (select dv.id_cubierta_ubica from tab_fiber.divisor_optico dv where dv.id = %1$s.id_contenedor) else %1$s.id_contenedor end)', a), 'g');
+    nueva := regexp_replace(nueva, '\m' || a || '\.([a-z_]+)_origen\M',  a || '.\1_padre', 'g');
+    nueva := regexp_replace(nueva, '\m' || a || '\.([a-z_]+)_destino\M', a || '.\1_hijo',  'g');
     -- tipo_elemento_* se llama ahora tip_elemento_*.
-    nueva := regexp_replace(nueva, '\mcf\.tipo_elemento_(padre|hijo)\M', 'cf.tip_elemento_\1', 'g');
-  end if;
+    nueva := regexp_replace(nueva, '\m' || a || '\.tipo_elemento_(padre|hijo)\M', a || '.tip_elemento_\1', 'g');
+  end loop;
 
   -- Las columnas que siguen sin existir en su tabla (el paso 1, sobre la
   -- versión corregida), para el mensaje si algo falla.
   with alias as (
     select distinct lower(m[3]) as alias, lower(m[1]) as esquema, lower(m[2]) as tabla
     from regexp_matches(nueva, '\m(tab_fiber|geo_fiber|geo_infra|public)\.([a-z_][a-z0-9_]*)\s+(?:as\s+)?([a-z_][a-z0-9_]*)\M', 'gi') as m
-    where lower(m[3]) not in ('on', 'where', 'join', 'left', 'right', 'inner', 'full', 'cross', 'group', 'order',
-                              'limit', 'and', 'or', 'union', 'lateral', 'as', 'using', 'returns', 'language', 'set')
+    where lower(m[3]) <> all (no_alias)
   ),
   usos as (
     select distinct lower(m[1]) as alias, lower(m[2]) as columna
