@@ -352,26 +352,30 @@ export default function DashboardPage() {
               pedirCapa={pedirCapa}
             />
           </div>
+          {/* Una columna: el mapa ocupa lo que sobra y, si está abierta, la
+              tabla de atributos del módulo «Avanzado» va debajo y lo achica. */}
           <main
             id="map-panel"
-            className="gismart-fundido relative flex-1 overflow-hidden"
+            className="gismart-fundido relative flex flex-1 flex-col overflow-hidden"
             style={{ "--retraso": "100ms" } as React.CSSProperties}
           >
-            <NetworkMap
-              visible={visible}
-              onStatsChange={handleStatsChange}
-              onCenterChange={handleCenterChange}
-              flyTo={flyTo}
-              reloadTrigger={reloadTrigger}
-              fitTo={fitTo}
-              tool={tool}
-              onToolChange={setTool}
-              onLoadingChange={setLoadingData}
-              filters={filters}
-              capaActiva={capaActiva}
-              onIndiceChange={setIndice}
-              apiRef={mapaApiRef}
-            />
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <NetworkMap
+                visible={visible}
+                onStatsChange={handleStatsChange}
+                onCenterChange={handleCenterChange}
+                flyTo={flyTo}
+                reloadTrigger={reloadTrigger}
+                fitTo={fitTo}
+                tool={tool}
+                onToolChange={setTool}
+                onLoadingChange={setLoadingData}
+                filters={filters}
+                capaActiva={capaActiva}
+                onIndiceChange={setIndice}
+                apiRef={mapaApiRef}
+              />
+            </div>
             <GestionHilosDialog
               ref={hilosRef}
               mapa={accesoAlMapa}

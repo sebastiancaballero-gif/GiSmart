@@ -6,6 +6,10 @@ import { getUser } from "@/lib/auth"
 import type { HerramientaAvanzada } from "./cinta"
 import { VentanaMarcadores } from "./marcadores/ventana-marcadores"
 import { PanelResumen } from "./resumen/panel-resumen"
+import { ALTO_TABLA, TablaAtributos } from "./tabla/tabla-atributos"
+import type { CapaDeTabla } from "./tabla/columnas"
+import { VentanaConsulta, type ResultadoDeConsulta } from "./consulta/ventana-consulta"
+import { combinarSeleccion } from "./consulta/consulta"
 
 /** Lo que el tablero le pide al módulo: abrir una de sus herramientas. */
 export type ManejadorDelModulo = {
@@ -24,6 +28,9 @@ function usuarioActual(): string {
  * paneles viven aquí, con su propio estado. Del tablero solo recibe el acceso
  * al mapa y el nombre del lugar que se está viendo, y le cuenta qué paneles
  * tiene abiertos para que la cinta los muestre encendidos.
+ *
+ * Va como hijo directo del panel del mapa, que es una columna: la tabla de
+ * atributos ocupa su lugar debajo del mapa y el mapa se achica.
  */
 export function ModuloAvanzado({
   ref,
@@ -40,6 +47,13 @@ export function ModuloAvanzado({
   const [marcadores, setMarcadores] = useState(false)
   const [usuario, setUsuario] = useState("")
   const [resumen, setResumen] = useState(false)
+  // Tabla y consulta comparten la selección: lo que una marca, la otra lo ve.
+  const [tabla, setTabla] = useState(false)
+  const [altoTabla, setAltoTabla] = useState(ALTO_TABLA.inicial)
+  const [capaTabla, setCapaTabla] = useState<CapaDeTabla>("node")
+  const [seleccion, setSeleccion] = useState<Set<string>>(() => new Set())
+  const [consulta, setConsulta] = useState<string | null>(null)
+  const [ventanaConsulta, setVentanaConsulta] = useState(false)
 
   useImperativeHandle(ref, () => ({
     abrir(herramienta) {
@@ -55,6 +69,15 @@ export function ModuloAvanzado({
         case "resumen":
           setResumen((abierto) => !abierto)
           return
+        case "tabla":
+          // Alto inicial según la pantalla: en una de 657 px la tabla de 260
+          // dejaba el mapa en 207.
+          if (!tabla) setAltoTabla(Math.round(Math.min(300, Math.max(ALTO_TABLA.minimo, window.innerHeight * 0.32))))
+          setTabla((abierta) => !abierta)
+          return
+        case "consulta":
+          setVentanaConsulta(true)
+          return
         default:
           return "Esa herramienta todavía no está disponible."
       }
@@ -62,13 +85,66 @@ export function ModuloAvanzado({
   }))
 
   useEffect(() => {
-    onActivos?.(resumen ? ["Resumen"] : [])
-  }, [resumen, onActivos])
+    onActivos?.([...(resumen ? ["Resumen"] : []), ...(tabla ? ["Tabla"] : [])])
+  }, [resumen, tabla, onActivos])
+
+  // Lo seleccionado se ve en el mapa, en ámbar. Cerrar la tabla lo suelta.
+  useEffect(() => {
+    mapa.api.current?.resaltarElementos([...seleccion])
+  }, [seleccion, mapa.api])
+
+  function cerrarTabla() {
+    setTabla(false)
+    setSeleccion(new Set())
+    setConsulta(null)
+  }
+
+  function aplicarConsulta(r: ResultadoDeConsulta) {
+    // La selección es de una capa: con otra capa, sumar o quitar parten de cero.
+    const actual = r.consulta.capa === capaTabla ? seleccion : new Set<string>()
+    const nueva = combinarSeleccion(actual, r.claves, r.modo)
+    setCapaTabla(r.consulta.capa)
+    setSeleccion(nueva)
+    setConsulta(r.descripcion)
+    setTabla(true)
+    if (nueva.size > 0) mapa.api.current?.resaltarElementos([...nueva], { encuadrar: true })
+  }
 
   return (
     <>
       <VentanaMarcadores open={marcadores} onOpenChange={setMarcadores} usuario={usuario} lugar={lugar} mapa={mapa.api} />
-      {resumen && <PanelResumen mapa={mapa.api} onCerrar={() => setResumen(false)} />}
+      <VentanaConsulta
+        open={ventanaConsulta}
+        onOpenChange={setVentanaConsulta}
+        mapa={mapa.api}
+        capaInicial={capaTabla}
+        haySeleccion={seleccion.size > 0}
+        onAplicar={aplicarConsulta}
+      />
+      {resumen && <PanelResumen mapa={mapa.api} onCerrar={() => setResumen(false)} espacioAbajo={tabla ? altoTabla : 0} />}
+      {tabla && (
+        <TablaAtributos
+          mapa={mapa.api}
+          capa={capaTabla}
+          onCapa={(c) => {
+            setCapaTabla(c)
+            setSeleccion(new Set())
+            setConsulta(null)
+          }}
+          seleccion={seleccion}
+          onSeleccion={(claves) => {
+            setSeleccion(claves)
+            // Elegir a mano deja de ser el resultado de la consulta.
+            setConsulta(null)
+          }}
+          consulta={consulta}
+          onQuitarConsulta={() => setConsulta(null)}
+          onConsultar={() => setVentanaConsulta(true)}
+          onCerrar={cerrarTabla}
+          alto={altoTabla}
+          onAlto={setAltoTabla}
+        />
+      )}
     </>
   )
 }

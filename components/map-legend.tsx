@@ -51,9 +51,10 @@ export function MapLegend({
 
   // `gismart-leyenda`: se aparta mientras el panel del elemento la tapa (ver
   // globals.css). En el celular va encima de la barra de estado, que ahí ocupa
-  // casi todo el ancho y quedaba debajo de la leyenda.
+  // casi todo el ancho y quedaba debajo de la leyenda. Con el mapa bajo (la
+  // tabla de atributos abierta debajo) no sube más allá del zoom: se desplaza.
   return (
-    <div data-tapa-mapa className="gismart-leyenda absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:bottom-14">
+    <div data-tapa-mapa className="gismart-leyenda absolute bottom-3 right-3 z-10 flex max-h-[calc(100%-7.5rem)] flex-col overflow-hidden rounded-lg bg-card/90 text-xs font-medium text-foreground shadow-md ring-1 ring-border backdrop-blur max-sm:bottom-14">
       <button
         type="button"
         onClick={() => setAbierta((v) => !v)}
@@ -65,7 +66,7 @@ export function MapLegend({
       </button>
 
       {abierta && (
-        <div className="flex flex-col gap-1 border-t border-border px-2.5 pb-2 pt-1.5">
+        <div className="flex min-h-0 flex-col gap-1 overflow-y-auto border-t border-border px-2.5 pb-2 pt-1.5">
           <span className="flex items-center gap-2">
             <CabeceraSymbol size={14} />
             Cabecera central

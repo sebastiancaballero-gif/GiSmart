@@ -18,6 +18,10 @@ function conExtension(base) {
 export function resolve(especificador, contexto, siguiente) {
   if (especificador === "next/server") return siguiente("next/server.js", contexto)
 
+  // OpenLayers se importa sin extensión («ol/geom/LineString»), como lo
+  // resuelve el empaquetador; Node pide el .js.
+  if (especificador.startsWith("ol/") && !extname(especificador)) return siguiente(`${especificador}.js`, contexto)
+
   if (especificador.startsWith("@/")) {
     const url = conExtension(resolverRuta(process.cwd(), especificador.slice(2)))
     if (url) return siguiente(url, contexto)

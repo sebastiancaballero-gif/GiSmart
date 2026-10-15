@@ -35,8 +35,14 @@ export const PESTANA_AVANZADO: RibbonTab = {
       label: "Consulta",
       items: [
         { icon: PieChart, label: "Resumen", accion: "modulo", modulo: "resumen", tooltip: "Lo que se ve en pantalla, en cifras" },
-        { icon: Table2, label: "Tabla", modulo: "tabla", tooltip: "Tabla de atributos de una capa, debajo del mapa" },
-        { icon: Filter, label: "Consultar", modulo: "consulta", tooltip: "Seleccionar por atributos" },
+        {
+          icon: Table2,
+          label: "Tabla",
+          accion: "modulo",
+          modulo: "tabla",
+          tooltip: "Tabla de atributos de una capa, debajo del mapa",
+        },
+        { icon: Filter, label: "Consultar", accion: "modulo", modulo: "consulta", tooltip: "Seleccionar por atributos" },
       ],
     },
     {

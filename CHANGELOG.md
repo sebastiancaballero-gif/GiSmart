@@ -10,6 +10,26 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.9.0 — 15 de octubre de 2026
+
+Tercera parte del módulo **Avanzado**.
+
+- **Tabla de atributos** (Avanzado › Tabla): la tabla de cubiertas, cables o cabeceras se
+  abre debajo del mapa, que se achica para que se vean los dos. Solo trae las columnas que
+  tienen datos, con las referencias por nombre (el cable va «de CO19 a 13/14», no por
+  UUID) y la longitud de cada cable. Se ordena por cualquier columna, se busca dentro, se
+  puede ver «solo lo que se ve» en el mapa o «solo lo seleccionado», y se exporta a Excel
+  tal como está. Click elige una fila, Ctrl+click suma, Mayús+click un tramo; lo elegido se
+  resalta en ámbar en el mapa y un botón lleva el mapa hasta ello. Doble click (o el pin)
+  abre la ficha. El borde de arriba se arrastra para cambiar el alto.
+- **Seleccionar por atributos** (Avanzado › Consultar, o el filtro de la tabla): condiciones
+  de campo, operador y valor («Cantidad de hilos es igual a 144», «Función contiene
+  nivel»), unidas por «todas» o «alguna», con los valores que ya existen como sugerencia.
+  Antes de aplicar dice cuántos coinciden; al aplicar, lo que coincide queda seleccionado
+  (nueva selección, sumar, quitar o dentro de la selección) y la tabla muestra la consulta.
+- Con el mapa más bajo, la barra de herramientas y la leyenda se desplazan en vez de tapar
+  la escala o el zoom.
+
 ## 1.8.0 — 15 de octubre de 2026
 
 Segunda parte del módulo **Avanzado**.

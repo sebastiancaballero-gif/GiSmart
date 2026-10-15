@@ -200,6 +200,12 @@ export type MapaApi = {
    * apaga una capa, se filtra o se recargan los datos. Devuelve cómo dejar de avisar.
    */
   alCambiarLaVista: (aviso: () => void) => () => void
+  /**
+   * Resalta en ámbar esos elementos (por su clave) en una capa propia del
+   * módulo «Avanzado»; con la lista vacía quita el resalte. Con `encuadrar`
+   * lleva el mapa a ellos. Devuelve cuántos encontró.
+   */
+  resaltarElementos: (claves: string[], opciones?: { encuadrar?: boolean }) => number
 }
 
 /** Un elemento de la red tal como lo ve el módulo «Avanzado», sin OpenLayers de por medio. */
@@ -220,6 +226,8 @@ export type ElementoDelMapa = {
   lineas: number[][][] | null
   /** Cubiertas y cabeceras: longitud y latitud. */
   punto: [number, number] | null
+  /** Si toca lo que se está viendo ahora. */
+  enVista: boolean
   /** Con `conPropiedades`: sus atributos tal como vienen de la base. */
   propiedades?: Record<string, unknown>
 }
@@ -353,6 +361,9 @@ function MapaDeRed({
   // Lo ubicado desde la tabla del trace, resaltado en ámbar (ver mostrarCubierta).
   const [resalteSource] = useState(() => new VectorSource())
   const [hayResalte, setHayResalte] = useState(false)
+  // Lo seleccionado en la tabla o con una consulta del módulo «Avanzado», en
+  // el mismo ámbar pero en su propia capa: no se mezcla con lo del trace.
+  const [seleccionAvanzadaSource] = useState(() => new VectorSource())
   // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
   const [hayRecorrido, setHayRecorrido] = useState(false)
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
@@ -369,6 +380,7 @@ function MapaDeRed({
   const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const traceLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const resalteLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const seleccionAvanzadaLayer = useRef<VectorLayer<VectorSource> | null>(null)
   /** Corta el destello en curso si se pide otro antes de que termine. */
   const detenerDestelloRef = useRef<(() => void) | null>(null)
   const drawRef = useRef<Draw | null>(null)
@@ -1103,7 +1115,8 @@ function MapaDeRed({
         for (const f of fuente.getFeatures()) {
           const geometria = f.getGeometry()
           if (!geometria) continue
-          if (opciones.soloEnVista && !geometria.intersectsExtent(extension)) continue
+          const enVista = geometria.intersectsExtent(extension)
+          if (opciones.soloEnVista && !enVista) continue
           const categoria =
             tipo === "node" ? categoriaDeMufa(f) : tipo === "fiber" ? categoriaDeCable(f) : TYPE_LABELS[tipo]
           const hilos = f.get("cant_hilo")
@@ -1130,6 +1143,7 @@ function MapaDeRed({
             largoM: tipo === "fiber" ? largoDeCableM(f) : null,
             lineas: tipo === "fiber" ? lineas : null,
             punto: geometria instanceof Point ? (toLonLat(geometria.getCoordinates()) as [number, number]) : null,
+            enVista,
             ...(propiedades ? { propiedades } : {}),
           })
         }
@@ -1157,6 +1171,29 @@ function MapaDeRed({
     [nodeSource, fiberSource, cabeceraSource, zoneSource],
   )
 
+  const resaltarElementos = useCallback(
+    (claves: string[], opciones: { encuadrar?: boolean } = {}) => {
+      seleccionAvanzadaSource.clear()
+      if (claves.length === 0) return 0
+      const buscadas = new Set(claves)
+      const extension = createEmpty()
+      let encontrados = 0
+      for (const fuente of [nodeSource, fiberSource, cabeceraSource, zoneSource]) {
+        for (const f of fuente.getFeatures()) {
+          if (!buscadas.has(getUid(f))) continue
+          const geometria = f.getGeometry()
+          if (!geometria) continue
+          seleccionAvanzadaSource.addFeature(new Feature({ geometry: geometria.clone() }))
+          extend(extension, geometria.getExtent())
+          encontrados++
+        }
+      }
+      if (opciones.encuadrar && encontrados > 0 && !isEmpty(extension)) encuadrarEn(extension, 18)
+      return encontrados
+    },
+    [seleccionAvanzadaSource, nodeSource, fiberSource, cabeceraSource, zoneSource, encuadrarEn],
+  )
+
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
@@ -1176,6 +1213,7 @@ function MapaDeRed({
       abrirAtajos,
       elementosDelMapa,
       alCambiarLaVista,
+      resaltarElementos,
     }
     return () => {
       apiRef.current = null
@@ -1198,6 +1236,7 @@ function MapaDeRed({
     abrirAtajos,
     elementosDelMapa,
     alCambiarLaVista,
+    resaltarElementos,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
@@ -1373,6 +1412,12 @@ function MapaDeRed({
     traceLayer.current = new VectorLayer({ source: traceSource, style: traceStyle as never, zIndex: 10 })
     // Encima del recorrido: lo ubicado desde su tabla no queda tapado por el cian.
     resalteLayer.current = new VectorLayer({ source: resalteSource, style: resalteStyle as never, zIndex: 11 })
+    // Selección del módulo «Avanzado»: debajo del trace (zIndex 9), encima de la red.
+    seleccionAvanzadaLayer.current = new VectorLayer({
+      source: seleccionAvanzadaSource,
+      style: resalteStyle as never,
+      zIndex: 9,
+    })
 
     const map = new Map({
       target: containerRef.current,
@@ -1389,6 +1434,7 @@ function MapaDeRed({
         // El recorrido del trace (con zIndex 10 se dibuja encima de todo).
         traceLayer.current,
         resalteLayer.current,
+        seleccionAvanzadaLayer.current,
         nodeLayer.current,
         // La cabecera va encima de las mufas: es el elemento jerárquicamente
         // más importante y no debe quedar tapada.
@@ -2039,7 +2085,9 @@ function MapaDeRed({
       </MapNoticeStack>
 
       {/* Herramientas de dibujo (izquierda) */}
-      <div data-tapa-mapa className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded-xl bg-card/95 p-1 shadow-lg ring-1 ring-border backdrop-blur">
+      {/* Con el mapa bajo (la tabla de atributos abierta debajo) no pasa de la
+          escala: se desplaza en vez de taparla. */}
+      <div data-tapa-mapa className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-5.5rem)] flex-col gap-0.5 overflow-y-auto rounded-xl bg-card/95 p-1 shadow-lg ring-1 ring-border backdrop-blur [scrollbar-width:none]">
         {tools.map((t) => {
           const Icon = t.icon
           const active = tool === t.id

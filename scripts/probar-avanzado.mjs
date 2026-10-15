@@ -9,6 +9,9 @@ const { leerMarcadores, guardarMarcadores, nuevoMarcador, MAX_MARCADORES } = awa
 const { RIBBON_TABS } = await import("../components/dashboard-ribbon-data.ts")
 const { recortarSegmento, largoDentroM, distanciaM, aLonLat } = await import("../modulos/avanzado/resumen/medidas.ts")
 const { resumirEnPantalla } = await import("../modulos/avanzado/resumen/resumen.ts")
+const { columnasDe, nombresPorId, valorDeCelda, compararCeldas, filaCoincide } = await import("../modulos/avanzado/tabla/columnas.ts")
+const { evaluarConsulta, combinarSeleccion, describirConsulta, leerNumero } = await import("../modulos/avanzado/consulta/consulta.ts")
+const { hojaDeLaTabla } = await import("../modulos/avanzado/tabla/excel-tabla.ts")
 
 let fallos = 0
 let pruebas = 0
@@ -25,7 +28,7 @@ console.log("\n1) LA PESTAÑA «AVANZADO»\n")
   comprobar("está en la cinta, al final", avanzado && RIBBON_TABS.at(-1) === avanzado)
   const items = avanzado?.groups.flatMap((g) => g.items) ?? []
   comprobar("cada botón dice qué herramienta abre", items.every((i) => i.modulo), items.map((i) => i.label).join(", "))
-  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "resumen,marcadores,atajos")
+  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "resumen,tabla,consulta,marcadores,atajos")
 }
 
 console.log("\n2) FUNCIONES EN CTRL+K\n")
@@ -139,6 +142,79 @@ console.log("\n5) RESUMEN EN PANTALLA\n")
   comprobar("los km son los que caen en pantalla", r.cables.km > 0 && r.cables.km < 2, r.cables.km.toFixed(4) + " km")
   comprobar("las cabeceras con su nombre", r.cabeceras.total === 1 && r.cabeceras.nombres[0] === "HUB LA UNION")
   comprobar("sin nada en pantalla, todo en cero", resumirEnPantalla([], caja).cables.km === 0)
+}
+
+console.log("\n6) TABLA DE ATRIBUTOS\n")
+const elemento = (clave, tipo, nombre, propiedades, extra = {}) => ({
+  clave,
+  tipo,
+  nombre,
+  categoria: "",
+  color: "#000",
+  visible: true,
+  hilos: null,
+  largoM: null,
+  lineas: null,
+  punto: null,
+  enVista: true,
+  propiedades,
+  ...extra,
+})
+const DATOS = [
+  elemento("n1", "node", "CO19", { id: "u-co19", etiqueta: "CO19", funcion_cub: "Primer nivel", cant_div: 2, id_legacy: 7 }),
+  elemento("n2", "node", "13/14", { id: "u-1314", etiqueta: "13/14", funcion_cub: "Segundo nivel", cant_div: 1 }),
+  elemento("n3", "node", "Empalme cabecera", { id: "u-emp", etiqueta: null, funcion_cub: "Empalme", cant_div: 0 }),
+  elemento("f1", "fiber", "2102262", { id: "c1", codigo: "2102262", cant_hilo: 144, estado_const: "Ex", id_elem_from: "u-co19", id_elem_to: "u-1314" }, { largoM: 131.77 }),
+  elemento("f2", "fiber", "2100555", { id: "c2", codigo: "2100555", cant_hilo: 48, estado_const: "Pr", id_elem_from: null, id_elem_to: "u-emp" }, { largoM: 1020.5 }),
+]
+{
+  const nombres = nombresPorId(DATOS)
+  const colsCubierta = columnasDe("node", DATOS, nombres)
+  comprobar("el nombre va primero", colsCubierta[0].clave === "__nombre")
+  comprobar("sin campos de auditoría (UUID, sistema anterior)", !colsCubierta.some((c) => c.clave === "id" || c.clave === "id_legacy"))
+  comprobar("un campo que repite el nombre sobra (etiqueta)", !colsCubierta.some((c) => c.clave === "etiqueta"))
+  comprobar("los campos numéricos se marcan como tales", colsCubierta.find((c) => c.clave === "cant_div")?.numerica === true)
+  const colsCable = columnasDe("fiber", DATOS, nombres)
+  comprobar("los cables traen su longitud", colsCable[1]?.clave === "__largo")
+  comprobar("las referencias se leen por nombre", valorDeCelda(DATOS[3], "id_elem_from", nombres) === "CO19")
+  comprobar("un campo vacío es vacío, no «null»", valorDeCelda(DATOS[4], "id_elem_from", nombres) === null)
+  comprobar("ordenar: números como números y vacíos al final", [null, 10, 9].sort(compararCeldas).join() === "9,10,")
+  comprobar("ordenar textos con números: 2 antes que 10", ["CO10", "CO2"].sort(compararCeldas).join() === "CO2,CO10")
+  comprobar("buscar en la tabla, sin tildes", filaCoincide(DATOS[0], colsCubierta, nombres, "primer NIVEL") && !filaCoincide(DATOS[1], colsCubierta, nombres, "primer"))
+
+  const hoja = hojaDeLaTabla({ capa: "fiber", columnas: colsCable, filas: DATOS.filter((e) => e.tipo === "fiber"), nombres, contexto: "prueba" })
+  comprobar("Excel: el encabezado con los títulos de las columnas", hoja.filas[2].celdas[0] === "Nombre" && hoja.filas[2].estilo === "encabezado")
+  comprobar("Excel: los números van como números", typeof hoja.filas[3].celdas[1] === "number")
+  comprobar("Excel: filtro sobre el encabezado y los datos", hoja.filtro?.startsWith("A3:") && hoja.filtro.endsWith("5"), hoja.filtro)
+}
+
+console.log("\n7) SELECCIONAR POR ATRIBUTOS\n")
+{
+  const nombres = nombresPorId(DATOS)
+  const q = (capa, condiciones, union = "y") => evaluarConsulta(DATOS, { capa, union, condiciones }, nombres).join(",")
+  comprobar("número igual: cables de 144 hilos", q("fiber", [{ campo: "cant_hilo", operador: "igual", valor: "144" }]) === "f1")
+  comprobar("número mayor que", q("fiber", [{ campo: "cant_hilo", operador: "mayor", valor: "50" }]) === "f1")
+  comprobar("texto contiene, sin tildes ni mayúsculas", q("node", [{ campo: "funcion_cub", operador: "contiene", valor: "NIVEL" }]) === "n1,n2")
+  comprobar("«y»: todas las condiciones", q("node", [{ campo: "funcion_cub", operador: "contiene", valor: "nivel" }, { campo: "cant_div", operador: "mayorIgual", valor: "2" }]) === "n1")
+  comprobar("«o»: alguna", q("node", [{ campo: "cant_div", operador: "igual", valor: "0" }, { campo: "cant_div", operador: "igual", valor: "2" }], "o") === "n1,n3")
+  comprobar("por nombre en una referencia (destino = CO19 no, = 13/14 sí)", q("fiber", [{ campo: "id_elem_to", operador: "igual", valor: "13/14" }]) === "f1")
+  comprobar("está vacío", q("fiber", [{ campo: "id_elem_from", operador: "vacio", valor: "" }]) === "f2")
+  comprobar("una condición sin valor no selecciona todo", q("node", [{ campo: "funcion_cub", operador: "igual", valor: "" }]) === "")
+  comprobar("solo de la capa pedida", q("node", [{ campo: "__nombre", operador: "contiene", valor: "2" }]) === "")
+  comprobar("leer números: «1.234,5», «144», «abc»", leerNumero("1.234,5") === 1234.5 && leerNumero("144") === 144 && leerNumero("abc") === null)
+
+  const actual = new Set(["a", "b"])
+  const res = ["b", "c"]
+  comprobar("modo nueva", [...combinarSeleccion(actual, res, "nueva")].join() === "b,c")
+  comprobar("modo sumar", [...combinarSeleccion(actual, res, "agregar")].join() === "a,b,c")
+  comprobar("modo quitar", [...combinarSeleccion(actual, res, "quitar")].join() === "a")
+  comprobar("modo dentro", [...combinarSeleccion(actual, res, "dentro")].join() === "b")
+  const cols = columnasDe("fiber", DATOS, nombres)
+  comprobar(
+    "la consulta en palabras",
+    describirConsulta({ capa: "fiber", union: "y", condiciones: [{ campo: "cant_hilo", operador: "igual", valor: " 144 " }, { campo: "estado_const", operador: "vacio", valor: "" }] }, cols) ===
+      "Cantidad de hilos es igual a 144 y Estado de construcción está vacío",
+  )
 }
 
 console.log(`\n${pruebas - fallos}/${pruebas} pruebas bien.`)

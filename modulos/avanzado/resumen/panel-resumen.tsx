@@ -68,7 +68,16 @@ function Tarjeta({
  * Resumen de lo que se ve en pantalla (las «infografías» de RustGIS): se
  * rehace solo cada vez que se mueve el mapa, se filtra o se enciende una capa.
  */
-export function PanelResumen({ mapa, onCerrar }: { mapa: { current: MapaApi | null }; onCerrar: () => void }) {
+export function PanelResumen({
+  mapa,
+  onCerrar,
+  espacioAbajo = 0,
+}: {
+  mapa: { current: MapaApi | null }
+  onCerrar: () => void
+  /** Lo que ocupa la tabla de atributos debajo del mapa, en píxeles: el panel no baja más. */
+  espacioAbajo?: number
+}) {
   const [resumen, setResumen] = useState<ResumenEnPantalla | null>(null)
 
   useEffect(() => {
@@ -101,7 +110,8 @@ export function PanelResumen({ mapa, onCerrar }: { mapa: { current: MapaApi | nu
       aria-label="Resumen de lo que se ve en pantalla"
       // A la altura de la ficha de la derecha (6,5rem): arriba al centro quedan
       // los avisos del mapa, que el panel tapaba («Click sobre un elemento…»).
-      className="absolute left-[4.5rem] top-[6.5rem] z-20 flex max-h-[calc(100%-13.5rem)] w-72 flex-col overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:left-3 max-sm:top-auto max-sm:max-h-[55%] max-sm:w-auto"
+      style={{ maxHeight: `calc(100% - 13.5rem - ${espacioAbajo}px)` }}
+      className="absolute left-[4.5rem] top-[6.5rem] z-20 flex w-72 flex-col overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:left-3 max-sm:top-auto max-sm:max-h-[55%] max-sm:w-auto"
     >
       <div className="flex items-start gap-2 border-b border-border px-3.5 py-2.5">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
