@@ -10,6 +10,27 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.11.0 — 15 de octubre de 2026
+
+Quinta y última parte del módulo **Avanzado**.
+
+- **Asistente IA** (Avanzado › Asistente IA): se le pregunta en palabras propias sobre la
+  red («¿qué cables llegan a CO19?», «¿cuántos hilos del cable 2102262 están
+  conectados?», «haz el trace hacia arriba del hilo 5») y responde con los datos de la
+  base: busca cubiertas y cables, lee la ficha de una cubierta o de un cable con sus
+  hilos, resume la red y recorre el trace. También puede llevar el mapa a lo que
+  encuentra, seleccionar varias cubiertas o cables (quedan en la tabla de atributos) o
+  abrir la ventana del trace con el recorrido. Solo consulta: no cambia nada de la red.
+  Abajo de cada respuesta dice qué consultó.
+- El panel va a la derecha, a todo lo alto, y el mapa se angosta para dejarle espacio: la
+  ficha y la leyenda siguen a la vista.
+- Usa Gemini (Google). La clave va solo en el servidor, en `.env.local` (`GEMINI_API_KEY`,
+  y si se quiere otro modelo, `GEMINI_MODEL`); sin ella el panel dice que falta
+  configurarlo. Lo que se pregunta y los datos que consulta se envían a Google. Cada
+  usuario tiene hasta 40 preguntas por hora.
+- Al elegir con «Consultar» con la tabla cerrada, el mapa ahora encuadra lo elegido después
+  de abrirse la tabla (antes podía quedar debajo de ella).
+
 ## 1.10.0 — 15 de octubre de 2026
 
 Cuarta parte del módulo **Avanzado**.

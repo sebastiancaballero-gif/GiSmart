@@ -12,6 +12,9 @@ import { VentanaConsulta, type ResultadoDeConsulta } from "./consulta/ventana-co
 import { combinarSeleccion } from "./consulta/consulta"
 import { PanelCercania } from "./cercania/panel-cercania"
 import { VentanaImprimir } from "./imprimir/ventana-imprimir"
+import { PanelAsistente } from "./asistente/panel-asistente"
+import type { AccionDelAsistente } from "./asistente/acciones"
+import { normalizar } from "@/lib/map/busqueda"
 
 /** Lo que el tablero le pide al módulo: abrir una de sus herramientas. */
 export type ManejadorDelModulo = {
@@ -39,12 +42,15 @@ export function ModuloAvanzado({
   mapa,
   lugar,
   onActivos,
+  onRecorrerTrace,
 }: {
   ref?: Ref<ManejadorDelModulo>
   mapa: AccesoAlMapa
   lugar: string
   /** Las etiquetas de los botones cuyos paneles están abiertos. */
   onActivos?: (etiquetas: string[]) => void
+  /** Abre la ventana del trace con ese recorrido (lo pide el asistente). */
+  onRecorrerTrace?: (idOrigen: string, direccion: "UPSTREAM" | "DOWNSTREAM", etiqueta: string | null) => void
 }) {
   const [marcadores, setMarcadores] = useState(false)
   const [usuario, setUsuario] = useState("")
@@ -59,6 +65,8 @@ export function ModuloAvanzado({
   // Resumen y Cercanía usan el mismo lugar junto a las herramientas: uno a la vez.
   const [cercania, setCercania] = useState(false)
   const [imprimir, setImprimir] = useState(false)
+  // El asistente queda abierto (con su conversación) hasta que se cierra.
+  const [asistente, setAsistente] = useState(false)
 
   useImperativeHandle(ref, () => ({
     abrir(herramienta) {
@@ -91,6 +99,9 @@ export function ModuloAvanzado({
         case "consulta":
           setVentanaConsulta(true)
           return
+        case "asistente":
+          setAsistente((abierto) => !abierto)
+          return
         default:
           return "Esa herramienta todavía no está disponible."
       }
@@ -98,13 +109,32 @@ export function ModuloAvanzado({
   }))
 
   useEffect(() => {
-    onActivos?.([...(resumen ? ["Resumen"] : []), ...(tabla ? ["Tabla"] : []), ...(cercania ? ["Cercanía"] : [])])
-  }, [resumen, tabla, cercania, onActivos])
+    onActivos?.([
+      ...(resumen ? ["Resumen"] : []),
+      ...(tabla ? ["Tabla"] : []),
+      ...(cercania ? ["Cercanía"] : []),
+      ...(asistente ? ["Asistente IA"] : []),
+    ])
+  }, [resumen, tabla, cercania, asistente, onActivos])
 
   // Lo seleccionado se ve en el mapa, en ámbar. Cerrar la tabla lo suelta.
   useEffect(() => {
     mapa.api.current?.resaltarElementos([...seleccion])
   }, [seleccion, mapa.api])
+
+  /**
+   * Resalta y encuadra. Si la tabla se está abriendo, el mapa se achica en el
+   * siguiente cuadro: se encuadra después, o lo elegido queda bajo la tabla.
+   */
+  function encuadrar(claves: string[]) {
+    const api = mapa.api.current
+    if (!api) return
+    if (tabla) {
+      api.resaltarElementos(claves, { encuadrar: true })
+      return
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => mapa.api.current?.resaltarElementos(claves, { encuadrar: true })))
+  }
 
   function cerrarTabla() {
     setTabla(false)
@@ -120,7 +150,43 @@ export function ModuloAvanzado({
     setSeleccion(nueva)
     setConsulta(r.descripcion)
     setTabla(true)
-    if (nueva.size > 0) mapa.api.current?.resaltarElementos([...nueva], { encuadrar: true })
+    if (nueva.size > 0) encuadrar([...nueva])
+  }
+
+  /** Lo que el asistente pidió hacer en el mapa. Devuelve lo que no se pudo, para decirlo. */
+  function aplicarAcciones(acciones: AccionDelAsistente[]): string[] {
+    const avisos: string[] = []
+    const TIPO = { cubierta: "node", cable: "fiber", cabecera: "cabecera" } as const
+    const buscar = (capa: keyof typeof TIPO, nombre: string) => {
+      const n = normalizar(nombre)
+      return mapa.indice.find(
+        (e) => e.tipo === TIPO[capa] && (normalizar(e.nombre) === n || (e.alias ?? []).some((a) => normalizar(a) === n)),
+      )
+    }
+    for (const accion of acciones) {
+      if (accion.tipo === "mostrar") {
+        const elemento = buscar(accion.capa, accion.nombre)
+        if (elemento) mapa.ubicar(elemento.clave)
+        else avisos.push(`No encontré ${accion.capa} «${accion.nombre}» en el mapa.`)
+      } else if (accion.tipo === "seleccionar") {
+        const encontrados = accion.nombres.map((n) => ({ n, e: buscar(accion.capa, n) }))
+        const claves = encontrados.flatMap((x) => (x.e ? [x.e.clave] : []))
+        const faltan = encontrados.filter((x) => !x.e).map((x) => x.n)
+        if (claves.length > 0) {
+          setCapaTabla(accion.capa === "cable" ? "fiber" : "node")
+          setSeleccion(new Set(claves))
+          setConsulta("Elegidos por el asistente")
+          setTabla(true)
+          encuadrar(claves)
+        }
+        if (faltan.length > 0) {
+          avisos.push(`No están en el mapa: ${faltan.slice(0, 6).join(", ")}${faltan.length > 6 ? ` y ${faltan.length - 6} más` : ""}.`)
+        }
+      } else if (accion.tipo === "trace") {
+        onRecorrerTrace?.(accion.idOrigen, accion.direccion, accion.etiqueta)
+      }
+    }
+    return avisos
   }
 
   return (
@@ -147,6 +213,14 @@ export function ModuloAvanzado({
             setConsulta(descripcion)
             setTabla(true)
           }}
+        />
+      )}
+      {asistente && (
+        <PanelAsistente
+          ficha={() => mapa.api.current?.puntoDeLaFicha()?.nombre ?? null}
+          lugar={lugar}
+          onAcciones={aplicarAcciones}
+          onCerrar={() => setAsistente(false)}
         />
       )}
       {tabla && (

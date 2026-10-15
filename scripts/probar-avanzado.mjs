@@ -14,6 +14,8 @@ const { evaluarConsulta, combinarSeleccion, describirConsulta, leerNumero } = aw
 const { hojaDeLaTabla } = await import("../modulos/avanzado/tabla/excel-tabla.ts")
 const { aMercator, distanciaAlElementoM, cercanos, textoDeDistancia } = await import("../modulos/avanzado/cercania/cercania.ts")
 const { largoRedondoM } = await import("../modulos/avanzado/imprimir/componer.ts")
+const { preguntarAGemini, ErrorDeGemini, MAX_VUELTAS } = await import("../modulos/avanzado/asistente/servidor/gemini.ts")
+const { herramientasDelAsistente, INSTRUCCIONES } = await import("../modulos/avanzado/asistente/servidor/herramientas.ts")
 
 let fallos = 0
 let pruebas = 0
@@ -30,7 +32,7 @@ console.log("\n1) LA PESTAÑA «AVANZADO»\n")
   comprobar("está en la cinta, al final", avanzado && RIBBON_TABS.at(-1) === avanzado)
   const items = avanzado?.groups.flatMap((g) => g.items) ?? []
   comprobar("cada botón dice qué herramienta abre", items.every((i) => i.modulo), items.map((i) => i.label).join(", "))
-  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "resumen,tabla,consulta,cercania,marcadores,imprimir,atajos")
+  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "asistente,resumen,tabla,consulta,cercania,marcadores,imprimir,atajos")
 }
 
 console.log("\n2) FUNCIONES EN CTRL+K\n")
@@ -245,6 +247,153 @@ console.log("\n8) CERCANÍA\n")
 console.log("\n9) IMPRIMIR\n")
 comprobar("escala: 137 m → 100 m; 4 300 m → 2 km; 60 m → 50 m", largoRedondoM(137) === 100 && largoRedondoM(4300) === 2000 && largoRedondoM(60) === 50)
 comprobar("escala: sin medida no hay barra", largoRedondoM(0) === 0 && largoRedondoM(Number.NaN) === 0)
+
+console.log("\n10) ASISTENTE (GEMINI DE MENTIRA, SIN GASTAR CUOTA)\n")
+{
+  /** Un Gemini de mentira: responde en orden lo que se le da y guarda lo que recibió. */
+  function geminiFalso(respuestas) {
+    const recibidas = []
+    const fetch = async (url, init) => {
+      recibidas.push({ url, headers: init.headers, cuerpo: JSON.parse(init.body) })
+      const r = respuestas[Math.min(recibidas.length - 1, respuestas.length - 1)]
+      return new Response(JSON.stringify(r.cuerpo ?? r), { status: r.estado ?? 200 })
+    }
+    return { recibidas, config: { clave: "clave-de-prueba", modelo: "modelo-x", url: "https://gemini.test/interactions", fetch } }
+  }
+  const texto = (t) => ({ type: "model_output", content: [{ type: "text", text: t }] })
+  const llamada = (id, name, args) => ({ type: "function_call", id, name, arguments: args, status: "waiting" })
+  const contar = {
+    name: "contar",
+    description: "Cuenta",
+    parameters: { type: "object", properties: {} },
+    ejecutar: async (args) => ({ total: 185, pedido: args }),
+  }
+  const romper = {
+    ...contar,
+    name: "romper",
+    ejecutar: async () => {
+      throw new Error("la base no responde")
+    },
+  }
+  const preguntar = (config, herramientas, mensaje = "x", previa = null) =>
+    preguntarAGemini({ config, sistema: "S", herramientas, mensaje, previa })
+
+  // Una respuesta directa, sin herramientas.
+  {
+    const g = geminiFalso([{ id: "i1", status: "completed", steps: [{ type: "user_input" }, texto("Hola.")] }])
+    const r = await preguntar(g.config, [contar], "hola")
+    const c = g.recibidas[0]
+    comprobar("respuesta directa: el texto y el id de la conversación", r.texto === "Hola." && r.conversacion === "i1" && r.usadas.length === 0)
+    comprobar("la clave va en la cabecera, nunca en la URL", c.headers["x-goog-api-key"] === "clave-de-prueba" && !c.url.includes("clave"))
+    comprobar(
+      "manda modelo, instrucciones, la pregunta y las herramientas declaradas (sin su código)",
+      c.cuerpo.model === "modelo-x" &&
+        c.cuerpo.system_instruction === "S" &&
+        c.cuerpo.input === "hola" &&
+        c.cuerpo.tools[0].type === "function" &&
+        c.cuerpo.tools[0].name === "contar" &&
+        !("ejecutar" in c.cuerpo.tools[0]),
+    )
+    comprobar("sin conversación previa no manda previous_interaction_id", !("previous_interaction_id" in c.cuerpo))
+  }
+  // Sigue una conversación.
+  {
+    const g = geminiFalso([{ id: "i2", status: "completed", steps: [texto("Sí.")] }])
+    await preguntar(g.config, [], "¿y?", "i1")
+    comprobar("la siguiente pregunta sigue desde la anterior", g.recibidas[0].cuerpo.previous_interaction_id === "i1")
+  }
+  // Una vuelta de herramientas.
+  {
+    const g = geminiFalso([
+      { id: "i3", status: "requires_action", steps: [{ type: "user_input" }, llamada("c1", "contar", { capa: "cubierta" })] },
+      { id: "i4", status: "completed", steps: [{ type: "function_result" }, texto("Hay **185** cubiertas.")] },
+    ])
+    const r = await preguntar(g.config, [contar], "¿cuántas?")
+    const segunda = g.recibidas[1]?.cuerpo
+    const resultado = segunda?.input?.[0]
+    const datos = resultado ? JSON.parse(resultado.result[0].text) : null
+    comprobar("ejecuta la herramienta y responde con el texto final", r.texto === "Hay **185** cubiertas." && r.conversacion === "i4")
+    comprobar("cuenta qué consultó", r.usadas.join() === "contar")
+    comprobar(
+      "devuelve el resultado con su call_id, encadenado a la interacción",
+      resultado?.type === "function_result" && resultado.call_id === "c1" && resultado.name === "contar" && segunda.previous_interaction_id === "i3",
+    )
+    comprobar("el resultado va como JSON, con los argumentos que pidió", datos?.total === 185 && datos.pedido.capa === "cubierta")
+  }
+  // Los errores de las herramientas van a Gemini como dato: no tumban la pregunta.
+  {
+    const g = geminiFalso([
+      { id: "i5", status: "requires_action", steps: [llamada("c1", "romper", {}), llamada("c2", "inventada", {})] },
+      { id: "i6", status: "completed", steps: [{ type: "function_result" }, texto("No pude.")] },
+    ])
+    const r = await preguntar(g.config, [romper])
+    const [a, b] = g.recibidas[1].cuerpo.input.map((x) => JSON.parse(x.result[0].text))
+    comprobar("el error de una herramienta va a Gemini como dato", a.error === "la base no responde" && r.texto === "No pude.")
+    comprobar("una herramienta que no existe se le dice", typeof b.error === "string" && b.error.includes("inventada"))
+  }
+  // Si Gemini no deja de pedir herramientas, se corta.
+  {
+    let n = 0
+    const sinFin = async () => {
+      n++
+      return new Response(JSON.stringify({ id: `i${n}`, status: "requires_action", steps: [llamada(`c${n}`, "contar", {})] }))
+    }
+    const error = await preguntar({ clave: "k", modelo: "m", url: "u", fetch: sinFin }, [contar]).catch((e) => e)
+    comprobar(`se corta a las ${MAX_VUELTAS} vueltas`, error instanceof ErrorDeGemini && n === MAX_VUELTAS + 1, `${n} llamadas`)
+  }
+  // Los errores de la API, en palabras.
+  {
+    const conEstado = (estado) =>
+      preguntar(geminiFalso([{ estado, cuerpo: { error: { message: "detalle de Google" } } }]).config, []).catch((e) => e)
+    const e401 = await conEstado(401)
+    const e429 = await conEstado(429)
+    const e404 = await conEstado(404)
+    const e500 = await conEstado(500)
+    comprobar("401: clave rechazada (502 al navegador)", e401.estado === 502 && e401.message.includes("GEMINI_API_KEY") && e401.detalle === "detalle de Google")
+    comprobar("429: cuota agotada", e429.estado === 429 && e429.message.includes("cuota"))
+    comprobar("404: modelo o dirección", e404.message.includes("modelo-x"))
+    comprobar("500: error de Gemini con su número", e500.estado === 502 && e500.message.includes("500"))
+    const sinRed = await preguntar(
+      {
+        clave: "k",
+        modelo: "m",
+        url: "u",
+        fetch: async () => {
+          throw new TypeError("fetch failed")
+        },
+      },
+      [],
+    ).catch((e) => e)
+    comprobar("sin conexión: 504", sinRed.estado === 504)
+    const fallida = await preguntar(geminiFalso([{ id: "f", status: "failed", error: { message: "safety" } }]).config, []).catch((e) => e)
+    comprobar("una interacción fallida se informa", fallida instanceof ErrorDeGemini && fallida.detalle === "safety")
+  }
+  // Las herramientas del asistente.
+  {
+    const acciones = []
+    const herramientas = herramientasDelAsistente({ acciones, leerTrace: async () => ({}) })
+    const nombres = herramientas.map((h) => h.name)
+    comprobar(
+      "nombres únicos y válidos para Gemini",
+      new Set(nombres).size === nombres.length && nombres.every((n) => /^[a-z_]{1,64}$/.test(n)),
+      nombres.join(", "),
+    )
+    comprobar("cada una con descripción y parámetros de objeto", herramientas.every((h) => h.description && h.parameters.type === "object"))
+    comprobar(
+      "las instrucciones nombran las herramientas del mapa",
+      ["mostrar_en_mapa", "seleccionar_en_mapa", "abrir_trace"].every((n) => INSTRUCCIONES.includes(n)),
+    )
+    const h = (n) => herramientas.find((x) => x.name === n)
+    await h("mostrar_en_mapa").ejecutar({ tipo: "cable", nombre: " 2103191 " })
+    await h("seleccionar_en_mapa").ejecutar({ tipo: "cubierta", nombres: ["CO12", "", "CO13"] })
+    await h("abrir_trace").ejecutar({ id_origen: "01a0e04f-0000-4000-8000-000000000000", direccion: "abajo" })
+    comprobar("mostrar: anota la acción para el navegador", acciones[0]?.tipo === "mostrar" && acciones[0].capa === "cable" && acciones[0].nombre === "2103191")
+    comprobar("seleccionar: sin nombres vacíos", acciones[1]?.tipo === "seleccionar" && acciones[1].nombres.join() === "CO12,CO13")
+    comprobar("abrir_trace: hacia abajo es DOWNSTREAM", acciones[2]?.tipo === "trace" && acciones[2].direccion === "DOWNSTREAM", JSON.stringify(acciones[2]))
+    const malo = await h("abrir_trace").ejecutar({ id_origen: "no-es-uuid", direccion: "arriba" })
+    comprobar("abrir_trace: un id que no es UUID no se anota", acciones.length === 3 && Boolean(malo?.error), JSON.stringify(malo))
+  }
+}
 
 console.log(`\n${pruebas - fallos}/${pruebas} pruebas bien.`)
 process.exit(fallos ? 1 : 0)

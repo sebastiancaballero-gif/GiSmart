@@ -29,7 +29,7 @@ export const PESTANA_AVANZADO: RibbonTab = {
   groups: [
     {
       label: "Inteligencia",
-      items: [{ icon: Bot, label: "Asistente IA", modulo: "asistente", tooltip: "Preguntarle a la IA sobre la red" }],
+      items: [{ icon: Bot, label: "Asistente IA", accion: "modulo", modulo: "asistente", tooltip: "Preguntarle a la IA sobre la red" }],
     },
     {
       label: "Consulta",

@@ -353,10 +353,12 @@ export default function DashboardPage() {
             />
           </div>
           {/* Una columna: el mapa ocupa lo que sobra y, si está abierta, la
-              tabla de atributos del módulo «Avanzado» va debajo y lo achica. */}
+              tabla de atributos del módulo «Avanzado» va debajo y lo achica.
+              El asistente de IA (un aside con data-acoplado) toma la franja
+              derecha a todo lo alto: el panel le deja ese espacio. */}
           <main
             id="map-panel"
-            className="gismart-fundido relative flex flex-1 flex-col overflow-hidden"
+            className="gismart-fundido relative flex flex-1 flex-col overflow-hidden md:has-[>aside[data-acoplado]]:pr-96"
             style={{ "--retraso": "100ms" } as React.CSSProperties}
           >
             <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -389,7 +391,15 @@ export default function DashboardPage() {
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
             <VentanasDePlanta ref={plantaRef} mapa={accesoAlMapa} />
             <RecorridoTraceDialog ref={traceRef} mapa={accesoAlMapa} />
-            <ModuloAvanzado ref={moduloRef} mapa={accesoAlMapa} lugar={location} onActivos={setActivosDelModulo} />
+            <ModuloAvanzado
+              ref={moduloRef}
+              mapa={accesoAlMapa}
+              lugar={location}
+              onActivos={setActivosDelModulo}
+              onRecorrerTrace={(id, direccion, etiqueta) =>
+                traceRef.current?.recorrer(id, direccion, etiqueta ? { etiqueta } : undefined)
+              }
+            />
           </main>
         </div>
       </div>
