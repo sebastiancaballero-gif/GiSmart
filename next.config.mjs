@@ -48,6 +48,8 @@ const nextConfig = {
   },
   // Sin «X-Powered-By: Next.js»: no hace falta anunciar con qué está hecha.
   poweredByHeader: false,
+  // El lint corre en `pnpm verificar`; que el build en el servidor no dependa de él.
+  eslint: { ignoreDuringBuilds: true },
   images: {
     unoptimized: true,
   },

@@ -11,8 +11,8 @@ conectividad interna de cada mufa.
 
 | Pieza | Tecnología |
 | --- | --- |
-| Framework | Next.js 16 (App Router) + React 19 + TypeScript |
-| Estilos | Tailwind CSS v4 + componentes shadcn sobre `@base-ui/react` |
+| Framework | Next.js 15.5 (App Router) + React 19 + TypeScript |
+| Estilos | Tailwind CSS 4.1 + componentes shadcn sobre `@base-ui/react` |
 | Mapa | OpenLayers 10 (`ol`) sobre teselas de OpenStreetMap (o el proveedor de `NEXT_PUBLIC_TESELAS_URL`) |
 | Esquemas de mufa | JointJS (`@joint/core`) |
 | Base de datos | Supabase (PostgreSQL + PostGIS) |
@@ -73,9 +73,15 @@ fotograma queda puesto para siempre, y un transform puesto encierra a los elemen
 
 ## Requisitos
 
-- Node.js 22 LTS o superior
-- pnpm 11 o superior
+- Node.js 18.18 o superior (el servidor de producción tiene un Node anterior al 20; con 22 LTS
+  también funciona)
+- pnpm 10 (`npm install -g pnpm@10`; pnpm 11 pide Node 22.13)
 - Acceso al proyecto de Supabase (URL + secret key)
+
+Por ese Node, estas versiones están fijas y no se suben sin revisar que acepten Node 18:
+Next 15.5.28 (Next 16 pide Node 20.9), `@supabase/supabase-js` 2.78.0 (desde la 2.79 pide
+Node 20), Tailwind 4.1.18 (desde la 4.2 su compilador pide Node 20) y pnpm 10. La prueba es
+instalar, compilar y arrancar con Node 18.18 (`pnpm install`, `pnpm run build`, `pnpm start`).
 
 ---
 
@@ -632,7 +638,7 @@ La única ruta de Pages que Cloudflare sigue documentando para Next.js es la **e
 estática**, y aquí no aplica: las rutas de `app/api/` verifican sesión y consultan
 Supabase, así que sin servidor no queda aplicación. La ruta dinámica era
 `@cloudflare/next-on-pages`, marcada como descontinuada en npm («use the OpenNext adapter
-instead») y con tope en Next 15.5.2, cuando el proyecto va por 16. Encima es
+instead») y con tope en Next 15.5.2, cuando el proyecto va por 15.5.28. Encima es
 exclusivamente runtime *edge*, que rechaza los módulos de Node: `exigirSesion` importa
 `node:crypto` y por ahí pasan todas las rutas, de modo que declarar
 `export const runtime = 'edge'` **las rompe todas**, no unas pocas.

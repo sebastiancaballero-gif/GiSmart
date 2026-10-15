@@ -21,6 +21,26 @@ import { exigirSesion } from "@/lib/auth-server"
 export const ESPERA_MAXIMA_MS = 15_000
 
 /**
+ * Una señal que se corta cuando se corta cualquiera de las dos. Es lo que hace
+ * `AbortSignal.any`, que solo existe desde Node 20.3: el servidor puede tener
+ * un Node anterior (el mínimo es 18.18, ver package.json).
+ */
+function cualquieraDe(a: AbortSignal, b: AbortSignal): AbortSignal {
+  const conAny = AbortSignal as typeof AbortSignal & { any?: (senales: AbortSignal[]) => AbortSignal }
+  if (typeof conAny.any === "function") return conAny.any([a, b])
+  const control = new AbortController()
+  const cortar = (s: AbortSignal) => control.abort(s.reason)
+  for (const s of [a, b]) {
+    if (s.aborted) {
+      cortar(s)
+      break
+    }
+    s.addEventListener("abort", () => cortar(s), { once: true })
+  }
+  return control.signal
+}
+
+/**
  * `fetch` con el tope de espera. Si lo que corta es el tope, el error sale como
  * `AbortError`: el cliente de Supabase reintenta tres veces los fallos de red
  * (con esperas de 1, 2 y 4 s) y el error propio del tope (`TimeoutError`) lo
@@ -30,7 +50,7 @@ export const ESPERA_MAXIMA_MS = 15_000
 async function fetchConTope(entrada: Parameters<typeof fetch>[0], opciones?: RequestInit): Promise<Response> {
   const tope = AbortSignal.timeout(ESPERA_MAXIMA_MS)
   try {
-    return await fetch(entrada, { ...opciones, signal: opciones?.signal ? AbortSignal.any([opciones.signal, tope]) : tope })
+    return await fetch(entrada, { ...opciones, signal: opciones?.signal ? cualquieraDe(opciones.signal, tope) : tope })
   } catch (error) {
     if (tope.aborted) throw new DOMException(`Supabase no respondió en ${ESPERA_MAXIMA_MS / 1000} s.`, "AbortError")
     throw error

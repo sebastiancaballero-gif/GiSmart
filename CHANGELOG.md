@@ -10,6 +10,26 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.11.1 — 15 de octubre de 2026
+
+Para que funcione en el servidor de producción, que tiene un Node anterior al 20. Ahora
+basta **Node 18.18 o más nuevo**. Probado instalando, compilando y arrancando con Node
+18.18.0: login, capas (185 cubiertas, 182 cables), conectividad, hilos, trace y el
+tablero completo.
+
+- **Next 15.5.28** en vez de 16.3.8 (Next 16 pide Node 20.9). Se eligió la 15.5 y no la
+  14.2: toda la línea 14 tiene una falla crítica de ejecución remota de código en
+  servidores Windows que ya no se va a corregir; la 15.5.28 no tiene fallas conocidas.
+  React sigue en la 19.
+- **Supabase 2.78.0** (desde la 2.79 pide Node 20 y desde la 2.110, Node 22).
+- **Tailwind 4.1.18** (desde la 4.2 su compilador pide Node 20). Se comparó el CSS clase por
+  clase con el de la 4.3.3: es el mismo.
+- **pnpm 10** en vez de 11, que pide Node 22.13: con un Node viejo, `pnpm install` ni
+  arrancaba.
+- La conexión a la base usaba `AbortSignal.any`, que no existe antes de Node 20.3; ahora,
+  si no está, combina las señales a mano.
+- El lint conserva las reglas estrictas de hooks que traía Next 16.
+
 ## 1.11.0 — 15 de octubre de 2026
 
 Quinta y última parte del módulo **Avanzado**.

@@ -1,5 +1,5 @@
 import {
-  User, LogOut, Settings, Magnet, Search, Eye, GitBranch,
+  User, LogOut, Magnet, Search, Eye, GitBranch,
   FolderPlus, FolderOpen, FolderX, Maximize, RefreshCw, ToggleRight,
   FileSpreadsheet, FileSearch, PenLine, Plus, Minus,
   Move, Save, PlusCircle, Trash2, Move3d, Plug, Unplug,

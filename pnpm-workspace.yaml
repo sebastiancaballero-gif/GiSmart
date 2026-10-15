@@ -1,4 +1,10 @@
-allowBuilds:
-  msw: false
-  sharp: false
-  unrs-resolver: true
+# pnpm 10 (corre desde Node 18): solo estos paquetes ejecutan su script de instalación.
+onlyBuiltDependencies:
+  - unrs-resolver
+ignoredBuiltDependencies:
+  - msw
+  - sharp
+# eslint-config-next 15 trae el plugin de hooks 5; el 7 (el de Next 16) tiene las
+# reglas más estrictas que el código ya cumple (ver eslint.config.mjs).
+overrides:
+  eslint-plugin-react-hooks: 7.1.1

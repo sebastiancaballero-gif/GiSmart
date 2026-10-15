@@ -131,7 +131,6 @@ async function servirDesdeTabla({
   schema,
   view,
   table,
-  entidad,
   avisar = true,
 }: {
   schema: string

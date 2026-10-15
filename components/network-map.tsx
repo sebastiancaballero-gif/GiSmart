@@ -46,7 +46,7 @@ import {
   type FeatureType,
 } from "@/lib/map/symbology"
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
-import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
+import { agrupar, categoriaVisible, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada, type VistaGuardada } from "@/lib/map/vista-guardada"
 import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, DESTELLO_RESALTE, destellar, type ColorRGB } from "@/lib/map/destello"
 import { espacioLibre, margenParaZona, type Recuadro } from "@/lib/map/espacio-libre"

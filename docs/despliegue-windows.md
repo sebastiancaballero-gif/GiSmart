@@ -17,8 +17,9 @@ Internet → IIS (443, dominio + certificado) → localhost:3000 (Node/Next.js, 
 
 Instalar en el servidor:
 
-- **Node.js 22 LTS** (instalador MSI de nodejs.org). Verificar con `node -v`.
-- **pnpm**: `npm install -g pnpm`
+- **Node.js 18.18 o más nuevo** (instalador MSI de nodejs.org; lo ideal es 22 LTS). Verificar
+  con `node -v`.
+- **pnpm 10**: `npm install -g pnpm@10` (pnpm 11 pide Node 22.13)
 - **Git** (opcional, para actualizar con `git pull` en vez de copiar archivos).
 - **NSSM** (https://nssm.cc) — descomprimir en, por ejemplo, `C:\tools\nssm`.
 
