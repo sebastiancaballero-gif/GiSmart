@@ -20,7 +20,7 @@ import type Snap from "ol/interaction/Snap"
 import DoubleClickZoom from "ol/interaction/DoubleClickZoom"
 import { defaults as defaultControls } from "ol/control"
 import ScaleLine from "ol/control/ScaleLine"
-import type { Geometry } from "ol/geom"
+import type { Geometry, LineString, MultiLineString } from "ol/geom"
 import { createEmpty, extend, getCenter, getHeight, getWidth, isEmpty } from "ol/extent"
 import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
@@ -69,6 +69,7 @@ import {
   type SelectedFeature,
 } from "@/components/mapa/herramientas"
 import { PanelSeleccion } from "@/components/mapa/panel-seleccion"
+import type { VariosEnElPunto } from "@/modulos/avanzado/ficha/paginador"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import { InfoTableDialog } from "@/components/info-table-dialog"
@@ -185,6 +186,42 @@ export type MapaApi = {
   irAVista: (vista: VistaGuardada) => void
   /** Abre la ventana de atajos de teclado (la misma que la tecla «?»). */
   abrirAtajos: () => void
+  /**
+   * Los elementos de la red cargados en el mapa, para el módulo «Avanzado»
+   * (resumen, tabla, consultas). Con `soloEnVista`, los que tocan lo que se
+   * está viendo; `extension` es eso mismo, en Web Mercator.
+   */
+  elementosDelMapa: (opciones?: { soloEnVista?: boolean; conPropiedades?: boolean }) => {
+    extension: number[]
+    elementos: ElementoDelMapa[]
+  }
+  /**
+   * Avisa cada vez que cambia lo que se ve: se mueve el mapa, se enciende o
+   * apaga una capa, se filtra o se recargan los datos. Devuelve cómo dejar de avisar.
+   */
+  alCambiarLaVista: (aviso: () => void) => () => void
+}
+
+/** Un elemento de la red tal como lo ve el módulo «Avanzado», sin OpenLayers de por medio. */
+export type ElementoDelMapa = {
+  /** La del índice del buscador: sirve para `enfocarElemento`. */
+  clave: string
+  tipo: FeatureType
+  nombre: string
+  /** Nivel de la cubierta o capacidad del cable, como en el panel de capas. */
+  categoria: string
+  color: string
+  /** Su capa está encendida y el filtro de categorías lo deja pintado. */
+  visible: boolean
+  hilos: number | null
+  /** Cables: el largo medido si la base lo tiene; si no, el de su línea. */
+  largoM: number | null
+  /** Cables: sus líneas en Web Mercator, para medir lo que cae en pantalla. */
+  lineas: number[][][] | null
+  /** Cubiertas y cabeceras: longitud y latitud. */
+  punto: [number, number] | null
+  /** Con `conPropiedades`: sus atributos tal como vienen de la base. */
+  propiedades?: Record<string, unknown>
 }
 
 /**
@@ -358,6 +395,9 @@ function MapaDeRed({
   const [internalTool, setInternalTool] = useState<MapTool>("pan")
   const tool = externalTool ?? internalTool
   const [selected, setSelected] = useState<SelectedFeature | null>(null)
+  // Todo lo que había bajo el click que abrió la ficha (módulo «Avanzado»):
+  // la ficha deja pasar de uno a otro.
+  const [candidatos, setCandidatos] = useState<Feature<Geometry>[]>([])
   const [nameDraft, setNameDraft] = useState("")
   const [schemaOpen, setSchemaOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -775,6 +815,7 @@ function MapaDeRed({
         }
         editSelectRef.current?.getFeatures().clear()
         setSelected({ feature, type: tipo })
+        setCandidatos([])
         setNameDraft((feature.get(NOMBRE_VISIBLE) as string) ?? "")
         return true
       }
@@ -1044,6 +1085,78 @@ function MapaDeRed({
 
   const abrirAtajos = useCallback(() => setAyudaAbierta(true), [])
 
+  // Para el módulo «Avanzado»: los elementos de la red, en datos simples.
+  const elementosDelMapa = useCallback(
+    (opciones: { soloEnVista?: boolean; conPropiedades?: boolean } = {}) => {
+      const mapa = mapRef.current
+      const extension = mapa ? mapa.getView().calculateExtent(mapa.getSize()) : [0, 0, 0, 0]
+      const capas: [FeatureType, VectorSource, VectorLayer<VectorSource> | null][] = [
+        ["cabecera", cabeceraSource, cabeceraLayer.current],
+        ["node", nodeSource, nodeLayer.current],
+        ["fiber", fiberSource, fiberLayer.current],
+        ["zone", zoneSource, zoneLayer.current],
+      ]
+      const elementos: ElementoDelMapa[] = []
+      for (const [tipo, fuente, capa] of capas) {
+        const capaVisible = capa?.getVisible() ?? false
+        const filtro = tipo === "node" ? filtersRef.current?.nodes : tipo === "fiber" ? filtersRef.current?.fibers : undefined
+        for (const f of fuente.getFeatures()) {
+          const geometria = f.getGeometry()
+          if (!geometria) continue
+          if (opciones.soloEnVista && !geometria.intersectsExtent(extension)) continue
+          const categoria =
+            tipo === "node" ? categoriaDeMufa(f) : tipo === "fiber" ? categoriaDeCable(f) : TYPE_LABELS[tipo]
+          const hilos = f.get("cant_hilo")
+          const forma = geometria.getType()
+          const lineas =
+            forma === "LineString"
+              ? [(geometria as LineString).getCoordinates()]
+              : forma === "MultiLineString"
+                ? (geometria as MultiLineString).getCoordinates()
+                : null
+          let propiedades: Record<string, unknown> | undefined
+          if (opciones.conPropiedades) {
+            propiedades = { ...f.getProperties() }
+            delete propiedades[f.getGeometryName()]
+          }
+          elementos.push({
+            clave: getUid(f),
+            tipo,
+            nombre: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? "").trim() || TYPE_LABELS[tipo],
+            categoria,
+            color: tipo === "node" ? colorForFuncionCub(f.get("funcion_cub") as string) : LAYER_COLORS[tipo],
+            visible: capaVisible && categoriaVisible(filtro, categoria),
+            hilos: typeof hilos === "number" && hilos > 0 ? hilos : null,
+            largoM: tipo === "fiber" ? largoDeCableM(f) : null,
+            lineas: tipo === "fiber" ? lineas : null,
+            punto: geometria instanceof Point ? (toLonLat(geometria.getCoordinates()) as [number, number]) : null,
+            ...(propiedades ? { propiedades } : {}),
+          })
+        }
+      }
+      return { extension, elementos }
+    },
+    [cabeceraSource, nodeSource, fiberSource, zoneSource],
+  )
+
+  const alCambiarLaVista = useCallback(
+    (aviso: () => void) => {
+      const mapa = mapRef.current
+      if (!mapa) return () => {}
+      const capas = [nodeLayer.current, fiberLayer.current, cabeceraLayer.current, zoneLayer.current].filter(
+        (c): c is VectorLayer<VectorSource> => c !== null,
+      )
+      const claves = [
+        mapa.on("moveend", aviso),
+        ...capas.map((c) => c.on("change", aviso)),
+        ...capas.map((c) => c.on("change:visible", aviso)),
+        ...[nodeSource, fiberSource, cabeceraSource, zoneSource].map((s) => s.on("change", aviso)),
+      ]
+      return () => unByKey(claves)
+    },
+    [nodeSource, fiberSource, cabeceraSource, zoneSource],
+  )
+
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
@@ -1061,6 +1174,8 @@ function MapaDeRed({
       vistaActual,
       irAVista,
       abrirAtajos,
+      elementosDelMapa,
+      alCambiarLaVista,
     }
     return () => {
       apiRef.current = null
@@ -1081,6 +1196,8 @@ function MapaDeRed({
     vistaActual,
     irAVista,
     abrirAtajos,
+    elementosDelMapa,
+    alCambiarLaVista,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
@@ -1478,6 +1595,7 @@ function MapaDeRed({
       setAvisoConsulta,
       setConsultada,
       setSelected,
+      setCandidatos,
       setNameDraft,
       setFiberNotice,
       setNombreEnPregunta,
@@ -1710,9 +1828,34 @@ function MapaDeRed({
   function closeSelection() {
     editSelectRef.current?.getFeatures().clear()
     setSelected(null)
+    setCandidatos([])
     setSchemaOpen(false)
     setInfoOpen(false)
   }
+
+  // Varios elementos bajo el click (módulo «Avanzado»): la ficha pasa de uno a otro.
+  const indiceCandidato = selected ? candidatos.indexOf(selected.feature) : -1
+  function mostrarCandidato(indice: number) {
+    const feature = candidatos[(indice + candidatos.length) % candidatos.length]
+    const tipo = feature ? tipoDeFeature(feature) : null
+    if (!feature || !tipo) return
+    const seleccion = editSelectRef.current?.getFeatures()
+    seleccion?.clear()
+    seleccion?.push(feature)
+    setSelected({ feature, type: tipo })
+    setNameDraft((feature.get(NOMBRE_VISIBLE) as string) ?? "")
+    setSchemaOpen(false)
+    setInfoOpen(false)
+  }
+  const variosEnElPunto: VariosEnElPunto | undefined =
+    indiceCandidato >= 0 && candidatos.length > 1
+      ? {
+          actual: indiceCandidato,
+          total: candidatos.length,
+          onAnterior: () => mostrarCandidato(indiceCandidato - 1),
+          onSiguiente: () => mostrarCandidato(indiceCandidato + 1),
+        }
+      : undefined
 
   function handleDeleteSelected() {
     if (!selected || !seleccionEditable) return
@@ -1972,6 +2115,7 @@ function MapaDeRed({
       {selected && (
         <PanelSeleccion
           seleccionado={selected}
+          varios={variosEnElPunto}
           nombre={nameDraft}
           onCambiarNombre={handleNameChange}
           onTerminarNombre={terminarNombre}

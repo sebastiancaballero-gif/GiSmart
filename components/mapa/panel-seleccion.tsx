@@ -30,6 +30,7 @@ import { TYPE_LABELS, colorForFuncionCub, type FeatureType } from "@/lib/map/sym
 import { CAPA_DE_TIPO, NOMBRE_DE_CAPA } from "@/lib/map/capa-activa"
 import type { EstadoConectividad } from "@/lib/map/conectividad"
 import type { SelectedFeature } from "@/components/mapa/herramientas"
+import { PaginadorDeFicha, type VariosEnElPunto } from "@/modulos/avanzado/ficha/paginador"
 
 const TYPE_ICONS: Record<FeatureType, typeof Box> = {
   node: Box,
@@ -57,6 +58,8 @@ type PanelSeleccionProps = {
   onCentrar: () => void
   onInformacion: () => void
   onQuitar: () => void
+  /** Si había varios elementos bajo el click: «‹ 1 de 3 ›» para pasar de uno a otro. */
+  varios?: VariosEnElPunto
 }
 
 /**
@@ -79,6 +82,7 @@ export function PanelSeleccion({
   onCentrar,
   onInformacion,
   onQuitar,
+  varios,
 }: PanelSeleccionProps) {
   const { feature, type } = seleccionado
 
@@ -165,6 +169,7 @@ export function PanelSeleccion({
             <Icon className="size-3" aria-hidden="true" />
             {TYPE_LABELS[type]}
           </span>
+          {varios && <PaginadorDeFicha varios={varios} />}
           <button
             type="button"
             onClick={onCerrar}

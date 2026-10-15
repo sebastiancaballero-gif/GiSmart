@@ -85,6 +85,8 @@ export type ContextoHerramienta = {
   setAvisoConsulta: (aviso: AvisoDeConsulta | null) => void
   setConsultada: (feature: Feature<Geometry> | null) => void
   setSelected: (seleccion: SelectedFeature | null) => void
+  /** Todo lo que había bajo el click, para pasar de uno a otro en la ficha (módulo «Avanzado»). */
+  setCandidatos: (elementos: Feature<Geometry>[]) => void
   setNameDraft: (nombre: string) => void
   setFiberNotice: (texto: string | null) => void
   setNombreEnPregunta: (nombre: string) => void

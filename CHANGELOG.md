@@ -10,6 +10,20 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.8.0 — 15 de octubre de 2026
+
+Segunda parte del módulo **Avanzado**.
+
+- **Resumen de lo que se ve** (Avanzado › Resumen): un panel con lo que hay en pantalla,
+  en cifras y con barras: cubiertas por nivel, kilómetros de fibra por capacidad de cable
+  (solo lo que cae dentro de la pantalla, no el largo entero de cada cable que asoma) y
+  cabeceras. Se rehace solo al mover el mapa, filtrar o encender una capa, y dice cuántos
+  elementos no cuenta porque su capa está apagada o el filtro los oculta. Con toda la red a
+  la vista coincide con el panel de capas (185 cubiertas, 18,73 km).
+- **Ficha «1 de N»**: al identificar un punto donde hay varios elementos (una cubierta y
+  los cables que llegan a ella), la ficha dice cuántos hay y deja pasar de uno a otro con
+  las flechas. Antes solo se veía el de encima.
+
 ## 1.7.0 — 15 de octubre de 2026
 
 Primera parte del módulo **Avanzado**: lo nuevo que se suma al SIG, en su propia pestaña de

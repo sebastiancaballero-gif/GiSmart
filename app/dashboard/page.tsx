@@ -94,6 +94,8 @@ export default function DashboardPage() {
   // Ctrl+K también encuentra las funciones de la cinta y las ejecuta como su botón.
   const cintaRef = useRef<ManejadorDeLaCinta>(null)
   const comandos = useMemo(() => comandosDeLaCinta(), [])
+  // Botones del módulo con su panel abierto: se ven encendidos en la cinta.
+  const [activosDelModulo, setActivosDelModulo] = useState<string[]>([])
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
   // estaba oculta se muestra: si no, se enfocaría algo que no se ve. Lo mismo
@@ -239,9 +241,9 @@ export default function DashboardPage() {
       "measure-length": ["Mediciones"],
       "measure-area": ["Mediciones"],
     }
-    const botones = porHerramienta[tool] ?? []
+    const botones = [...(porHerramienta[tool] ?? []), ...activosDelModulo]
     return capaActiva ? [...botones, "Activar capa"] : botones
-  }, [tool, capaActiva])
+  }, [tool, capaActiva, activosDelModulo])
 
   const handleCenterChange = useCallback((next: { lon: number; lat: number }) => {
     // Se redondea a ~100 m: evita relanzar la consulta por microdesplazamientos
@@ -383,7 +385,7 @@ export default function DashboardPage() {
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
             <VentanasDePlanta ref={plantaRef} mapa={accesoAlMapa} />
             <RecorridoTraceDialog ref={traceRef} mapa={accesoAlMapa} />
-            <ModuloAvanzado ref={moduloRef} mapa={accesoAlMapa} lugar={location} />
+            <ModuloAvanzado ref={moduloRef} mapa={accesoAlMapa} lugar={location} onActivos={setActivosDelModulo} />
           </main>
         </div>
       </div>

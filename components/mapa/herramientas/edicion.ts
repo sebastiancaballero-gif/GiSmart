@@ -5,6 +5,7 @@ import Select from "ol/interaction/Select"
 import { click } from "ol/events/condition"
 import { NOMBRE_VISIBLE, seleccionStyle } from "@/lib/map/symbology"
 import { capasDeDatos, type ContextoHerramienta } from "@/components/mapa/herramientas/contexto"
+import { elementosEnElPunto } from "@/modulos/avanzado/ficha/en-el-punto"
 
 /**
  * «Editar elementos»: click para seleccionar un elemento (abre el panel de
@@ -14,7 +15,7 @@ import { capasDeDatos, type ContextoHerramienta } from "@/components/mapa/herram
  * capa activa (`modificables`).
  */
 export function herramientaEdicion(ctx: ContextoHerramienta) {
-  const { map, tipoDeFeature, modificables, setSelected, setNameDraft, editSelectRef, editModifyRef } = ctx
+  const { map, tipoDeFeature, modificables, setSelected, setCandidatos, setNameDraft, editSelectRef, editModifyRef } = ctx
 
   const editSelect = new Select({
     condition: click,
@@ -29,6 +30,7 @@ export function herramientaEdicion(ctx: ContextoHerramienta) {
     const feature = e.selected[0]
     if (!feature) {
       setSelected(null)
+      setCandidatos([])
       return
     }
     const type = tipoDeFeature(feature)
@@ -39,6 +41,10 @@ export function herramientaEdicion(ctx: ContextoHerramienta) {
     if (!type) return
     setSelected({ feature, type })
     setNameDraft((feature.get(NOMBRE_VISIBLE) as string) ?? "")
+    // Lo demás que había en ese punto, para pasar de uno a otro en la ficha.
+    setCandidatos(
+      elementosEnElPunto(map, e.mapBrowserEvent.pixel, capasDeDatos(ctx), feature).filter((f) => tipoDeFeature(f) !== null),
+    )
   })
   map.addInteraction(editSelect)
   editSelectRef.current = editSelect
