@@ -10,6 +10,8 @@ import { ALTO_TABLA, TablaAtributos } from "./tabla/tabla-atributos"
 import type { CapaDeTabla } from "./tabla/columnas"
 import { VentanaConsulta, type ResultadoDeConsulta } from "./consulta/ventana-consulta"
 import { combinarSeleccion } from "./consulta/consulta"
+import { PanelCercania } from "./cercania/panel-cercania"
+import { VentanaImprimir } from "./imprimir/ventana-imprimir"
 
 /** Lo que el tablero le pide al módulo: abrir una de sus herramientas. */
 export type ManejadorDelModulo = {
@@ -54,6 +56,9 @@ export function ModuloAvanzado({
   const [seleccion, setSeleccion] = useState<Set<string>>(() => new Set())
   const [consulta, setConsulta] = useState<string | null>(null)
   const [ventanaConsulta, setVentanaConsulta] = useState(false)
+  // Resumen y Cercanía usan el mismo lugar junto a las herramientas: uno a la vez.
+  const [cercania, setCercania] = useState(false)
+  const [imprimir, setImprimir] = useState(false)
 
   useImperativeHandle(ref, () => ({
     abrir(herramienta) {
@@ -68,6 +73,14 @@ export function ModuloAvanzado({
         // Los paneles que acompañan al mapa se abren y se cierran con su botón.
         case "resumen":
           setResumen((abierto) => !abierto)
+          setCercania(false)
+          return
+        case "cercania":
+          setCercania((abierto) => !abierto)
+          setResumen(false)
+          return
+        case "imprimir":
+          setImprimir(true)
           return
         case "tabla":
           // Alto inicial según la pantalla: en una de 657 px la tabla de 260
@@ -85,8 +98,8 @@ export function ModuloAvanzado({
   }))
 
   useEffect(() => {
-    onActivos?.([...(resumen ? ["Resumen"] : []), ...(tabla ? ["Tabla"] : [])])
-  }, [resumen, tabla, onActivos])
+    onActivos?.([...(resumen ? ["Resumen"] : []), ...(tabla ? ["Tabla"] : []), ...(cercania ? ["Cercanía"] : [])])
+  }, [resumen, tabla, cercania, onActivos])
 
   // Lo seleccionado se ve en el mapa, en ámbar. Cerrar la tabla lo suelta.
   useEffect(() => {
@@ -121,7 +134,21 @@ export function ModuloAvanzado({
         haySeleccion={seleccion.size > 0}
         onAplicar={aplicarConsulta}
       />
+      <VentanaImprimir open={imprimir} onOpenChange={setImprimir} mapa={mapa.api} lugar={lugar} />
       {resumen && <PanelResumen mapa={mapa.api} onCerrar={() => setResumen(false)} espacioAbajo={tabla ? altoTabla : 0} />}
+      {cercania && (
+        <PanelCercania
+          mapa={mapa.api}
+          onCerrar={() => setCercania(false)}
+          espacioAbajo={tabla ? altoTabla : 0}
+          onSeleccionarEnTabla={(capa, claves, descripcion) => {
+            setCapaTabla(capa)
+            setSeleccion(new Set(claves))
+            setConsulta(descripcion)
+            setTabla(true)
+          }}
+        />
+      )}
       {tabla && (
         <TablaAtributos
           mapa={mapa.api}

@@ -47,7 +47,9 @@ export const PESTANA_AVANZADO: RibbonTab = {
     },
     {
       label: "Análisis",
-      items: [{ icon: Radius, label: "Cercanía", modulo: "cercania", tooltip: "Lo que hay a cierta distancia de un punto" }],
+      items: [
+        { icon: Radius, label: "Cercanía", accion: "modulo", modulo: "cercania", tooltip: "Lo que hay a cierta distancia de un punto" },
+      ],
     },
     {
       label: "Vista",
@@ -59,7 +61,7 @@ export const PESTANA_AVANZADO: RibbonTab = {
           modulo: "marcadores",
           tooltip: "Guardar vistas del mapa y volver a ellas",
         },
-        { icon: Printer, label: "Imprimir", modulo: "imprimir", tooltip: "Exportar el mapa a imagen o PDF" },
+        { icon: Printer, label: "Imprimir", accion: "modulo", modulo: "imprimir", tooltip: "Exportar el mapa a imagen o PDF" },
       ],
     },
     {

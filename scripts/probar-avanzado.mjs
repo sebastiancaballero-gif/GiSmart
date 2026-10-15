@@ -12,6 +12,8 @@ const { resumirEnPantalla } = await import("../modulos/avanzado/resumen/resumen.
 const { columnasDe, nombresPorId, valorDeCelda, compararCeldas, filaCoincide } = await import("../modulos/avanzado/tabla/columnas.ts")
 const { evaluarConsulta, combinarSeleccion, describirConsulta, leerNumero } = await import("../modulos/avanzado/consulta/consulta.ts")
 const { hojaDeLaTabla } = await import("../modulos/avanzado/tabla/excel-tabla.ts")
+const { aMercator, distanciaAlElementoM, cercanos, textoDeDistancia } = await import("../modulos/avanzado/cercania/cercania.ts")
+const { largoRedondoM } = await import("../modulos/avanzado/imprimir/componer.ts")
 
 let fallos = 0
 let pruebas = 0
@@ -28,7 +30,7 @@ console.log("\n1) LA PESTAÑA «AVANZADO»\n")
   comprobar("está en la cinta, al final", avanzado && RIBBON_TABS.at(-1) === avanzado)
   const items = avanzado?.groups.flatMap((g) => g.items) ?? []
   comprobar("cada botón dice qué herramienta abre", items.every((i) => i.modulo), items.map((i) => i.label).join(", "))
-  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "resumen,tabla,consulta,marcadores,atajos")
+  comprobar("los que ya funcionan tienen su acción", items.filter((i) => i.accion === "modulo").map((i) => i.modulo).join(",") === "resumen,tabla,consulta,cercania,marcadores,imprimir,atajos")
 }
 
 console.log("\n2) FUNCIONES EN CTRL+K\n")
@@ -216,6 +218,33 @@ console.log("\n7) SELECCIONAR POR ATRIBUTOS\n")
       "Cantidad de hilos es igual a 144 y Estado de construcción está vacío",
   )
 }
+
+console.log("\n8) CERCANÍA\n")
+{
+  const centro = [-76.1, 4.53]
+  const [x, y] = aMercator(centro)
+  const vuelta = aLonLat([x, y])
+  comprobar("Web Mercator ida y vuelta", Math.abs(vuelta[0] - centro[0]) < 1e-9 && Math.abs(vuelta[1] - centro[1]) < 1e-9)
+  // Una cubierta 0,001° al norte: unos 111 m.
+  const cub = elemento("c1", "node", "Cerca", {}, { punto: [-76.1, 4.531] })
+  comprobar("a una cubierta: ≈111 m", Math.abs(distanciaAlElementoM(centro, cub) - 111.2) < 1, distanciaAlElementoM(centro, cub).toFixed(1))
+  // Un cable que pasa 0,001° al este, de sur a norte: la distancia es a su punto más cercano.
+  const m = (lon, lat) => aMercator([lon, lat])
+  const cable = elemento("k1", "fiber", "Cable", {}, { lineas: [[m(-76.099, 4.52), m(-76.099, 4.54)]] })
+  const d = distanciaAlElementoM(centro, cable)
+  comprobar("a un cable: al punto más cercano de la línea (≈111 m)", Math.abs(d - 110.9) < 1.5, d.toFixed(1))
+  const lejos = elemento("c2", "node", "Lejos", {}, { punto: [-76.11, 4.53] })
+  const oculto = elemento("c3", "node", "Oculto", {}, { punto: [-76.1, 4.5301], visible: false })
+  const r = cercanos([lejos, cub, cable, oculto], centro, 300)
+  comprobar("dentro del radio, de lo más cerca a lo más lejos", r.cubiertas.map((c) => c.elemento.nombre).join() === "Cerca" && r.cables.length === 1)
+  comprobar("lo oculto por el filtro no cuenta", !r.cubiertas.some((c) => c.elemento.nombre === "Oculto"))
+  comprobar("a 1,2 km lo de más lejos también", cercanos([lejos], centro, 1200).cubiertas.length === 1)
+  comprobar("textos: «35 m», «1,2 km»", textoDeDistancia(35.4) === "35 m" && textoDeDistancia(1200) === "1,2 km")
+}
+
+console.log("\n9) IMPRIMIR\n")
+comprobar("escala: 137 m → 100 m; 4 300 m → 2 km; 60 m → 50 m", largoRedondoM(137) === 100 && largoRedondoM(4300) === 2000 && largoRedondoM(60) === 50)
+comprobar("escala: sin medida no hay barra", largoRedondoM(0) === 0 && largoRedondoM(Number.NaN) === 0)
 
 console.log(`\n${pruebas - fallos}/${pruebas} pruebas bien.`)
 process.exit(fallos ? 1 : 0)

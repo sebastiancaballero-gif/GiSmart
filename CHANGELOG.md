@@ -10,6 +10,21 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.10.0 — 15 de octubre de 2026
+
+Cuarta parte del módulo **Avanzado**.
+
+- **Cercanía** (Avanzado › Cercanía): lo que hay a cierta distancia (100 m, 300 m, 500 m,
+  1 km o la que se escriba) de un punto que se elige con un click o de la cubierta que
+  está en la ficha. Dibuja el círculo en el mapa y lista las cubiertas, los cables y las
+  cabeceras de lo más cerca a lo más lejos, con su distancia (en un cable, al punto más
+  cercano de su línea). Cada resultado lleva el mapa a ese elemento, y cada grupo se puede
+  pasar a la tabla de atributos ya seleccionado. Sirve, por ejemplo, para ver qué
+  cubiertas quedan cerca de un cliente nuevo.
+- **Imprimir** (Avanzado › Imprimir): el mapa tal como se ve (con el trace, la selección o
+  el círculo, si están) en una lámina con título, lugar, leyenda, escala, norte y fecha.
+  Se descarga como imagen o se manda a la impresora, donde también se guarda como PDF.
+
 ## 1.9.0 — 15 de octubre de 2026
 
 Tercera parte del módulo **Avanzado**.

@@ -70,6 +70,8 @@ import {
 } from "@/components/mapa/herramientas"
 import { PanelSeleccion } from "@/components/mapa/panel-seleccion"
 import type { VariosEnElPunto } from "@/modulos/avanzado/ficha/paginador"
+import { estiloCercania } from "@/modulos/avanzado/cercania/estilo"
+import { circular } from "ol/geom/Polygon"
 import { MufaSchemaDialog } from "@/components/mufa-schema-dialog"
 import { MufaConnectivityModal } from "@/components/mufa-connectivity-modal"
 import { InfoTableDialog } from "@/components/info-table-dialog"
@@ -206,6 +208,20 @@ export type MapaApi = {
    * lleva el mapa a ellos. Devuelve cuántos encontró.
    */
   resaltarElementos: (claves: string[], opciones?: { encuadrar?: boolean }) => number
+  /** Espera un click en cualquier lugar del mapa y devuelve ese punto (longitud, latitud). */
+  elegirPunto: (aviso: string) => Promise<Eleccion<[number, number]>>
+  /**
+   * Dibuja el círculo de «Cercanía» (centro en longitud, latitud y radio en
+   * metros); `null` lo quita. Con `encuadrar`, el mapa lo muestra entero.
+   */
+  pintarCercania: (area: { centro: [number, number]; radioM: number } | null, opciones?: { encuadrar?: boolean }) => void
+  /** La cubierta o cabecera que muestra la ficha, si es un punto: su nombre y dónde está. */
+  puntoDeLaFicha: () => { nombre: string; punto: [number, number] } | null
+  /**
+   * El mapa tal como se ve, en un lienzo (todas sus capas, sin los controles),
+   * y cuántos metros del terreno mide un píxel en el centro, para la escala.
+   */
+  capturarMapa: () => Promise<{ lienzo: HTMLCanvasElement; metrosPorPixel: number } | null>
 }
 
 /** Un elemento de la red tal como lo ve el módulo «Avanzado», sin OpenLayers de por medio. */
@@ -364,6 +380,8 @@ function MapaDeRed({
   // Lo seleccionado en la tabla o con una consulta del módulo «Avanzado», en
   // el mismo ámbar pero en su propia capa: no se mezcla con lo del trace.
   const [seleccionAvanzadaSource] = useState(() => new VectorSource())
+  // El círculo de «Cercanía» del mismo módulo.
+  const [cercaniaSource] = useState(() => new VectorSource())
   // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
   const [hayRecorrido, setHayRecorrido] = useState(false)
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
@@ -381,6 +399,7 @@ function MapaDeRed({
   const traceLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const resalteLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const seleccionAvanzadaLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const cercaniaLayer = useRef<VectorLayer<VectorSource> | null>(null)
   /** Corta el destello en curso si se pide otro antes de que termine. */
   const detenerDestelloRef = useRef<(() => void) | null>(null)
   const drawRef = useRef<Draw | null>(null)
@@ -1194,6 +1213,114 @@ function MapaDeRed({
     [seleccionAvanzadaSource, nodeSource, fiberSource, cabeceraSource, zoneSource, encuadrarEn],
   )
 
+  // «Cercanía»: un click en cualquier lugar del mapa da el centro.
+  const elegirPunto = useCallback(
+    (aviso: string) =>
+      new Promise<Eleccion<[number, number]>>((resolve) => {
+        const map = mapRef.current
+        if (!map) {
+          resolve({ estado: "cancelada" })
+          return
+        }
+        cancelarEleccionRef.current?.("abandonada")
+        setTool("pan")
+        const cursorAnterior = containerRef.current?.style.cursor ?? ""
+        if (containerRef.current) containerRef.current.style.cursor = "crosshair"
+        setAvisoEleccion(`${aviso} Esc cancela.`)
+        const claveClick = map.on("singleclick", (evt) => {
+          terminar({ estado: "elegido", valor: toLonLat(evt.coordinate) as [number, number] })
+        })
+        const alTeclear = (e: KeyboardEvent) => {
+          if (e.key === "Escape") terminar({ estado: "cancelada" })
+        }
+        window.addEventListener("keydown", alTeclear)
+        function terminar(resultado: Eleccion<[number, number]>) {
+          unByKey(claveClick)
+          window.removeEventListener("keydown", alTeclear)
+          if (containerRef.current) containerRef.current.style.cursor = cursorAnterior
+          cancelarEleccionRef.current = null
+          setAvisoEleccion(null)
+          resolve(resultado)
+        }
+        cancelarEleccionRef.current = (estado) => terminar({ estado })
+      }),
+    [setTool],
+  )
+
+  const pintarCercania = useCallback(
+    (area: { centro: [number, number]; radioM: number } | null, opciones: { encuadrar?: boolean } = {}) => {
+      cercaniaSource.clear()
+      if (!area) return
+      // Un círculo de verdad sobre la Tierra (64 lados), no uno en Web Mercator.
+      const circulo = circular(area.centro, area.radioM, 64).transform("EPSG:4326", "EPSG:3857")
+      cercaniaSource.addFeatures([
+        new Feature({ geometry: circulo }),
+        new Feature({ geometry: new Point(fromLonLat(area.centro)) }),
+      ])
+      if (opciones.encuadrar) encuadrarEn(circulo.getExtent(), 19)
+    },
+    [cercaniaSource, encuadrarEn],
+  )
+
+  const puntoDeLaFicha = useCallback(() => {
+    const geometria = selected?.feature.getGeometry()
+    if (!selected || !(geometria instanceof Point)) return null
+    const nombre = ((selected.feature.get(NOMBRE_VISIBLE) as string | undefined) ?? "").trim() || TYPE_LABELS[selected.type]
+    return { nombre, punto: toLonLat(geometria.getCoordinates()) as [number, number] }
+  }, [selected])
+
+  // Imprimir: el mapa como imagen, juntando el lienzo de cada capa como en el
+  // ejemplo de exportación de OpenLayers (los controles son HTML y no salen).
+  const capturarMapa = useCallback(
+    () =>
+      new Promise<{ lienzo: HTMLCanvasElement; metrosPorPixel: number } | null>((resolve) => {
+        const map = mapRef.current
+        const tamano = map?.getSize()
+        if (!map || !tamano) {
+          resolve(null)
+          return
+        }
+        map.once("rendercomplete", () => {
+          const escala = window.devicePixelRatio || 1
+          const lienzo = document.createElement("canvas")
+          lienzo.width = Math.round(tamano[0] * escala)
+          lienzo.height = Math.round(tamano[1] * escala)
+          const ctx = lienzo.getContext("2d")
+          if (!ctx) {
+            resolve(null)
+            return
+          }
+          for (const capa of map.getViewport().querySelectorAll<HTMLCanvasElement>(".ol-layer canvas, canvas.ol-layer")) {
+            if (capa.width === 0) continue
+            const padre = capa.parentElement
+            const opacidad = padre?.style.opacity || capa.style.opacity
+            ctx.globalAlpha = opacidad === "" ? 1 : Number(opacidad)
+            const transformacion = capa.style.transform.match(/^matrix\(([^(]*)\)$/)
+            const m = transformacion
+              ? transformacion[1].split(",").map(Number)
+              : [parseFloat(capa.style.width) / capa.width, 0, 0, parseFloat(capa.style.height) / capa.height, 0, 0]
+            ctx.setTransform(m[0] * escala, m[1] * escala, m[2] * escala, m[3] * escala, m[4] * escala, m[5] * escala)
+            const fondo = padre?.style.backgroundColor
+            if (fondo) {
+              ctx.fillStyle = fondo
+              ctx.fillRect(0, 0, capa.width, capa.height)
+            }
+            ctx.drawImage(capa, 0, 0)
+          }
+          ctx.globalAlpha = 1
+          ctx.setTransform(1, 0, 0, 1, 0, 0)
+          const view = map.getView()
+          const centro = view.getCenter()
+          const lat = centro ? toLonLat(centro)[1] : 0
+          // En Web Mercator un metro del mapa mide 1/cos(latitud) metros del terreno.
+          const metrosPorPixel = (view.getResolution() ?? 1) * Math.cos((lat * Math.PI) / 180)
+          resolve({ lienzo, metrosPorPixel })
+        })
+        map.renderSync()
+      }),
+    [],
+  )
+
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
@@ -1214,6 +1341,10 @@ function MapaDeRed({
       elementosDelMapa,
       alCambiarLaVista,
       resaltarElementos,
+      elegirPunto,
+      pintarCercania,
+      puntoDeLaFicha,
+      capturarMapa,
     }
     return () => {
       apiRef.current = null
@@ -1237,6 +1368,10 @@ function MapaDeRed({
     elementosDelMapa,
     alCambiarLaVista,
     resaltarElementos,
+    elegirPunto,
+    pintarCercania,
+    puntoDeLaFicha,
+    capturarMapa,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
@@ -1418,6 +1553,8 @@ function MapaDeRed({
       style: resalteStyle as never,
       zIndex: 9,
     })
+    // Cercanía: debajo de la red, para no tapar lo que queda dentro del círculo.
+    cercaniaLayer.current = new VectorLayer({ source: cercaniaSource, style: estiloCercania as never })
 
     const map = new Map({
       target: containerRef.current,
@@ -1426,6 +1563,7 @@ function MapaDeRed({
         // lienzo, y eso permite oscurecerla por CSS en modo oscuro sin tocar
         // los datos de la red (ver globals.css).
         new TileLayer({ source: baseMapSource, className: "gismart-basemap" }),
+        cercaniaLayer.current,
         zoneLayer.current,
         fiberLayer.current,
         // Encima del tendido, para taparlo mientras dura, y debajo de las
