@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useImperativeHandle, useState, type Ref } from "react"
 import { Minimize, ChevronUp, Clock } from "lucide-react"
 import { RIBBON_TABS, type RibbonItem } from "@/components/dashboard-ribbon-data"
+import type { HerramientaAvanzada } from "@/modulos/avanzado/cinta"
 import type { VentanaDePlanta } from "@/components/planta"
 import { LogoutConfirmDialog } from "@/components/logout-confirm-dialog"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -39,15 +40,29 @@ export type RibbonActions = {
   onSentido?: () => void
   /** Consulta de un cable (Consultas → Red). */
   onCable?: () => void
+  /** Una herramienta del módulo «Avanzado». Devuelve qué decir si no se pudo abrir. */
+  onModulo?: (herramienta: HerramientaAvanzada) => string | void
+}
+
+/** Lo que el tablero puede pedirle a la cinta desde fuera. */
+export type ManejadorDeLaCinta = {
+  /**
+   * Hace lo mismo que pulsar el botón `etiqueta` de la pestaña `pestana`, y
+   * deja esa pestaña a la vista: así quien lo busca con Ctrl+K aprende dónde
+   * está. `false` si el botón no existe.
+   */
+  pulsar: (pestana: string, etiqueta: string) => boolean
 }
 
 export function DashboardRibbon({
   actions,
   activos = [],
+  ref,
 }: {
   actions?: RibbonActions
   /** Botones cuya herramienta está activa en el mapa: se ven encendidos. */
   activos?: string[]
+  ref?: Ref<ManejadorDeLaCinta>
 } = {}) {
   const [activeTab, setActiveTab] = useState("inicio")
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -179,11 +194,27 @@ export function DashboardRibbon({
       case "editar":
         actions?.onEditGeometry?.()
         return
+      case "modulo":
+        if (item.modulo) avisar(actions?.onModulo?.(item.modulo))
+        return
       case undefined:
         setAviso(`«${item.label}» todavía no está disponible: falta su función.`)
         return
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    pulsar(pestana, etiqueta) {
+      const item = RIBBON_TABS.find((t) => t.id === pestana)
+        ?.groups.flatMap((g) => g.items)
+        .find((i) => i.label === etiqueta)
+      if (!item) return false
+      setActiveTab(pestana)
+      alternarColapso(false)
+      handleItemClick(item)
+      return true
+    },
+  }))
 
   // Pestañas con el teclado: flechas para pasar de una a otra, Inicio y Fin.
   function teclaEnPestanas(e: React.KeyboardEvent<HTMLButtonElement>) {

@@ -8,6 +8,7 @@ import {
   Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ArrowLeftRight,
 } from "lucide-react"
 import type { VentanaDePlanta } from "@/components/planta"
+import { PESTANA_AVANZADO, type HerramientaAvanzada } from "@/modulos/avanzado/cinta"
 
 /**
  * Lo que hace un botón del ribbon. Los botones sin `accion` son la maqueta
@@ -37,6 +38,8 @@ export type AccionDeRibbon =
   /** Abre una de las ventanas de planta (ver `ventana`). */
   | "ventana"
   | "trace"
+  /** Abre una herramienta del módulo «Avanzado» (ver `modulo`). */
+  | "modulo"
 
 export type RibbonItem = {
   icon: React.ComponentType<{ className?: string }>
@@ -47,6 +50,8 @@ export type RibbonItem = {
   accion?: AccionDeRibbon
   /** Con `accion: "ventana"`, cuál de las ventanas de planta abre. */
   ventana?: VentanaDePlanta
+  /** Con `accion: "modulo"`, qué herramienta del módulo «Avanzado» abre. */
+  modulo?: HerramientaAvanzada
   disabled?: boolean
   variant?: "default" | "primary" | "destructive"
 }
@@ -307,4 +312,6 @@ export const RIBBON_TABS: RibbonTab[] = [
       },
     ],
   },
+  // Lo nuevo va en su propio módulo (modulos/avanzado).
+  PESTANA_AVANZADO,
 ]

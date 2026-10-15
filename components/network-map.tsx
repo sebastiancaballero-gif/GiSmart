@@ -47,7 +47,7 @@ import {
 } from "@/lib/map/symbology"
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type LayerBucket, type NetworkStats } from "@/lib/map/capas"
-import { guardarVista, leerVistaGuardada } from "@/lib/map/vista-guardada"
+import { guardarVista, leerVistaGuardada, type VistaGuardada } from "@/lib/map/vista-guardada"
 import { DESTELLO_DESTINO, DESTELLO_ELEMENTO, DESTELLO_RESALTE, destellar, type ColorRGB } from "@/lib/map/destello"
 import { espacioLibre, margenParaZona, type Recuadro } from "@/lib/map/espacio-libre"
 import { limpiarNombre } from "@/lib/texto"
@@ -179,6 +179,12 @@ export type MapaApi = {
    * trace cambió de tamaño o se movió. `ventana`, como en `pintarRecorrido`.
    */
   encuadrarRecorrido: (ventana?: Recuadro) => void
+  /** Centro (lon, lat) y zoom de lo que se está viendo; `null` si el mapa no está listo. */
+  vistaActual: () => VistaGuardada | null
+  /** Lleva el mapa a esa vista (centro y zoom), con una animación corta. */
+  irAVista: (vista: VistaGuardada) => void
+  /** Abre la ventana de atajos de teclado (la misma que la tecla «?»). */
+  abrirAtajos: () => void
 }
 
 /**
@@ -1022,6 +1028,22 @@ function MapaDeRed({
     [fiberSource, llevarAlEspacioLibre],
   )
 
+  // Para los marcadores del módulo «Avanzado»: la vista que se ve y volver a una.
+  const vistaActual = useCallback((): VistaGuardada | null => {
+    const view = mapRef.current?.getView()
+    const centro = view?.getCenter()
+    const zoomActual = view?.getZoom()
+    if (!centro || typeof zoomActual !== "number") return null
+    const [lon, lat] = toLonLat(centro)
+    return { centro: [lon, lat], zoom: zoomActual }
+  }, [])
+
+  const irAVista = useCallback((vista: VistaGuardada) => {
+    mapRef.current?.getView().animate({ center: fromLonLat(vista.centro), zoom: vista.zoom, duration: 450 })
+  }, [])
+
+  const abrirAtajos = useCallback(() => setAyudaAbierta(true), [])
+
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
@@ -1036,6 +1058,9 @@ function MapaDeRed({
       mostrarCable,
       quitarResalte,
       encuadrarRecorrido,
+      vistaActual,
+      irAVista,
+      abrirAtajos,
     }
     return () => {
       apiRef.current = null
@@ -1053,6 +1078,9 @@ function MapaDeRed({
     mostrarCable,
     quitarResalte,
     encuadrarRecorrido,
+    vistaActual,
+    irAVista,
+    abrirAtajos,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.

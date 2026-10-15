@@ -28,6 +28,7 @@ const PASOS = [
   ["Ruta del trace contra una base de mentira", `${PRUEBAS} scripts/probar-trace-ruta.mjs`],
   ["Capas del mapa por páginas", `${PRUEBAS} scripts/probar-capas.mjs`],
   ["Entradas raras y textos pegados", `${PRUEBAS} scripts/probar-entradas.mjs`],
+  ["Módulo Avanzado", `${PRUEBAS} scripts/probar-avanzado.mjs`],
 ]
 
 const resultados = []

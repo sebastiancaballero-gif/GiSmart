@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Box,
   Building2,
+  Command,
   Crosshair,
   Hexagon,
   Loader2,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/map/busqueda"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { Tooltip } from "@/components/ui/tooltip"
+import { buscarComandos, type ComandoBuscable } from "@/modulos/avanzado/comandos"
 
 type SearchResult = { label: string; lat: number; lon: number }
 
@@ -42,6 +44,7 @@ type SearchResult = { label: string; lat: number; lon: number }
 type Opcion =
   | { tipo: "coordenada"; coordenada: Coordenada }
   | { tipo: "elemento"; elemento: ElementoBuscable }
+  | { tipo: "comando"; comando: ComandoBuscable }
   | { tipo: "direccion"; resultado: SearchResult }
   | { tipo: "buscarDirecciones"; texto: string }
 
@@ -67,6 +70,8 @@ export function DashboardHeader({
   cerca,
   elementos,
   onElegirElemento,
+  comandos,
+  onElegirComando,
   pedirFoco = 0,
 }: {
   title?: string
@@ -84,6 +89,10 @@ export function DashboardHeader({
   elementos?: ElementoBuscable[]
   /** Se llama al elegir un elemento de la red en el buscador. */
   onElegirElemento?: (elemento: ElementoBuscable) => void
+  /** Funciones de la cinta que también se encuentran por su nombre (ver modulos/avanzado/comandos.ts). */
+  comandos?: ComandoBuscable[]
+  /** Se llama al elegir una función: hace lo mismo que su botón. */
+  onElegirComando?: (comando: ComandoBuscable) => void
   /** Al cambiar, el buscador toma el foco (botón «Búsqueda» del ribbon). */
   pedirFoco?: number
 }) {
@@ -136,6 +145,7 @@ export function DashboardHeader({
   // Elementos de la red: se filtran aquí mismo, sin esperar ni preguntar a
   // nadie, así que aparecen desde la primera letra («3/4», «CO01»).
   const enLaRed = useMemo(() => buscarElementos(elementos ?? [], query), [elementos, query])
+  const funciones = useMemo(() => buscarComandos(comandos ?? [], query), [comandos, query])
   const coordenada = useMemo(() => leerCoordenada(query), [query])
   // Con forma de coordenada pero imposible (latitud de más de 90…): se avisa en
   // vez de buscarla como dirección.
@@ -168,7 +178,7 @@ export function DashboardHeader({
       setResults(encontradas)
       setSearchError(encontradas.length === 0 ? `Sin direcciones para «${termino}».` : null)
       // La primera dirección queda resaltada: Enter la elige.
-      if (encontradas.length > 0) setActiva(enLaRed.length)
+      if (encontradas.length > 0) setActiva(enLaRed.length + funciones.length)
     } catch {
       if (consulta === consultaRef.current) setSearchError("No se pudo buscar direcciones. Revisa la conexión.")
     } finally {
@@ -181,10 +191,11 @@ export function DashboardHeader({
     () => [
       ...(coordenada ? [{ tipo: "coordenada" as const, coordenada }] : []),
       ...enLaRed.map((elemento) => ({ tipo: "elemento" as const, elemento })),
+      ...funciones.map((comando) => ({ tipo: "comando" as const, comando })),
       ...results.map((resultado) => ({ tipo: "direccion" as const, resultado })),
       ...(ofrecerDirecciones ? [{ tipo: "buscarDirecciones" as const, texto }] : []),
     ],
-    [coordenada, enLaRed, results, ofrecerDirecciones, texto],
+    [coordenada, enLaRed, funciones, results, ofrecerDirecciones, texto],
   )
   // El aviso de la búsqueda de direcciones (sin resultados o con error) solo
   // tiene sentido para el texto que se buscó.
@@ -244,6 +255,10 @@ export function DashboardHeader({
     if (opcion.tipo === "elemento") {
       onElegirElemento?.(opcion.elemento)
       setQuery(opcion.elemento.nombre)
+    } else if (opcion.tipo === "comando") {
+      // Una función no es un lugar: el campo queda limpio para la próxima búsqueda.
+      onElegirComando?.(opcion.comando)
+      setQuery("")
     } else if (opcion.tipo === "coordenada") {
       const texto = textoDeCoordenada(opcion.coordenada)
       // Una coordenada es un punto preciso: se acerca más que a una dirección.
@@ -377,10 +392,13 @@ export function DashboardHeader({
                   const esDireccion = (o: Opcion) => o.tipo === "direccion" || o.tipo === "buscarDirecciones"
                   const primeraDireccion = esDireccion(opcion) && (i === 0 || !esDireccion(opciones[i - 1]))
                   const primerElemento = opcion.tipo === "elemento" && (i === 0 || opciones[i - 1].tipo !== "elemento")
+                  const primerComando = opcion.tipo === "comando" && (i === 0 || opciones[i - 1].tipo !== "comando")
                   const clave =
                     opcion.tipo === "elemento"
                       ? opcion.elemento.clave
-                      : opcion.tipo === "coordenada"
+                      : opcion.tipo === "comando"
+                        ? `comando-${opcion.comando.id}`
+                        : opcion.tipo === "coordenada"
                         ? "coordenada"
                         : opcion.tipo === "buscarDirecciones"
                           ? "buscar-direcciones"
@@ -399,6 +417,15 @@ export function DashboardHeader({
                           }`}
                         >
                           En la red
+                        </p>
+                      )}
+                      {primerComando && (
+                        <p
+                          className={`px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${
+                            i > 0 ? "mt-1 border-t border-border pt-2" : ""
+                          }`}
+                        >
+                          Funciones
                         </p>
                       )}
                       {primeraDireccion && (
@@ -443,6 +470,17 @@ export function DashboardHeader({
                               </>
                             )
                           })()
+                        ) : opcion.tipo === "comando" ? (
+                          <>
+                            <Command className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate font-semibold">{opcion.comando.etiqueta}</span>
+                              <span className="truncate text-[11px] text-muted-foreground">
+                                {opcion.comando.ruta}
+                                {opcion.comando.descripcion !== opcion.comando.etiqueta && ` · ${opcion.comando.descripcion}`}
+                              </span>
+                            </span>
+                          </>
                         ) : opcion.tipo === "buscarDirecciones" ? (
                           <>
                             <Search className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />

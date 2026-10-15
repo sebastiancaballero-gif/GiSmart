@@ -1,6 +1,6 @@
 {
   "name": "gismart",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "packageManager": "pnpm@11.17.0",
   "scripts": {
@@ -14,6 +14,7 @@
     "conectividad": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-conectividad.mjs",
     "capa": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-capa-activa.mjs",
     "busqueda": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-busqueda.mjs",
+    "avanzado": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-avanzado.mjs",
     "sesion": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-sesion.mjs",
     "hilos": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-hilos.mjs",
     "red": "node --experimental-strip-types --import ./scripts/registrar-alias.mjs scripts/probar-red-de-fibra.mjs",

@@ -10,6 +10,20 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.7.0 — 15 de octubre de 2026
+
+Primera parte del módulo **Avanzado**: lo nuevo que se suma al SIG, en su propia pestaña de
+la cinta y en su propia carpeta (`modulos/avanzado`), sin tocar lo que ya funcionaba.
+Las ideas salen de revisar RustGIS; las que todavía no están se ven como «próximamente».
+
+- **Funciones en Ctrl+K:** el buscador también encuentra los botones de la cinta por su
+  nombre o por lo que hacen («trace», «distancia», «gestión de hilos») y dice dónde están
+  («Red de fibra › Reportes»). Al elegir una, hace lo mismo que su botón y deja esa pestaña
+  a la vista.
+- **Marcadores:** guardar la vista del mapa con un nombre («HUB La Unión») y volver a ella
+  con un click. Se pueden renombrar y borrar; se guardan en el navegador, por usuario.
+- **Atajos:** la ventana de atajos de teclado («?») ahora también se abre desde la cinta.
+
 ## 1.6.1 — 14 de octubre de 2026
 
 Retoques de vistas en el celular, tras revisar todas las pantallas en 1366×768,

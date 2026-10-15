@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
-import { DashboardRibbon } from "@/components/dashboard-ribbon"
+import { DashboardRibbon, type ManejadorDeLaCinta } from "@/components/dashboard-ribbon"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { NetworkMap, type AccesoAlMapa, type MapaApi } from "@/components/network-map"
@@ -24,6 +24,9 @@ import {
 import type { NetworkStats } from "@/lib/map/capas"
 import { LAYER_COLORS } from "@/lib/network-colors"
 import { fetchConSesion } from "@/lib/auth"
+import { ModuloAvanzado, type ManejadorDelModulo } from "@/modulos/avanzado/modulo-avanzado"
+import { comandosDeLaCinta } from "@/modulos/avanzado/comandos"
+import type { HerramientaAvanzada } from "@/modulos/avanzado/cinta"
 
 /** Por debajo de este ancho el panel de capas va plegado. */
 const PANTALLA_ANGOSTA = "(max-width: 1023px)"
@@ -86,6 +89,11 @@ export default function DashboardPage() {
   // juntas: el ribbon dice cuál abrir.
   const plantaRef = useRef<ManejadorDeVentanasDePlanta>(null)
   const traceRef = useRef<ManejadorDelTrace>(null)
+  // Módulo «Avanzado» (modulos/avanzado): lo nuevo, con su propia pestaña.
+  const moduloRef = useRef<ManejadorDelModulo>(null)
+  // Ctrl+K también encuentra las funciones de la cinta y las ejecuta como su botón.
+  const cintaRef = useRef<ManejadorDeLaCinta>(null)
+  const comandos = useMemo(() => comandosDeLaCinta(), [])
 
   // Elegir un elemento en el buscador lo centra y abre su ficha. Si su capa
   // estaba oculta se muestra: si no, se enfocaría algo que no se ve. Lo mismo
@@ -207,6 +215,7 @@ export default function DashboardPage() {
       onGpon: () => gponRef.current?.abrir(),
       onVentana: (ventana: VentanaDePlanta) => plantaRef.current?.abrir(ventana),
       onTrace: () => traceRef.current?.abrir(),
+      onModulo: (herramienta: HerramientaAvanzada) => moduloRef.current?.abrir(herramienta),
       onActivarCapa: () => {
         if (capaActiva) {
           cambiarCapaActiva(null)
@@ -310,11 +319,13 @@ export default function DashboardPage() {
             cerca={center}
             elementos={indice}
             onElegirElemento={handleElegirElemento}
+            comandos={comandos}
+            onElegirComando={(comando) => cintaRef.current?.pulsar(comando.pestana, comando.etiqueta)}
             pedirFoco={pedirFocoBusqueda}
           />
         </div>
         <div className="gismart-baja shrink-0" style={{ "--retraso": "70ms" } as React.CSSProperties}>
-          <DashboardRibbon actions={ribbonActions} activos={botonesActivos} />
+          <DashboardRibbon ref={cintaRef} actions={ribbonActions} activos={botonesActivos} />
         </div>
         <div className="flex flex-1 overflow-hidden">
           {/* En el celular solo ocupa la franja del panel plegado: abierto, flota
@@ -372,6 +383,7 @@ export default function DashboardPage() {
             <ElementosAlimentadosDialog ref={gponRef} mapa={accesoAlMapa} />
             <VentanasDePlanta ref={plantaRef} mapa={accesoAlMapa} />
             <RecorridoTraceDialog ref={traceRef} mapa={accesoAlMapa} />
+            <ModuloAvanzado ref={moduloRef} mapa={accesoAlMapa} lugar={location} />
           </main>
         </div>
       </div>
