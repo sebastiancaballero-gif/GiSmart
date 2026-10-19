@@ -4,6 +4,7 @@ import {
   armarTablaDelTrace,
   direccionDeUrl,
   elementosDelRecorrido,
+  familiaDePuerto,
   geometria,
   hilosDelRecorrido,
   normalizarPasos,
@@ -112,6 +113,12 @@ async function filasPorId<T>(esquema: string, tabla: string, columnas: string, i
   return filas
 }
 
+/** Los puertos con esos UUID (o de esos equipos), con el tipo por familia: `DIV_N1` → `DIV` (ver `familiaDePuerto`). */
+async function puertosPorId(ids: string[], columna = "id"): Promise<FilaDePuerto[]> {
+  const puertos = await filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, ids, columna)
+  return puertos.map((p) => ({ ...p, tipo_equipo_pert: familiaDePuerto(p.tipo_equipo_pert) }))
+}
+
 /** Todas las filas de una tabla (de a 1000, el tope de la API), con filtros de igualdad. */
 async function todas<T>(esquema: string, tabla: string, columnas: string, iguales: [string, string][] = []): Promise<T[]> {
   const cliente = clienteSupabase(esquema)
@@ -166,10 +173,13 @@ const porId = <T extends { id: string }>(filas: T[]) => new Map(filas.map((f) =>
 
 async function cargarCatalogo(): Promise<Catalogo> {
   const [entradas, divisores, cubiertas, tarjetas, equipos, cabeceras] = await Promise.all([
-    todas<{ id: string; id_equipo_pert: string | null }>("tab_fiber", "puerto_equipo", "id, id_equipo_pert", [
-      ["tipo_equipo_pert", "DIV"],
-      ["dir_principal_senhal", "E"],
-    ]),
+    // Las entradas de todos los divisores (DIV_N1 y DIV_N2): por familia, no por el tipo exacto.
+    todas<{ id: string; id_equipo_pert: string | null; tipo_equipo_pert: string | null }>(
+      "tab_fiber",
+      "puerto_equipo",
+      "id, id_equipo_pert, tipo_equipo_pert",
+      [["dir_principal_senhal", "E"]],
+    ).then((puertos) => puertos.filter((p) => familiaDePuerto(p.tipo_equipo_pert) === "DIV")),
     todas<FilaDeDivisor>("tab_fiber", "divisor_optico", COLUMNAS.divisor),
     todas<FilaDeCubierta>("geo_fiber", "cubierta_empalme", COLUMNAS.cubierta),
     todas<FilaDeTarjeta>("tab_fiber", "tarjeta_bandeja_eqp", COLUMNAS.tarjeta),
@@ -273,7 +283,7 @@ async function continuarPorLosDivisores(id: string, pasos: PasoDeTrace[], catalo
 
     // Un divisor que no está en el catálogo (recién creado): su entrada, de la base.
     const sinEntrada = salidas.filter((s) => !catalogo.entradaDeDivisor.has(s.divisor)).map((s) => s.divisor)
-    for (const p of await filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, sinEntrada, "id_equipo_pert")) {
+    for (const p of await puertosPorId(sinEntrada, "id_equipo_pert")) {
       if (p.tipo_equipo_pert === "DIV" && p.dir_principal_senhal === "E" && p.id_equipo_pert) catalogo.entradaDeDivisor.set(p.id_equipo_pert, p.id)
     }
     const conEntrada = salidas.flatMap((s) => {
@@ -322,7 +332,7 @@ async function conRecorrido(ids: string[], direccion: "UPSTREAM" | "DOWNSTREAM")
 async function motivoSinRecorrido(id: string, haciaArriba: boolean, catalogo: Catalogo): Promise<string | null> {
   try {
     const [puertos, hilos] = await Promise.all([
-      filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, [id]),
+      puertosPorId([id]),
       filasPorId<FilaDeHilo>("tab_fiber", "hilo_cable", COLUMNAS_HILO, [id]),
     ])
     const sentido = haciaArriba ? "hacia arriba" : "hacia abajo"
@@ -349,7 +359,7 @@ async function motivoSinRecorrido(id: string, haciaArriba: boolean, catalogo: Ca
         }
         if (!haciaArriba && puerto.dir_principal_senhal === "E") {
           // Las salidas del divisor que sí bajan, por su nombre.
-          const salidas = (await filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, [puerto.id_equipo_pert], "id_equipo_pert")).filter(
+          const salidas = (await puertosPorId([puerto.id_equipo_pert], "id_equipo_pert")).filter(
             (q) => q.dir_principal_senhal === "S",
           )
           const bajan = await conRecorrido(salidas.map((q) => q.id), "DOWNSTREAM")
@@ -587,7 +597,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ dire
     const puertosIds = elementosDelRecorrido(unidos).flatMap((e) => (e.tipo !== "HILO" && e.id ? [e.id] : []))
     const [lecturaHilos, lecturaPuertos] = await Promise.allSettled([
       filasPorId<FilaDeHilo>("tab_fiber", "hilo_cable", COLUMNAS_HILO, hilos),
-      filasPorId<FilaDePuerto>("tab_fiber", "puerto_equipo", COLUMNAS_PUERTO, puertosIds),
+      puertosPorId(puertosIds),
     ])
     if (lecturaHilos.status === "rejected") {
       const detalle = lecturaHilos.reason instanceof Error ? lecturaHilos.reason.message : String(lecturaHilos.reason)

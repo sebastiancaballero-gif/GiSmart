@@ -433,19 +433,6 @@ function VentanaHilos({
   const grupoPendiente = (g: (typeof GRUPOS)[number]) => g.columnas.every((c) => pendientes.has(clave(g.titulo, c.titulo)))
   const hayPendientes = GRUPOS.some((g) => g.columnas.some((c) => pendientes.has(clave(g.titulo, c.titulo))))
 
-  const visibles = useMemo(() => {
-    const buscado = filtroActual.texto.trim().toLowerCase()
-    return hilos.filter(
-      (h) =>
-        (filtroActual.buffer === null || h.buffer === filtroActual.buffer) &&
-        (!buscado ||
-          [h.numero, h.uuid, h.colorHilo, h.estado, h.tecnologia].some((v) => String(v ?? "").toLowerCase().includes(buscado))),
-    )
-  }, [hilos, filtroActual.buffer, filtroActual.texto])
-
-  const hiloElegido = seleccion && seleccion.cable === idCable ? hilos.find((h) => h.id === seleccion.hilo) ?? null : null
-  const colorElegido = hiloElegido ? colorParaMostrar(hiloElegido.colorHilo, hiloElegido.numero) : null
-
   // Sección distribución del cable elegido, por UUID del hilo.
   const distribucionActual = idCable && distribucion?.id === idCable ? distribucion.r : null
   const distribucionPorHilo = useMemo(
@@ -453,6 +440,23 @@ function VentanaHilos({
     [distribucionActual],
   )
   const enDistribucion = pestana === "distribucion"
+
+  // La búsqueda mira lo que muestra la pestaña: en distribución también la
+  // cubierta y el equipo destino («CO06», «NAP 13/14»). El identificador, en las dos.
+  const visibles = useMemo(() => {
+    const buscado = filtroActual.texto.trim().toLowerCase()
+    return hilos.filter((h) => {
+      if (filtroActual.buffer !== null && h.buffer !== filtroActual.buffer) return false
+      if (!buscado) return true
+      const d = enDistribucion && h.uuid ? distribucionPorHilo.get(h.uuid.toLowerCase()) : undefined
+      return [h.numero, h.uuid, h.identificador, h.colorHilo, h.estado, h.tecnologia, d?.cubierta, d?.destino].some((v) =>
+        String(v ?? "").toLowerCase().includes(buscado),
+      )
+    })
+  }, [hilos, filtroActual.buffer, filtroActual.texto, enDistribucion, distribucionPorHilo])
+
+  const hiloElegido = seleccion && seleccion.cable === idCable ? hilos.find((h) => h.id === seleccion.hilo) ?? null : null
+  const colorElegido = hiloElegido ? colorParaMostrar(hiloElegido.colorHilo, hiloElegido.numero) : null
   // Mientras los hilos no estén, la pestaña muestra lo mismo que la otra (elegir cable, cargando, error…).
   const vistaDistribucion: "cargando" | "error" | "datos" | null =
     !enDistribucion || vista !== "datos"

@@ -33,7 +33,7 @@ for (const linea of env.split(/\r?\n/)) {
 
 const { emitirToken, COOKIE_SESION } = await import("../lib/auth-server.ts")
 const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
-const { clasificarRespuestaTrace, normalizarPasos } = await import("../lib/map/trace.ts")
+const { clasificarRespuestaTrace, familiaDePuerto, normalizarPasos } = await import("../lib/map/trace.ts")
 const { clienteSupabase } = await import("../lib/supabase-servidor.ts")
 const { hojaDelTrace } = await import("../lib/map/trace-excel.ts")
 const { crearXlsx } = await import("../lib/excel.ts")
@@ -54,7 +54,10 @@ const porId = (filas) => new Map(filas.map((f) => [f.id, f]))
 const [cache, hilos, puertos, divisores, cubiertas, tarjetas, equipos, cabeceras, cables, conectividad] = await Promise.all([
   todas("tab_fiber", "element_connection", "id, id_origen, direccion"),
   todas("tab_fiber", "hilo_cable", "id, id_cable, numero_hilo, numero_buffer, color_hilo, color_buffer").then(porId),
-  todas("tab_fiber", "puerto_equipo", "id, nombre, numero_puerto, tipo_equipo_pert, id_equipo_pert, dir_principal_senhal").then(porId),
+  // Por familia, como la ruta: la base los nombra DIV_N1, DIV_N2, TJT_OLT, BDJ_ODF.
+  todas("tab_fiber", "puerto_equipo", "id, nombre, numero_puerto, tipo_equipo_pert, id_equipo_pert, dir_principal_senhal")
+    .then((filas) => filas.map((p) => ({ ...p, tipo_equipo_pert: familiaDePuerto(p.tipo_equipo_pert) })))
+    .then(porId),
   todas("tab_fiber", "divisor_optico", "id, num_divisor, cod_divisor, id_cubierta_ubica").then(porId),
   todas("geo_fiber", "cubierta_empalme", "id, etiqueta, funcion_cub").then(porId),
   todas("tab_fiber", "tarjeta_bandeja_eqp", "id, num_slot, tipo_equipo, id_equipo").then(porId),

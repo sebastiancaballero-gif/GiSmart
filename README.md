@@ -728,8 +728,10 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   (pasos 2 y 4, en el editor SQL de Supabase: la clave de la aplicación no puede cambiar
   funciones). Hoy responden las 185 con sus 796 conexiones. **Pendiente del esquemático:**
   no dibuja los divisores ni las 234 conexiones entre un hilo y un puerto de divisor (68
-  cubiertas); las descarta con el aviso «el hilo de destino undefined no existe»
-  (`lib/schematic/mufa-field-data.ts`, de Dario).
+  cubiertas); las aparta con un solo aviso por cubierta («N conexiones con puertos de
+  divisor no se dibujan»), antes era uno «undefined no existe» por conexión
+  (`lib/schematic/mufa-field-data.ts`, de Dario). Desde el 19 de octubre de 2026 la
+  conectividad sale de `get_json_conectividad_cubierta_n0` y `_n12`, según el nivel.
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.

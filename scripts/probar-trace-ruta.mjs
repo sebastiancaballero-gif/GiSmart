@@ -210,6 +210,45 @@ console.log("\n1) LO NORMAL\n")
   comprobar("un UUID que no está en la caché: 200 y «no encontrado»", noEsta.status === 200 && noEsta.r.estado === "ok" && !noEsta.r.encontrado)
 }
 
+console.log("\n1c) LOS TIPOS DE PUERTO DE HOY (DIV_N1, DIV_N2, TJT_OLT, BDJ_ODF)\n")
+{
+  // La base pasó de DIV, TJT y BDJ a nombrarlos con su nivel o su equipo; el trace tiene que seguir igual.
+  const deHoy = { DIV: "DIV_N1", TJT: "TJT_OLT", BDJ: "BDJ_ODF" }
+  preparar({
+    "tab_fiber.puerto_equipo": base()["tab_fiber.puerto_equipo"].map((p) => ({
+      ...p,
+      tipo_equipo_pert: p.id_equipo_pert === ID.d2 ? "DIV_N2" : deHoy[p.tipo_equipo_pert],
+    })),
+  })
+  const GET = await rutaNueva()
+  const arriba = await pedir(GET, "upstream", ID.h3)
+  const ruta = arriba.r.tabla?.rutas[0]
+  comprobar(
+    "hacia arriba desde un hilo: cruza el divisor y llega a la OLT, como con DIV y TJT",
+    arriba.status === 200 && nombres(ruta) === "21,S3,E1,55,55,43,5,HUB PRUEBA" && ruta.llega,
+    `${arriba.status} ${nombres(ruta)}`,
+  )
+  const filaDivisor = ruta?.filas.find((f) => f.nombre === "S3")
+  comprobar(
+    "la fila del divisor dice «Divisor» y su cubierta, no «DIV_N1»",
+    filaDivisor?.ubica === "Divisor" && filaDivisor?.nombreContenedor === "CO19",
+    `${filaDivisor?.ubica} · ${filaDivisor?.nombreContenedor}`,
+  )
+  const abajo = await pedir(GET, "downstream", ID.pt)
+  const rAbajo = abajo.r.tabla?.rutas[0]
+  comprobar(
+    "hacia abajo desde la OLT: llega a la entrada del divisor",
+    rAbajo?.llega === true && rAbajo?.final === "divisor 2 (1x8PC) de CO19",
+    `${nombres(rAbajo)} · ${rAbajo?.final}`,
+  )
+  const olt = await pedir(GET, "upstream", ID.pt)
+  comprobar(
+    "un puerto TJT_OLT hacia arriba se reconoce como de la OLT",
+    olt.r.motivo?.startsWith("Es el puerto 5 de una tarjeta de la OLT") === true,
+    olt.r.motivo ?? "sin motivo",
+  )
+}
+
 console.log("\n1b) SIN RECORRIDO EN ESE SENTIDO: LA VENTANA DICE POR QUÉ\n")
 {
   preparar()

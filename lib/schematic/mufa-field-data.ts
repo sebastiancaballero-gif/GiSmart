@@ -46,6 +46,13 @@ export type CableCampoJSON = {
 export type ExtremoEmpalmeJSON = {
   cable_id: number
   hilo_id: number
+  /**
+   * Una punta en un puerto de divisor (funciones por nivel de la base): trae
+   * el puerto y el divisor en vez del hilo. El esquema todavía no dibuja
+   * divisores, así que esas conexiones se apartan con un aviso.
+   */
+  puerto_id?: string
+  splitter_id?: string
 }
 
 /**
@@ -88,6 +95,13 @@ export type MufaCampoJSON = {
   bandejas?: BandejaCampoJSON[]
   /** Formato nuevo (clave capitalizada). */
   Bandejas?: BandejaCampoJSON[]
+  /**
+   * Formato de las funciones por nivel (`get_json_conectividad_cubierta_n0` y
+   * `_n12`): las fusiones llegan sueltas, sin bandejas.
+   */
+  Conectividades?: ConectividadCampoJSON[]
+  /** Divisores de la cubierta (`_n12`). El esquema todavía no los dibuja. */
+  Splitters?: unknown[]
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +459,11 @@ function ensamblarConSlots(
  * Formato sin slots: las fusiones llegan en un arreglo global, así que se
  * reparten en orden entre las bandejas instaladas. Se llena la bandeja 1 hasta
  * su capacidad y se sigue con la 2, y así sucesivamente.
+ *
+ * Si no caben en las bandejas instaladas (la base registra 0 en las de
+ * empalme, y 2 de 12 fusiones no alcanzan en varias de primer nivel), se
+ * dibujan las que hagan falta y se avisa. Antes las que sobraban se perdían:
+ * 113 fusiones en 9 cubiertas, cada una con su propio aviso.
  */
 function distribuirEnBandejas(
   fuente: BandejaCampoJSON[],
@@ -455,7 +474,24 @@ function distribuirEnBandejas(
   const capacidad = capacidadDeclarada(fuente[0])
   const bandejaOrigen = fuente[0]?.bandeja_id ?? 0
 
-  const bandejas: BandejaCampoParseada[] = Array.from({ length: instaladas }, (_, indice) => {
+  const ocupados = new Set<number>()
+  const validas = fuente
+    .flatMap((bandeja) => conexionesDeBandeja(bandeja))
+    .flatMap((conexion, posicion) => {
+      const validada = validarConexion(conexion, hilosPorId, ocupados, etiquetarConexion(conexion, posicion), avisos)
+      return validada ? [validada] : []
+    })
+
+  const necesarias = Math.ceil(validas.length / capacidad)
+  const total = Math.max(instaladas, necesarias)
+  if (total > instaladas) {
+    avisos.push(
+      `La base registra ${instaladas} ${instaladas === 1 ? "bandeja instalada" : "bandejas instaladas"}, pero sus ${validas.length} fusiones ` +
+        `necesitan ${necesarias} (de ${capacidad} fusiones cada una): se dibujan ${total}.`,
+    )
+  }
+
+  const bandejas: BandejaCampoParseada[] = Array.from({ length: total }, (_, indice) => {
     const numero = indice + 1
     return {
       // `bandeja_id` es 0 en este formato, así que el id del lienzo se deriva
@@ -469,31 +505,47 @@ function distribuirEnBandejas(
     }
   })
 
-  const ocupados = new Set<number>()
-  const conexiones = fuente.flatMap((bandeja) => conexionesDeBandeja(bandeja))
-  let cursor = 0
-
-  for (const [posicion, conexion] of conexiones.entries()) {
-    const etiqueta = etiquetarConexion(conexion, posicion)
-    const validada = validarConexion(conexion, hilosPorId, ocupados, etiqueta, avisos)
-    if (!validada) continue
-
-    const bandeja = bandejas[Math.floor(cursor / capacidad)]
-    if (!bandeja) {
-      avisos.push(
-        `${etiqueta} sin bandeja disponible: ${instaladas} bandeja(s) instaladas de ${capacidad} fusiones no alcanzan.`,
-      )
-      continue
-    }
-
-    const slot = (cursor % capacidad) + 1
-    bandeja.slots.push(armarSlot(bandeja.id, slot, validada))
-    cursor++
-  }
-
+  validas.forEach((validada, i) => {
+    const bandeja = bandejas[Math.floor(i / capacidad)]
+    bandeja.slots.push(armarSlot(bandeja.id, (i % capacidad) + 1, validada))
+  })
   for (const bandeja of bandejas) bandeja.slotsUsados = bandeja.slots.length
 
   return bandejas
+}
+
+/** Una punta en un puerto de divisor en vez de un hilo. */
+const esPuertoDeDivisor = (extremo: ExtremoEmpalmeJSON | undefined) =>
+  !!extremo && extremo.hilo_id == null && (extremo.puerto_id != null || extremo.splitter_id != null)
+
+/**
+ * Aparta las conexiones con un puerto de divisor: el esquema todavía no dibuja
+ * divisores. Antes cada una dejaba su propio aviso «el hilo de origen
+ * undefined no existe» (234 en 68 cubiertas); ahora es uno solo que dice qué
+ * pasa.
+ */
+function apartarConexionesDeDivisor(fuente: BandejaCampoJSON[], avisos: string[]): BandejaCampoJSON[] {
+  let apartadas = 0
+  const filtrar = (lista: ConectividadCampoJSON[] | undefined) => {
+    if (!lista) return lista
+    const quedan = lista.filter((c) => !esPuertoDeDivisor(c.origen) && !esPuertoDeDivisor(c.destino))
+    apartadas += lista.length - quedan.length
+    return quedan
+  }
+  const resultado = fuente.map((bandeja) => ({
+    ...bandeja,
+    Slots: filtrar(bandeja.Slots),
+    Empalmes_internos: filtrar(bandeja.Empalmes_internos),
+    Conectividades: filtrar(bandeja.Conectividades),
+  }))
+  if (apartadas > 0) {
+    avisos.push(
+      apartadas === 1
+        ? "1 conexión con un puerto de divisor no se dibuja: el esquema todavía no muestra los divisores."
+        : `${apartadas} conexiones con puertos de divisor no se dibujan: el esquema todavía no muestra los divisores.`,
+    )
+  }
+  return resultado
 }
 
 /**
@@ -539,7 +591,12 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
 
   const hilosPorId = indexarHilos(cables, avisos)
   const instaladas = Math.max(0, json.can_band_inst ?? 0)
-  const fuente = json.bandejas ?? json.Bandejas ?? []
+  // Las funciones por nivel (`_n0`, `_n12`) mandan las fusiones sueltas: se
+  // leen como una sola bandeja sin slots, que se reparte como el formato nuevo.
+  const fuente = apartarConexionesDeDivisor(
+    json.bandejas ?? json.Bandejas ?? (json.Conectividades ? [{ bandeja_id: 0, Conectividades: json.Conectividades }] : []),
+    avisos,
+  )
 
   let bandejas: BandejaCampoParseada[]
   if (requiereReparto(fuente, instaladas)) {

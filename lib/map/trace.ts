@@ -362,6 +362,18 @@ export function pasoPorDentroDelDivisor(salida: string, entrada: string, idDivis
 
 const UBICA: Record<string, string> = { DIV: "Divisor", TJT: "Tarjeta", BDJ: "Bandeja" }
 
+/**
+ * La familia de un tipo de puerto. La base pasó a nombrarlos con su nivel o su
+ * equipo (`DIV_N1`, `DIV_N2`, `TJT_OLT`, `BDJ_ODF`) y el trace los trata por
+ * familia (`DIV`, `TJT`, `BDJ`): sin esto no cruzaba los divisores hacia
+ * arriba y la tabla decía «DIV_N1» sin el divisor ni su cubierta. Un tipo que
+ * no es de ninguna familia queda como está.
+ */
+export function familiaDePuerto(tipo: string | null): string | null {
+  if (!tipo) return tipo
+  return ["DIV", "TJT", "BDJ"].find((familia) => tipo === familia || tipo.startsWith(`${familia}_`)) ?? tipo
+}
+
 /** «Primer nivel» → «Cub nivel 1», «Segundo nivel» → «Cub nivel 2». */
 function contenedorDeCubierta(funcion: string | null): string {
   if (!funcion) return "Cubierta"

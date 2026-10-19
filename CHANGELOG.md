@@ -10,6 +10,29 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.12.1 — 19 de octubre de 2026
+
+Revisión de lo último antes de entregar la versión.
+
+- **Conectividad fina sin fusiones:** con las funciones nuevas por nivel (`_n0`, `_n12`)
+  el esquema abría con los cables pero sin ninguna fusión, porque llegan sueltas y no
+  dentro de bandejas. Ahora se leen: en las 185 cubiertas se dibujan 561 de las 562
+  fusiones entre hilos (la otra repite un hilo ya empalmado y lo avisa).
+- **Fusiones que no cabían:** cuando la base registra menos bandejas de las que piden sus
+  fusiones (0 en las de empalme; 2 de 12 fusiones en varias de primer nivel, como CO02),
+  se dibujan las que hacen falta y se avisa. Antes se perdían 113 fusiones en 9 cubiertas.
+- **Avisos del esquema:** las conexiones con un puerto de divisor (que el esquema todavía no
+  dibuja) se cuentan en un solo aviso, en vez de un «el hilo de origen undefined no existe»
+  por conexión.
+- **Trace:** la base renombró los tipos de puerto (`DIV_N1`, `DIV_N2`, `TJT_OLT`,
+  `BDJ_ODF`) y el trace hacia arriba se quedaba en la salida del divisor de primer nivel,
+  sin llegar a la OLT; la tabla decía «DIV_N1» sin el divisor ni su cubierta. Ahora los
+  reconoce por familia: los 1762 recorridos de la caché cuadran con la base y 892 de 898
+  rutas hacia arriba llegan a la OLT.
+- **Sección distribución:** el buscador también encuentra por cubierta («CO06»), por
+  equipo destino («NAP 13/14») y por identificador; el identificador, también en la
+  sección feeder.
+
 ## 1.12.0 — 15 de octubre de 2026
 
 **Animaciones en todo el sistema** y el **Asistente IA** probado con una clave real de

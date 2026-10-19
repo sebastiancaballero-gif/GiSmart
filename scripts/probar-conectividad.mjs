@@ -388,8 +388,11 @@ comprobar(
 // --- 6. todas las mufas ------------------------------------------------------
 console.log("\n6) LAS 185 MUFAS, UNA POR UNA, POR LA RUTA\n")
 
+const { parseMufaData } = await import("../lib/schematic/mufa-field-data.ts")
 const porEstado = new Map()
 const motivos = new Map()
+// Cada fusión entre dos hilos se dibuja o queda en un aviso «ignorada»: ninguna se pierde callada.
+const fusiones = { total: 0, dibujadas: 0, avisadas: 0 }
 for (let i = 0; i < mufas.length; i += 8) {
   const lote = await Promise.all(mufas.slice(i, i + 8).map((m) => consultarRuta(m.id).then((r) => [m, r])))
   for (const [m, r] of lote) {
@@ -398,6 +401,14 @@ for (let i = 0; i < mufas.length; i += 8) {
       const clave = r.motivo ?? r.mensaje
       motivos.set(clave, (motivos.get(clave) ?? 0) + 1)
     }
+    if (r.estado === "disponible") {
+      const e = r.esquema
+      const crudas = e.Conectividades ?? (e.Bandejas ?? e.bandejas ?? []).flatMap((b) => b.Slots ?? b.Empalmes_internos ?? b.Conectividades ?? [])
+      fusiones.total += crudas.filter((x) => x.origen?.hilo_id != null && x.destino?.hilo_id != null).length
+      const dibujo = parseMufaData(e)
+      fusiones.dibujadas += dibujo.empalmes.length
+      fusiones.avisadas += dibujo.avisos.filter((a) => / ignorada: /.test(a)).length
+    }
   }
 }
 const total = [...porEstado.values()].reduce((n, v) => n + v.length, 0)
@@ -405,6 +416,11 @@ comprobar(`se consultaron todas: ${total} de ${mufas.length}`, total === mufas.l
 comprobar("ninguna da error", !porEstado.has("error"), porEstado.has("error") ? `${porEstado.get("error").length} con error` : "")
 for (const [estado, lista] of porEstado) console.log(`          ${estado.padEnd(17)} ${lista.length}`)
 for (const [m, n] of motivos) console.log(`          · ${n} por «${m}»`)
+comprobarConCables(
+  fusiones.total > 0,
+  `las fusiones entre hilos se dibujan: ${fusiones.dibujadas} de ${fusiones.total} (${fusiones.avisadas} con su aviso)`,
+  fusiones.dibujadas > 0 && fusiones.dibujadas + fusiones.avisadas === fusiones.total,
+)
 
 // --- 7. entradas y salidas ---------------------------------------------------
 console.log("\n7) ENTRADAS Y SALIDAS (FUNCIÓN DE CABLES DE CARLOS)\n")
@@ -660,6 +676,45 @@ console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n"
 
 // --- 10. la función según el nivel de la cubierta -----------------------------
 console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD SEGÚN EL NIVEL DE LA CUBIERTA\n")
+{
+  // El formato de _n0 y _n12: las fusiones sueltas (sin bandejas) y puntas en puertos de divisor.
+  const hilos = (desde, n) => Array.from({ length: n }, (_, i) => ({ hilo_id: `h${desde + i}`, numero: i + 1, color: "Azul" }))
+  const plano = {
+    mufa_id: "m",
+    tipo: "Cubierta Nivel 1",
+    estado: "Operativa",
+    can_band_inst: 1,
+    cables: [
+      { cable_id: "ce", codigo: "100", sentido: "Entrada", Buffers: [{ Buffer_id: 1, color: "Azul", hilos: hilos(0, 14) }] },
+      { cable_id: "cs", codigo: "200", sentido: "Salida", Buffers: [{ Buffer_id: 1, color: "Azul", hilos: hilos(100, 14) }] },
+    ],
+    Splitters: [{ splitter_id: "sp", num_divisor: 1 }],
+    Conectividades: [
+      ...Array.from({ length: 13 }, (_, i) => ({
+        Conectividad: `f${i}`,
+        "Tipo empalme": "Fusion",
+        atenuacion: 0.02,
+        origen: { cable_id: "ce", hilo_id: `h${i}` },
+        destino: { cable_id: "cs", hilo_id: `h${100 + i}` },
+      })),
+      { Conectividad: "d1", "Tipo empalme": "Fusion", atenuacion: 0.02, origen: { puerto_id: "p1", splitter_id: "sp" }, destino: { cable_id: "cs", hilo_id: "h113" } },
+      { Conectividad: "d2", "Tipo empalme": "Fusion", atenuacion: 0.02, origen: { cable_id: "ce", hilo_id: "h13" }, destino: { puerto_id: "p0", splitter_id: "sp" } },
+    ],
+  }
+  const dibujo = parseMufaData(plano)
+  comprobar("formato sin bandejas: dibuja las 13 fusiones entre hilos", dibujo.empalmes.length === 13, `${dibujo.empalmes.length}`)
+  comprobar(
+    "1 bandeja instalada de 12 no alcanza: dibuja 2 y lo avisa, no pierde la 13.ª",
+    dibujo.bandejas.length === 2 && dibujo.avisos.some((a) => a.startsWith("La base registra 1 bandeja instalada")),
+    dibujo.avisos.join(" / "),
+  )
+  comprobar(
+    "las conexiones con un puerto de divisor van en un solo aviso, sin «undefined»",
+    dibujo.avisos.includes("2 conexiones con puertos de divisor no se dibujan: el esquema todavía no muestra los divisores.") &&
+      !dibujo.avisos.some((a) => a.includes("undefined")),
+    dibujo.avisos.join(" / "),
+  )
+}
 {
   const { funcionDeConectividad, FUNCION_CONECTIVIDAD_N0: N0, FUNCION_CONECTIVIDAD_N12: N12 } = await import("../lib/map/conectividad.ts")
   comprobar("nivel 0 (empalme): _n0", funcionDeConectividad(0, "Empalme") === N0)
