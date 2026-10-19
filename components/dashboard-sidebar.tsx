@@ -301,14 +301,15 @@ function SidebarExpandedContent({
                         aria-label={`Quitar el filtro de ${layer.label} (se ven ${visibles} de ${layer.count})`}
                         className="flex shrink-0 items-center gap-0.5 rounded-md bg-primary px-1.5 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
                       >
-                        {visibles}
+                        <span key={visibles} className="gismart-cifra">{visibles}</span>
                         <span className="opacity-60">/{layer.count}</span>
                         <FilterX className="ml-0.5 size-3" aria-hidden="true" />
                       </button>
                     </Tooltip>
                   ) : (
                     <Badge variant="secondary" className="tabular-nums">
-                      {layer.count}
+                      {/* Con la clave, la cifra da un saltito al llegar y al cambiar. */}
+                      <span key={layer.count} className="gismart-cifra">{layer.count}</span>
                     </Badge>
                   )}
                   {/* Encuadrar sobre la capa: útil para saltar a una capa con
@@ -331,13 +332,13 @@ function SidebarExpandedContent({
                       className="rounded-md p-1 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                       aria-label={layer.visible ? `Ocultar ${layer.label}` : `Mostrar ${layer.label}`}
                     >
-                      {layer.visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                      {layer.visible ? <Eye key="visible" className="gismart-icono size-4" /> : <EyeOff key="oculta" className="gismart-icono size-4" />}
                     </button>
                   </Tooltip>
                 </div>
 
                 {desglosable && abierta && (
-                  <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-border pl-2">
+                  <ul className="gismart-escalonado-lado mb-1 ml-[1.6rem] space-y-0.5 border-l border-border pl-2">
                     {layer.items?.map((item) => {
                       const activa = layer.activeItems?.includes(item.label) ?? false
                       // Sin ninguna marcada no hay filtro, así que todas están
@@ -424,7 +425,7 @@ function SidebarExpandedContent({
             <span className="mt-1.5 block h-7 w-28 animate-pulse rounded bg-muted" aria-label="Calculando" />
           ) : (
             <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-              {totalKm.toFixed(2)}
+              <span key={totalKm.toFixed(2)} className="gismart-cifra">{totalKm.toFixed(2)}</span>
               <span className="ml-1 text-sm font-semibold text-muted-foreground">km</span>
             </p>
           )}

@@ -323,6 +323,7 @@ export default function DashboardPage() {
             onElegirElemento={handleElegirElemento}
             comandos={comandos}
             onElegirComando={(comando) => cintaRef.current?.pulsar(comando.pestana, comando.etiqueta)}
+            onPreguntarIA={(texto) => moduloRef.current?.preguntar(texto)}
             pedirFoco={pedirFocoBusqueda}
           />
         </div>
@@ -358,7 +359,7 @@ export default function DashboardPage() {
               derecha a todo lo alto: el panel le deja ese espacio. */}
           <main
             id="map-panel"
-            className="gismart-fundido relative flex flex-1 flex-col overflow-hidden md:has-[>aside[data-acoplado]]:pr-96"
+            className="gismart-fundido relative flex flex-1 flex-col overflow-hidden md:has-[>aside[data-acoplado=normal]]:pr-96 md:has-[>aside[data-acoplado=amplio]]:pr-[34rem]"
             style={{ "--retraso": "100ms" } as React.CSSProperties}
           >
             <div className="relative min-h-0 flex-1 overflow-hidden">

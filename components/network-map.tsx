@@ -18,6 +18,12 @@ import type Modify from "ol/interaction/Modify"
 import type Select from "ol/interaction/Select"
 import type Snap from "ol/interaction/Snap"
 import DoubleClickZoom from "ol/interaction/DoubleClickZoom"
+import DragBox from "ol/interaction/DragBox"
+import DragPan from "ol/interaction/DragPan"
+import OverviewMap from "ol/control/OverviewMap"
+import { always } from "ol/events/condition"
+import { Stroke, Style } from "ol/style"
+import type { CapaConOpacidad, EstiloDeFondo } from "@/modulos/avanzado/vista/apariencia"
 import { defaults as defaultControls } from "ol/control"
 import ScaleLine from "ol/control/ScaleLine"
 import type { Geometry, LineString, MultiLineString } from "ol/geom"
@@ -221,7 +227,47 @@ export type MapaApi = {
    * El mapa tal como se ve, en un lienzo (todas sus capas, sin los controles),
    * y cuántos metros del terreno mide un píxel en el centro, para la escala.
    */
-  capturarMapa: () => Promise<{ lienzo: HTMLCanvasElement; metrosPorPixel: number } | null>
+  /** El mapa como imagen, con el fondo y sin él (para imprimir con o sin el mapa base). */
+  capturarMapa: () => Promise<{ lienzo: HTMLCanvasElement; lienzoSinFondo: HTMLCanvasElement; metrosPorPixel: number } | null>
+  /** Vuelve a la vista anterior o a la siguiente, como atrás y adelante en el navegador. `false` si no hay. */
+  vistaAnterior: () => boolean
+  vistaSiguiente: () => boolean
+  /** Espera que se dibuje un recuadro sobre el mapa y se acerca a él; `false` si se canceló (Esc). */
+  acercarConRecuadro: (aviso: string) => Promise<boolean>
+  /** Muestra u oculta el minimapa de ubicación (abajo a la izquierda). */
+  ponerMinimapa: (visible: boolean) => void
+  /** Cómo se ve el mapa base (ver modulos/avanzado/vista/apariencia.ts). */
+  ponerFondo: (estilo: EstiloDeFondo) => void
+  /** La opacidad de una capa, de 0 a 1. */
+  ponerOpacidad: (capa: CapaConOpacidad, opacidad: number) => void
+}
+
+/** Una vista del historial de «Anterior / Siguiente», en Web Mercator. */
+type VistaDelHistorial = { centro: number[]; resolucion: number; rotacion: number }
+/** Hasta cuántas vistas se recuerdan para volver atrás. */
+const MAX_HISTORIAL = 50
+/** Dos vistas casi iguales (lo que mueve un pellizco del mouse) cuentan como una. */
+function vistasParecidas(a: VistaDelHistorial, b: VistaDelHistorial): boolean {
+  return (
+    Math.abs(a.resolucion / b.resolucion - 1) < 0.01 &&
+    Math.hypot(a.centro[0] - b.centro[0], a.centro[1] - b.centro[1]) < b.resolucion * 3 &&
+    Math.abs(a.rotacion - b.rotacion) < 1e-3
+  )
+}
+/** El tendido de fibra en el minimapa: una línea fina, para ver la forma de la red. */
+const estiloDelMinimapa = new Style({ stroke: new Stroke({ color: LAYER_COLORS.fiber, width: 1.2 }) })
+
+/** El minimapa: el mapa base y el tendido de fibra en chico, con el recuadro de lo que se ve. */
+function crearMinimapa(tendido: VectorSource): OverviewMap {
+  return new OverviewMap({
+    className: "ol-overviewmap gismart-minimapa",
+    collapsed: false,
+    collapsible: false,
+    layers: [
+      new TileLayer({ source: fuenteDelMapaBase(), className: "gismart-basemap" }),
+      new VectorLayer({ source: tendido, style: estiloDelMinimapa }),
+    ],
+  })
 }
 
 /** Un elemento de la red tal como lo ve el módulo «Avanzado», sin OpenLayers de por medio. */
@@ -360,6 +406,22 @@ function MapaDeRed({
   // fuente nueva en cada render solo para descartarla acto seguido.
   const [nodeSource] = useState(() => new VectorSource())
   const [fiberSource] = useState(() => new VectorSource())
+  // La capa del mapa base (para su estilo y su opacidad), el minimapa y el
+  // historial de vistas de «Anterior / Siguiente».
+  const baseLayerRef = useRef<TileLayer | null>(null)
+  const minimapaRef = useRef<OverviewMap | null>(null)
+  // Lo último que se pidió del aspecto (Avanzado › Mapa base y Minimapa): si el
+  // mapa se vuelve a crear (en desarrollo React lo monta dos veces) se repone.
+  const aparienciaRef = useRef<{ fondo: EstiloDeFondo; opacidades: Partial<Record<CapaConOpacidad, number>>; minimapa: boolean }>({
+    fondo: "tema",
+    opacidades: {},
+    minimapa: false,
+  })
+  const historialRef = useRef<{ pila: VistaDelHistorial[]; indice: number; destino: VistaDelHistorial | null }>({
+    pila: [],
+    indice: -1,
+    destino: null,
+  })
   const [zoneSource] = useState(() => new VectorSource())
   const [cabeceraSource] = useState(() => new VectorSource())
   const [measureSource] = useState(() => new VectorSource())
@@ -575,7 +637,8 @@ function MapaDeRed({
       } else {
         setAvisoConsulta({
           texto: `${nombre}: ${resultado.mensaje}`,
-          detalle: `get_json_conectividad_cubierta${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+          // La función que tocaba por el nivel de la cubierta (_n0 o _n12), si la ruta llegó a elegirla.
+          detalle: `${resultado.funcion ?? "get_json_conectividad_cubierta_n0 / _n12"}${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
           tono: "error",
         })
       }
@@ -1271,9 +1334,14 @@ function MapaDeRed({
 
   // Imprimir: el mapa como imagen, juntando el lienzo de cada capa como en el
   // ejemplo de exportación de OpenLayers (los controles son HTML y no salen).
+  //
+  // El mapa base va en su propio contenedor (`gismart-basemap`, la clase que
+  // usa el tema oscuro para su filtro) y no en `.ol-layer`: por eso antes no
+  // salía en la lámina. Se arman dos imágenes, con el fondo y sin él, para
+  // que la casilla «Fondo del mapa» cambie la lámina sin volver a capturar.
   const capturarMapa = useCallback(
     () =>
-      new Promise<{ lienzo: HTMLCanvasElement; metrosPorPixel: number } | null>((resolve) => {
+      new Promise<{ lienzo: HTMLCanvasElement; lienzoSinFondo: HTMLCanvasElement; metrosPorPixel: number } | null>((resolve) => {
         const map = mapRef.current
         const tamano = map?.getSize()
         if (!map || !tamano) {
@@ -1282,44 +1350,156 @@ function MapaDeRed({
         }
         map.once("rendercomplete", () => {
           const escala = window.devicePixelRatio || 1
-          const lienzo = document.createElement("canvas")
-          lienzo.width = Math.round(tamano[0] * escala)
-          lienzo.height = Math.round(tamano[1] * escala)
+          const nuevoLienzo = () => {
+            const l = document.createElement("canvas")
+            l.width = Math.round(tamano[0] * escala)
+            l.height = Math.round(tamano[1] * escala)
+            return l
+          }
+          const lienzo = nuevoLienzo()
+          const lienzoSinFondo = nuevoLienzo()
           const ctx = lienzo.getContext("2d")
-          if (!ctx) {
+          const ctxSinFondo = lienzoSinFondo.getContext("2d")
+          if (!ctx || !ctxSinFondo) {
             resolve(null)
             return
           }
-          for (const capa of map.getViewport().querySelectorAll<HTMLCanvasElement>(".ol-layer canvas, canvas.ol-layer")) {
+          const capas = map.getViewport().querySelectorAll<HTMLCanvasElement>(".ol-layer canvas, canvas.ol-layer, .gismart-basemap canvas")
+          for (const capa of capas) {
             if (capa.width === 0) continue
+            const esFondo = capa.closest(".gismart-basemap") !== null
             const padre = capa.parentElement
             const opacidad = padre?.style.opacity || capa.style.opacity
-            ctx.globalAlpha = opacidad === "" ? 1 : Number(opacidad)
             const transformacion = capa.style.transform.match(/^matrix\(([^(]*)\)$/)
             const m = transformacion
               ? transformacion[1].split(",").map(Number)
               : [parseFloat(capa.style.width) / capa.width, 0, 0, parseFloat(capa.style.height) / capa.height, 0, 0]
-            ctx.setTransform(m[0] * escala, m[1] * escala, m[2] * escala, m[3] * escala, m[4] * escala, m[5] * escala)
-            const fondo = padre?.style.backgroundColor
-            if (fondo) {
-              ctx.fillStyle = fondo
-              ctx.fillRect(0, 0, capa.width, capa.height)
+            for (const c of esFondo ? [ctx] : [ctx, ctxSinFondo]) {
+              c.globalAlpha = opacidad === "" ? 1 : Number(opacidad)
+              c.setTransform(m[0] * escala, m[1] * escala, m[2] * escala, m[3] * escala, m[4] * escala, m[5] * escala)
+              const fondo = padre?.style.backgroundColor
+              if (fondo) {
+                c.fillStyle = fondo
+                c.fillRect(0, 0, capa.width, capa.height)
+              }
+              c.drawImage(capa, 0, 0)
             }
-            ctx.drawImage(capa, 0, 0)
           }
-          ctx.globalAlpha = 1
-          ctx.setTransform(1, 0, 0, 1, 0, 0)
+          for (const c of [ctx, ctxSinFondo]) {
+            c.globalAlpha = 1
+            c.setTransform(1, 0, 0, 1, 0, 0)
+          }
           const view = map.getView()
           const centro = view.getCenter()
           const lat = centro ? toLonLat(centro)[1] : 0
           // En Web Mercator un metro del mapa mide 1/cos(latitud) metros del terreno.
           const metrosPorPixel = (view.getResolution() ?? 1) * Math.cos((lat * Math.PI) / 180)
-          resolve({ lienzo, metrosPorPixel })
+          resolve({ lienzo, lienzoSinFondo, metrosPorPixel })
         })
         map.renderSync()
       }),
     [],
   )
+
+  const irEnElHistorial = useCallback((paso: -1 | 1) => {
+    const view = mapRef.current?.getView()
+    const h = historialRef.current
+    const destino = h.pila[h.indice + paso]
+    if (!view || !destino) return false
+    h.indice += paso
+    h.destino = destino
+    view.animate({ center: destino.centro, resolution: destino.resolucion, rotation: destino.rotacion, duration: 350 })
+    return true
+  }, [])
+  const vistaAnterior = useCallback(() => irEnElHistorial(-1), [irEnElHistorial])
+  const vistaSiguiente = useCallback(() => irEnElHistorial(1), [irEnElHistorial])
+
+  // Acercar con un recuadro: mientras se espera, arrastrar dibuja el recuadro
+  // en vez de mover el mapa. Igual que elegir un punto: aviso arriba y Esc cancela.
+  const acercarConRecuadro = useCallback(
+    (aviso: string) =>
+      new Promise<boolean>((resolve) => {
+        const map = mapRef.current
+        if (!map) {
+          resolve(false)
+          return
+        }
+        cancelarEleccionRef.current?.("abandonada")
+        setTool("pan")
+        const arrastres = map
+          .getInteractions()
+          .getArray()
+          .filter((i): i is DragPan => i instanceof DragPan)
+        const recuadro = new DragBox({ condition: always, className: "gismart-recuadro" })
+        const cursorAnterior = containerRef.current?.style.cursor ?? ""
+        const alTeclear = (e: KeyboardEvent) => {
+          if (e.key === "Escape") terminar(false)
+        }
+        const terminar = (acercado: boolean) => {
+          map.removeInteraction(recuadro)
+          arrastres.forEach((i) => i.setActive(true))
+          window.removeEventListener("keydown", alTeclear)
+          if (containerRef.current) containerRef.current.style.cursor = cursorAnterior
+          cancelarEleccionRef.current = null
+          setAvisoEleccion(null)
+          resolve(acercado)
+        }
+        recuadro.on("boxend", () => {
+          const extension = recuadro.getGeometry().getExtent()
+          // Un click sin arrastrar es un recuadro de nada: se sigue esperando.
+          if (getWidth(extension) === 0 || getHeight(extension) === 0) return
+          encuadrarEn(extension, 21)
+          terminar(true)
+        })
+        arrastres.forEach((i) => i.setActive(false))
+        map.addInteraction(recuadro)
+        if (containerRef.current) containerRef.current.style.cursor = "crosshair"
+        setAvisoEleccion(`${aviso} Esc cancela.`)
+        window.addEventListener("keydown", alTeclear)
+        cancelarEleccionRef.current = () => terminar(false)
+      }),
+    [setTool, encuadrarEn],
+  )
+
+  // El minimapa: el mapa base y el tendido de fibra en chico, con el recuadro
+  // de lo que se ve; arrastrar el recuadro mueve el mapa.
+  const ponerMinimapa = useCallback(
+    (visible: boolean) => {
+      aparienciaRef.current.minimapa = visible
+      const map = mapRef.current
+      if (!map) return
+      const actual = minimapaRef.current
+      if (visible && (!actual || actual.getMap() !== map)) {
+        const control = crearMinimapa(fiberSource)
+        map.addControl(control)
+        minimapaRef.current = control
+      } else if (!visible && actual) {
+        actual.getMap()?.removeControl(actual)
+        minimapaRef.current = null
+      }
+    },
+    [fiberSource],
+  )
+
+  // El estilo del mapa base va como `data-fondo` en el contenedor (los filtros
+  // están en globals.css); «Sin fondo» apaga la capa, que así ni se descarga.
+  const ponerFondo = useCallback((estilo: EstiloDeFondo) => {
+    aparienciaRef.current.fondo = estilo
+    baseLayerRef.current?.setVisible(estilo !== "ninguno")
+    if (containerRef.current) containerRef.current.dataset.fondo = estilo
+  }, [])
+
+  const ponerOpacidad = useCallback((capa: CapaConOpacidad, opacidad: number) => {
+    aparienciaRef.current.opacidades[capa] = Math.min(1, Math.max(0, opacidad))
+    const destino = {
+      base: baseLayerRef.current,
+      zones: zoneLayer.current,
+      fibers: fiberLayer.current,
+      nodes: nodeLayer.current,
+      cabeceras: cabeceraLayer.current,
+    }[capa]
+    destino?.setOpacity(Math.min(1, Math.max(0, opacidad)))
+  }, [])
 
   useEffect(() => {
     if (!apiRef) return
@@ -1345,6 +1525,12 @@ function MapaDeRed({
       pintarCercania,
       puntoDeLaFicha,
       capturarMapa,
+      vistaAnterior,
+      vistaSiguiente,
+      acercarConRecuadro,
+      ponerMinimapa,
+      ponerFondo,
+      ponerOpacidad,
     }
     return () => {
       apiRef.current = null
@@ -1372,6 +1558,12 @@ function MapaDeRed({
     pintarCercania,
     puntoDeLaFicha,
     capturarMapa,
+    vistaAnterior,
+    vistaSiguiente,
+    acercarConRecuadro,
+    ponerMinimapa,
+    ponerFondo,
+    ponerOpacidad,
   ])
 
   // Si el mapa se desmonta con una elección a medias, queda sin efecto.
@@ -1556,13 +1748,15 @@ function MapaDeRed({
     // Cercanía: debajo de la red, para no tapar lo que queda dentro del círculo.
     cercaniaLayer.current = new VectorLayer({ source: cercaniaSource, style: estiloCercania as never })
 
+    // El `className` hace que OpenLayers dibuje la capa base en su propio
+    // lienzo, y eso permite oscurecerla por CSS en modo oscuro (o con el estilo
+    // que se elija en Avanzado › Mapa base) sin tocar los datos de la red.
+    const capaBase = new TileLayer({ source: baseMapSource, className: "gismart-basemap" })
+    baseLayerRef.current = capaBase
     const map = new Map({
       target: containerRef.current,
       layers: [
-        // El `className` hace que OpenLayers dibuje la capa base en su propio
-        // lienzo, y eso permite oscurecerla por CSS en modo oscuro sin tocar
-        // los datos de la red (ver globals.css).
-        new TileLayer({ source: baseMapSource, className: "gismart-basemap" }),
+        capaBase,
         cercaniaLayer.current,
         zoneLayer.current,
         fiberLayer.current,
@@ -1707,6 +1901,21 @@ function MapaDeRed({
       const [lon, lat] = toLonLat(center)
       onCenterChangeRef.current?.({ lon, lat })
 
+      // Historial de «Anterior / Siguiente»: cada vista nueva se anota; la
+      // que resulta de ir atrás o adelante no, para no perder lo de adelante.
+      const resolucion = view.getResolution()
+      if (resolucion) {
+        const h = historialRef.current
+        const aqui = { centro: [...center], resolucion, rotacion: view.getRotation() }
+        if (h.destino && vistasParecidas(aqui, h.destino)) {
+          h.destino = null
+        } else if (!h.pila[h.indice] || !vistasParecidas(aqui, h.pila[h.indice])) {
+          h.destino = null
+          h.pila = [...h.pila.slice(0, h.indice + 1), aqui].slice(-MAX_HISTORIAL)
+          h.indice = h.pila.length - 1
+        }
+      }
+
       const zoomActual = view.getZoom()
       if (typeof zoomActual === "number") {
         guardarVista({ centro: [lon, lat], zoom: zoomActual })
@@ -1725,6 +1934,25 @@ function MapaDeRed({
     mapRef.current = map
     recalcAhora()
 
+    // El aspecto que ya se había pedido (si el mapa se crea de nuevo).
+    const aspecto = aparienciaRef.current
+    capaBase.setVisible(aspecto.fondo !== "ninguno")
+    const capasConOpacidad = {
+      base: capaBase,
+      zones: zoneLayer.current,
+      fibers: fiberLayer.current,
+      nodes: nodeLayer.current,
+      cabeceras: cabeceraLayer.current,
+    }
+    for (const [capa, opacidad] of Object.entries(aspecto.opacidades)) {
+      capasConOpacidad[capa as CapaConOpacidad]?.setOpacity(opacidad as number)
+    }
+    if (aspecto.minimapa) {
+      const control = crearMinimapa(fiberSource)
+      map.addControl(control)
+      minimapaRef.current = control
+    }
+
     // Esc cancela el trazo en curso (mufa, fibra o zona), sin dejar nada a medias.
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") drawRef.current?.abortDrawing()
@@ -1736,6 +1964,7 @@ function MapaDeRed({
       window.removeEventListener("keydown", handleEscape)
       map.setTarget(undefined)
       mapRef.current = null
+      minimapaRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -2243,7 +2472,7 @@ function MapaDeRed({
                   aria-label={t.label}
                   aria-keyshortcuts={String(TOOL_ORDER.indexOf(t.id) + 1)}
                   aria-pressed={active}
-                  className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  className={`flex size-9 items-center justify-center rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-90 motion-reduce:active:scale-100 ${
                     active
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : motivo
@@ -2251,8 +2480,10 @@ function MapaDeRed({
                         : "text-foreground hover:bg-accent"
                   }`}
                 >
+                  {/* Con la clave, el ícono de la herramienta elegida gira al encenderse. */}
                   <Icon
-                    className="size-[18px]"
+                    key={active ? "elegida" : "libre"}
+                    className={`size-[18px] ${active ? "gismart-icono" : ""}`}
                     style={!active && !motivo && t.color ? { color: t.color } : undefined}
                   />
                 </button>

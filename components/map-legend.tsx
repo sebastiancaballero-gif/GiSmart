@@ -66,7 +66,7 @@ export function MapLegend({
       </button>
 
       {abierta && (
-        <div className="flex min-h-0 flex-col gap-1 overflow-y-auto border-t border-border px-2.5 pb-2 pt-1.5">
+        <div className="gismart-desplegar flex min-h-0 flex-col gap-1 overflow-y-auto border-t border-border px-2.5 pb-2 pt-1.5">
           <span className="flex items-center gap-2">
             <CabeceraSymbol size={14} />
             Cabecera central

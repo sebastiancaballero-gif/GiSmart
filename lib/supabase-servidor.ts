@@ -167,15 +167,16 @@ export async function responderConFuncion({
     const { data, error } = await cliente.rpc(funcion, { [argumento]: id })
     if (error) {
       console.error(`[${funcion} ${id}] ${error.code} ${error.message}`)
+      // `funcion`: cuál falló, para la línea de detalle del aviso (una ruta puede elegir entre varias).
       return NextResponse.json(
-        { message: mensajeDeFuncion(error.code, mensajes), ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}`) },
+        { message: mensajeDeFuncion(error.code, mensajes), funcion, ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}`) },
         { status: 502 },
       )
     }
     return responder(data)
   } catch (e) {
     return NextResponse.json(
-      { message: sinConexion, ...detalleSoloEnDesarrollo(e instanceof Error ? e.message : String(e)) },
+      { message: sinConexion, funcion, ...detalleSoloEnDesarrollo(e instanceof Error ? e.message : String(e)) },
       { status: 502 },
     )
   }

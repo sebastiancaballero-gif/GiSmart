@@ -8,15 +8,29 @@ import { ErrorDatosMufaCampo, parseMufaData, type MufaCampoJSON } from "@/lib/sc
  *
  *   1. Frontend (GISmart): el usuario elige una cubierta, se toma su UUID y se
  *      pide la conectividad.
- *   2. Backend (Carlos): recibe el UUID, llama a la función
- *      `get_json_conectividad_cubierta` y devuelve el JSON. Aquí es la ruta
- *      `GET /api/mufas/{id}/conectividad`.
+ *   2. Backend (Carlos): recibe el UUID, llama a la función de conectividad
+ *      que le toca por su nivel (`funcionDeConectividad`) y devuelve el JSON.
+ *      Aquí es la ruta `GET /api/mufas/{id}/conectividad`.
  *   3. Esquemático (Dario, JointJS): recibe el JSON y lo dibuja. Si se abre en
  *      modo consulta, no deja editar.
  *
  * Antes las 185 mufas cargaban el mismo JSON de ejemplo y «Ver conexiones»
  * enseñaba el mismo diagrama inventado para todas.
  */
+
+/**
+ * La función de la base según el nivel de la cubierta (`cubierta_empalme.nivel`):
+ * las de empalme (nivel 0) van con `_n0`; las de primer y segundo nivel (1 y
+ * 2), con `_n12`. Reemplazan a `get_json_conectividad_cubierta`, que ya no
+ * existe. Sin nivel, una cubierta de empalme (por su función) también va con `_n0`.
+ */
+export const FUNCION_CONECTIVIDAD_N0 = "get_json_conectividad_cubierta_n0"
+export const FUNCION_CONECTIVIDAD_N12 = "get_json_conectividad_cubierta_n12"
+
+export function funcionDeConectividad(nivel: number | null, funcionCubierta: string | null): string {
+  const empalme = nivel === 0 || (nivel === null && /empalme/i.test(funcionCubierta ?? ""))
+  return empalme ? FUNCION_CONECTIVIDAD_N0 : FUNCION_CONECTIVIDAD_N12
+}
 
 /**
  * Para qué se abre la conectividad: solo verla o poder cambiarla.
@@ -46,9 +60,10 @@ export type EstadoConectividad =
   | { estado: "sin-conectividad"; esquema: MufaCampoJSON | null }
   /**
    * No se pudo preguntar: red, permisos o la función no respondió. `detalle`
-   * es el error tal como lo dio la base (solo fuera de producción).
+   * es el error tal como lo dio la base (solo fuera de producción); `funcion`,
+   * la función (o la tabla) que falló, si se llegó a saber.
    */
-  | { estado: "error"; mensaje: string; detalle?: string }
+  | { estado: "error"; mensaje: string; detalle?: string; funcion?: string }
 
 /**
  * ¿Este JSON tiene conectividad que dibujar?
@@ -107,11 +122,12 @@ export function clasificarRespuesta(status: number, cuerpo: unknown): EstadoCone
   if (status === 404) return { estado: "sin-conectividad", esquema: null }
 
   if (status < 200 || status >= 300) {
-    const { message: mensaje, detalle } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown }
+    const { message: mensaje, detalle, funcion } = (cuerpo ?? {}) as { message?: unknown; detalle?: unknown; funcion?: unknown }
     return {
       estado: "error",
       mensaje: typeof mensaje === "string" ? mensaje : `No se pudo obtener la conectividad de esta cubierta (HTTP ${status}).`,
       ...(typeof detalle === "string" ? { detalle } : {}),
+      ...(typeof funcion === "string" ? { funcion } : {}),
     }
   }
 

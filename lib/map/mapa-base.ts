@@ -17,6 +17,16 @@ import XYZ from "ol/source/XYZ"
  * pide volver a compilar (o reiniciar `pnpm dev`). La URL de las teselas la ve
  * el navegador de todas formas, así que no es un secreto.
  */
+/**
+ * Lo que hay que poner junto al mapa base cuando se imprime: OpenStreetMap
+ * exige «© OpenStreetMap» en todo mapa hecho con sus teselas. Con otro
+ * proveedor, su NEXT_PUBLIC_TESELAS_ATRIBUCION (o nada, si no la tiene).
+ */
+export function atribucionDelMapaBase(): string | null {
+  if (!process.env.NEXT_PUBLIC_TESELAS_URL?.trim()) return "© OpenStreetMap"
+  return process.env.NEXT_PUBLIC_TESELAS_ATRIBUCION?.trim() || null
+}
+
 export function fuenteDelMapaBase() {
   const url = process.env.NEXT_PUBLIC_TESELAS_URL?.trim()
   if (!url) return new OSM()

@@ -174,7 +174,7 @@ Esto es deliberado por tres razones:
 | `GET /api/mufas` | Devuelve un `FeatureCollection` con las cubiertas de empalme. |
 | `GET /api/fiber-cables` | Devuelve un `FeatureCollection` con los cables de fibra. |
 | `GET /api/cabeceras` | Devuelve un `FeatureCollection` con las cabeceras centrales. |
-| `GET /api/mufas/{id}/conectividad` | Conectividad interna de una mufa, generada por la función `get_json_conectividad_cubierta`. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
+| `GET /api/mufas/{id}/conectividad` | Conectividad interna de una cubierta, generada por la función que le toca por su nivel: `get_json_conectividad_cubierta_n0` para las de empalme (nivel 0) y `get_json_conectividad_cubierta_n12` para las de primer y segundo nivel. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
 | `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_json_conectividad_cubierta(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
 | `GET /api/cables/{id}/extremos` | Extremos de un cable (dónde sale y dónde entra), según `geo_fiber.fn_json_extremos_cable(p_uuid_cable)`. Solo lectura. |
 | `GET /api/cables/{id}/hilos` | Hilos de un cable para «Gestión de hilos», según `fn_obtener_hilos_cable_json`. Solo lectura. |

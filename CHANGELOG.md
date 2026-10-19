@@ -10,6 +10,139 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.12.0 — 15 de octubre de 2026
+
+**Animaciones en todo el sistema** y el **Asistente IA** probado con una clave real de
+Gemini.
+
+Animaciones (todas con CSS, cortas, solo de opacidad y posición: el mapa sigue a 116–118
+cuadros por segundo; con «reducir movimiento» en el sistema, todo queda quieto):
+
+- **Cinta**:
+  - El subrayado de la pestaña elegida crece desde el centro y sus grupos de herramientas
+    aparecen uno tras otro.
+  - Los botones se hunden al pulsarlos y su ícono sube un poco al pasar el ratón.
+- **Herramientas del mapa**: se hunden al pulsarlas y el ícono de la elegida gira al
+  encenderse.
+- **Capas**:
+  - Los contadores (185, 182…) y la fibra total dan un saltito al cargar o cambiar.
+  - El ojo gira al mostrar u ocultar una capa.
+  - El desglose aparece en cascada.
+- **Ficha** de un elemento: entra desde la derecha; sus secciones aparecen una tras otra, y
+  otra vez al elegir otro elemento.
+- **Resumen y Cercanía**: entran desde la izquierda, que es donde están.
+- **Avisos del mapa**: bajan desde arriba con un impulso.
+- **Leyenda**: el contenido se despliega deslizándose.
+- **Tablas** (atributos, trace, hilos, redes por nodo, información): las primeras filas
+  entran en cascada al abrir o al cambiar de capa. Ordenar no las vuelve a animar.
+- La leyenda ya no se oculta con Resumen o Cercanía abiertos; solo se aparta con la ficha,
+  que es la que la tapa.
+
+Navegar y ver (Avanzado › Navegar y Vista), tomadas de RustGIS:
+
+- **Anterior / Siguiente**: vuelve a la vista de antes del último movimiento o acercamiento,
+  como atrás y adelante en el navegador (hasta 50 vistas).
+- **Recuadro**: se arrastra un recuadro sobre el mapa y se acerca justo a esa zona (Esc
+  cancela).
+- **Minimapa**: un mapa chico abajo a la izquierda con las calles, la red y el recuadro de
+  lo que se ve; arrastrar el recuadro mueve el mapa.
+- **Mapa base**: el fondo según el tema, de calles, gris (la red resalta más), oscuro o sin
+  fondo, con una miniatura de cada uno, y la **transparencia de cada capa** (mapa base,
+  zonas, fibra, cubiertas y cabeceras). Salen de las mismas teselas, sin otro proveedor.
+- **Copiar mapa**: la lámina de Imprimir al portapapeles, para pegarla en WhatsApp o en un
+  correo con Ctrl+V; si el navegador no deja copiar, se descarga como PNG.
+- El fondo, las transparencias y el minimapa se recuerdan por usuario en cada equipo.
+
+Imprimir:
+
+- **Sale el fondo del mapa** (calles, parques, nombres de vías) detrás de la red. Antes la
+  lámina salía en blanco porque la captura no incluía la capa del mapa base. Con la casilla
+  «Fondo del mapa» se puede quitar para ahorrar tinta. Con el fondo, el pie lleva
+  «© OpenStreetMap», como exige su licencia.
+
+Asistente IA:
+
+- **Respuestas concretas**:
+  - La respuesta va en la primera línea, con el dato en negrita, sin introducciones ni datos
+    que no se pidieron.
+  - Con las mismas 8 preguntas de prueba, de 580 palabras en total a 106 (82 % menos), todas
+    correctas.
+  - Los pasos de GISmart salen de la ayuda real; ya no inventa clics.
+  - Temperatura baja para que no divague.
+- **Diseño nuevo**, como los asistentes conocidos:
+  - Al empezar, saludo con el nombre y cuatro tarjetas de ejemplo.
+  - Las preguntas van en burbuja; las respuestas, como texto con el avatar al lado.
+  - Bajo cada respuesta: copiar, repetir y lo que consultó, como fuentes.
+  - Mientras piensa, el paso en curso con un brillo y un botón para detener.
+  - La caja de escritura crece con el texto y el botón de enviar va adentro.
+  - El panel se puede ampliar. Hay botón para ir al final y «Reintentar» en los errores.
+  - El ícono tiene vida, sin exagerar: un reflejo de luz lo cruza cada tanto, la chispa
+    titila suave y gira al pasar el ratón; el del inicio flota apenas, con una órbita tenue y
+    unos pocos destellos. Mientras piensa, un halo de colores suave gira detrás.
+- **Muestra en vivo lo que consulta** («Leyendo la ficha de CO19…», «Recorriendo el trace…»),
+  con los pasos hechos marcados, en vez de esperar a ciegas.
+- **Nombres clicables**: CO19, un código de cable, 13/14… llevan el mapa al elemento y abren su
+  ficha. Los nombres repetidos (hay varias «N1» y «3-abr») no, porque no hay a cuál llevar.
+- **Tablas, listas numeradas y títulos** en las respuestas.
+- **Sugerencias de seguimiento**: 2 o 3 preguntas para seguir debajo de la última respuesta.
+- **Ayuda de GISmart**: «¿cómo hago un trace?» → Red de fibra › Reportes › Trace.
+- **Cercanía**: «¿qué cubierta queda más cerca de la Carrera 14?», de una coordenada o de una
+  cubierta. Marca el punto con un círculo en el mapa y avisa si la dirección es aproximada.
+- **Desde Ctrl+K**: lo escrito se puede preguntar al asistente (primera opción si parece una
+  pregunta). **Ctrl+I** abre y cierra el asistente.
+- El total de fibra que da el asistente se mide como en el mapa: decía 18,75 km y la pantalla
+  18,73.
+
+- Respondía «Gemini respondió con un error (503)»: Google tenía saturado el modelo. Ahora
+  reintenta (a los 1,5 s y a los 3 s) y, si sigue saturado o sin cuota, pasa a otro modelo;
+  la conversación sigue sin perder lo dicho. Debajo de la respuesta dice si contestó un
+  modelo de respaldo. Si fallan todos, el mensaje lo explica en palabras.
+- Modelo por defecto **gemini-3.5-flash-lite**, con respaldo gemini-3.1-flash-lite y
+  gemini-3.8-flash. En las pruebas el 3.5 lite contestó bien (también el trace de un hilo)
+  en 3–8 s por pregunta; el 3.8 tardaba 12–44 s, se saturaba a ratos y su cuota gratuita se
+  acaba enseguida. Se cambian con `GEMINI_MODEL` y `GEMINI_MODELOS_RESPALDO`.
+- Pide pensar poco a Gemini: antes gastaba cientos de tokens en pensar una pregunta simple.
+- «Selecciona las cubiertas de primer nivel» se quedaba sin consultas (buscaba de a 12 por
+  nombre). Ahora busca y selecciona por nivel; entran también las de empalme, que no tienen
+  etiqueta en la base.
+- Dice siempre «cubierta», nunca «mufa».
+- **Animaciones**:
+  - El panel entra desde la derecha y las burbujas llegan con un impulso.
+  - Mientras consulta, tres puntos saltan junto a un estado que va cambiando («Pensando…»,
+    «Consultando la red…»); el robot echa ondas y la franja de arriba corre. Si tarda, lo
+    dice.
+  - La respuesta se escribe sola, palabra por palabra (un click la muestra entera). Al
+    terminar aparecen, con un saltito, fichas de lo que mostró en el mapa («Mapa en CO19»,
+    «Trace hacia la fuente»…).
+  - Están hechas con CSS, sin librerías, y con «reducir movimiento» en el sistema la
+    respuesta sale entera y quieta.
+- Con el asistente abierto, la leyenda ya no se oculta en pantallas bajas: el panel usaba la
+  animación de la ficha, que la escondía.
+
+**Gestión de hilos: «Sección distribución»** (Red de fibra → Hilos), como en el SIG anterior:
+
+- La pestaña «Sección troncal» se llama ahora **«Sección feeder»**, y a su lado está la nueva
+  **«Sección distribución»**.
+- Por cada hilo del cable muestra Identificador, Número, **Cubierta nivel 1** (antes «CEO
+  Origen»), Divisor, Pto divisor, **Salida** (antes «Salida CEO») y Equipo destino.
+- La salida numera seguidas las salidas de los divisores de la cubierta: con divisores 1x8,
+  el puerto 1 del divisor 2 es la salida 9, como la daba el SIG anterior.
+- El equipo destino es donde termina el hilo hacia abajo: «NAP 13/14» (una cubierta de
+  segundo nivel), «Divisor 1 de CO05» (un hilo del feeder) o «Sin conectar».
+- No hay función de la base para esto: sale de la caché del trace, en
+  `GET /api/cables/{id}/distribucion`. Tarda alrededor de un segundo y se pide al abrir la
+  pestaña. Comparte el filtro por buffer, la búsqueda y el hilo elegido con la otra pestaña.
+
+**Conectividad fina con las funciones nuevas por nivel**:
+
+- Consultar cualquier cubierta daba error: la base ya no tiene
+  `get_json_conectividad_cubierta` (PGRST202).
+- Ahora se lee el `nivel` de la cubierta y se llama a la función que le toca:
+  `get_json_conectividad_cubierta_n0` para las de empalme (nivel 0) y
+  `get_json_conectividad_cubierta_n12` para las de primer y segundo nivel.
+- Probado con las 185 cubiertas: 184 se dibujan y 1 no tiene cables.
+- Si falla, la línea de detalle del aviso nombra la función que se usó.
+
 ## 1.11.1 — 15 de octubre de 2026
 
 Para que funcione en el servidor de producción, que tiene un Node anterior al 20. Ahora

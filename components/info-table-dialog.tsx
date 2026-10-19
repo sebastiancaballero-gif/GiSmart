@@ -184,7 +184,7 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
             </p>
           ) : (
             <table className="w-full text-sm">
-              <tbody>
+              <tbody className="gismart-filas">
                 {visibles.map((key, i) => {
                   const estado = copiado?.campo === key ? copiado : null
                   return (

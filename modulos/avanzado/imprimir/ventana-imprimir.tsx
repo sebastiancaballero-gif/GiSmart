@@ -6,8 +6,9 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BarraDeEstado, Boton, EncabezadoVentana, Rotulo, type Mensaje } from "@/components/ventana-sig"
 import type { MapaApi } from "@/components/network-map"
 import { componerLamina, type OpcionesDeLamina } from "./componer"
+import { atribucionDelMapaBase } from "@/lib/map/mapa-base"
 
-type Captura = { lienzo: HTMLCanvasElement; metrosPorPixel: number }
+type Captura = { lienzo: HTMLCanvasElement; lienzoSinFondo: HTMLCanvasElement; metrosPorPixel: number }
 
 const hoy = () => new Date().toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short" })
 
@@ -32,6 +33,8 @@ export function VentanaImprimir({
   const [opciones, setOpciones] = useState<OpcionesDeLamina>({
     titulo: "Red de fibra óptica",
     subtitulo: lugar,
+    fondo: true,
+    atribucion: atribucionDelMapaBase(),
     leyenda: true,
     escalaYNorte: true,
     fecha: hoy(),
@@ -82,7 +85,7 @@ export function VentanaImprimir({
       return {
         vista: null,
         error: {
-          texto: "El mapa base no deja exportar su imagen; prueba con otro proveedor de teselas.",
+          texto: "El mapa base no deja exportar su imagen: desmarca «Fondo del mapa» o usa otro proveedor de teselas.",
           tono: "error",
           detalle: e instanceof Error ? e.message : String(e),
         },
@@ -126,7 +129,7 @@ export function VentanaImprimir({
     setMensaje({ texto: "En la ventana de impresión se elige la impresora o «Guardar como PDF».", tono: "info" })
   }
 
-  const casilla = (clave: "leyenda" | "escalaYNorte", texto: string) => (
+  const casilla = (clave: "fondo" | "leyenda" | "escalaYNorte", texto: string) => (
     <label className="flex items-center gap-1.5 text-xs text-foreground">
       <input
         type="checkbox"
@@ -141,7 +144,7 @@ export function VentanaImprimir({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[92vh] w-[min(58rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden p-0">
-        <EncabezadoVentana icono={Printer} titulo="Imprimir o exportar el mapa" descripcion="Con título, leyenda, escala, norte y fecha" />
+        <EncabezadoVentana icono={Printer} titulo="Imprimir o exportar el mapa" descripcion="Con fondo, título, leyenda, escala, norte y fecha" />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -165,6 +168,7 @@ export function VentanaImprimir({
             </label>
           </div>
           <div className="flex flex-wrap items-center gap-4">
+            {casilla("fondo", "Fondo del mapa")}
             {casilla("leyenda", "Leyenda")}
             {casilla("escalaYNorte", "Escala y norte")}
             <label className="flex items-center gap-1.5 text-xs text-foreground">

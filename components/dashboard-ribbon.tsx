@@ -277,7 +277,7 @@ export function DashboardRibbon({
             >
               {tab.label}
               {isActive && (
-                <span className="absolute bottom-0 left-1 right-1 h-[3px] rounded-full bg-primary" />
+                <span className="gismart-subrayado absolute bottom-0 left-1 right-1 h-[3px] rounded-full bg-primary" />
               )}
             </button>
             </Tooltip>
@@ -311,7 +311,7 @@ export function DashboardRibbon({
             id="ribbon-herramientas"
             role="tabpanel"
             aria-labelledby={`ribbon-pestana-${activeTab}`}
-            className="flex h-[92px] items-stretch overflow-x-auto bg-card px-2 animate-gismart-fade-in"
+            className="gismart-escalonado-lado flex h-[92px] items-stretch overflow-x-auto bg-card px-2"
           >
             {currentTab.groups.map((group, gi) => (
               <div key={gi} className="flex items-stretch">
@@ -358,6 +358,7 @@ export function DashboardRibbon({
                           // grupos quedaban a distinta altura a lo largo del ribbon.
                           className={`
                             group relative flex h-[54px] flex-col items-center justify-start gap-0.5 rounded-md px-1.5 pb-1 pt-2 outline-none transition
+                            active:scale-95 motion-reduce:active:scale-100
                             focus-visible:ring-2 focus-visible:ring-ring/50
                             ${proximamente
                               ? "text-muted-foreground/60 hover:bg-accent/60 hover:text-muted-foreground"
@@ -378,7 +379,7 @@ export function DashboardRibbon({
                           {proximamente && (
                             <Clock className="absolute right-1 top-1 size-2.5 text-muted-foreground/70" aria-hidden="true" />
                           )}
-                          <Icon className="size-[18px] shrink-0" />
+                          <Icon className="size-[18px] shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5 group-disabled:translate-y-0 motion-reduce:transition-none" />
                           {/* Hasta dos líneas: con una sola, «Conectividad fina» o
                               «Entradas y salidas» salían cortadas con puntos suspensivos.
                               Se parte en los espacios y después de «/» (un espacio

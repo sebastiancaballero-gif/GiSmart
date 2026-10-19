@@ -1,4 +1,19 @@
-import { Bookmark, Bot, Filter, Keyboard, PieChart, Printer, Radius, Table2 } from "lucide-react"
+import {
+  Bookmark,
+  Bot,
+  CircleArrowLeft,
+  CircleArrowRight,
+  ClipboardCopy,
+  Filter,
+  Keyboard,
+  Layers,
+  Map as IconoDeMapa,
+  PieChart,
+  Printer,
+  Radius,
+  ScanSearch,
+  Table2,
+} from "lucide-react"
 import type { RibbonTab } from "@/components/dashboard-ribbon-data"
 
 /**
@@ -18,6 +33,12 @@ export type HerramientaAvanzada =
   | "marcadores"
   | "imprimir"
   | "atajos"
+  | "anterior"
+  | "siguiente"
+  | "recuadro"
+  | "minimapa"
+  | "fondo"
+  | "copiar"
 
 /**
  * La pestaña «Avanzado» de la cinta. Un botón sin `accion` todavía no tiene
@@ -52,6 +73,15 @@ export const PESTANA_AVANZADO: RibbonTab = {
       ],
     },
     {
+      label: "Navegar",
+      items: [
+        { icon: CircleArrowLeft, label: "Anterior", accion: "modulo", modulo: "anterior", tooltip: "Volver a la vista anterior del mapa" },
+        { icon: CircleArrowRight, label: "Siguiente", accion: "modulo", modulo: "siguiente", tooltip: "Ir a la vista siguiente del mapa" },
+        { icon: ScanSearch, label: "Recuadro", accion: "modulo", modulo: "recuadro", tooltip: "Acercar el mapa dibujando un recuadro" },
+        { icon: IconoDeMapa, label: "Minimapa", accion: "modulo", modulo: "minimapa", tooltip: "Mapa chico de ubicación, abajo a la izquierda" },
+      ],
+    },
+    {
       label: "Vista",
       items: [
         {
@@ -60,6 +90,14 @@ export const PESTANA_AVANZADO: RibbonTab = {
           accion: "modulo",
           modulo: "marcadores",
           tooltip: "Guardar vistas del mapa y volver a ellas",
+        },
+        { icon: Layers, label: "Mapa base", accion: "modulo", modulo: "fondo", tooltip: "Estilo del mapa base y transparencia de las capas" },
+        {
+          icon: ClipboardCopy,
+          label: "Copiar mapa",
+          accion: "modulo",
+          modulo: "copiar",
+          tooltip: "Copiar el mapa como imagen para pegarlo en WhatsApp o un correo",
         },
         { icon: Printer, label: "Imprimir", accion: "modulo", modulo: "imprimir", tooltip: "Exportar el mapa a imagen o PDF" },
       ],

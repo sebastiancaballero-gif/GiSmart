@@ -1,6 +1,9 @@
 import { clienteSupabase } from "@/lib/supabase-servidor"
 import type { AccionDelAsistente } from "../acciones"
 import type { Herramienta } from "./gemini"
+import { buscarComandos, comandosDeLaCinta } from "@/modulos/avanzado/comandos"
+import { distanciaM } from "@/modulos/avanzado/resumen/medidas"
+import { leerCoordenada, textoDeCoordenada } from "@/lib/map/busqueda"
 
 export type { AccionDelAsistente }
 
@@ -109,23 +112,126 @@ async function hilosConectados(ids: string[]): Promise<Set<string>> {
 /** El trace leído con la misma ruta que usa la ventana «Recorrido del trace». */
 export type LeerTrace = (idOrigen: string, direccion: "UPSTREAM" | "DOWNSTREAM") => Promise<Record<string, unknown>>
 
-export function herramientasDelAsistente({ acciones, leerTrace }: { acciones: AccionDelAsistente[]; leerTrace: LeerTrace }): Herramienta[] {
+/** Direcciones en OpenStreetMap (la ruta /api/geocode), prefiriendo lo que queda cerca de `cerca`. */
+export type Geocodificar = (
+  texto: string,
+  cerca: { lon: number; lat: number } | null,
+) => Promise<{ etiqueta: string; lon: number; lat: number }[]>
+
+/** Los cables con el largo de su trazado (la capa del mapa, /api/fiber-cables). */
+export type LeerCables = () => Promise<{ hilos: number | null; largoM: number }[]>
+
+/**
+ * El largo de una línea en metros, sobre la Tierra, sumando sus tramos: lo
+ * mismo que mide el mapa (`getLength` de OpenLayers) para «Fibra total» y el
+ * Resumen. Acepta LineString o MultiLineString en longitud, latitud.
+ */
+export function largoDeLineaM(geometria: { type?: string; coordinates?: unknown } | null | undefined): number {
+  if (!geometria || !Array.isArray(geometria.coordinates)) return 0
+  const lineas = (geometria.type === "MultiLineString" ? geometria.coordinates : [geometria.coordinates]) as unknown[]
+  let total = 0
+  for (const linea of lineas) {
+    if (!Array.isArray(linea)) continue
+    for (let i = 1; i < linea.length; i++) {
+      const a = linea[i - 1]
+      const b = linea[i]
+      if (Array.isArray(a) && Array.isArray(b)) total += distanciaM([Number(a[0]), Number(a[1])], [Number(b[0]), Number(b[1])])
+    }
+  }
+  return Number.isFinite(total) ? total : 0
+}
+
+/** Las cubiertas con su punto (la capa del mapa, /api/mufas). */
+export type LeerCubiertas = () => Promise<{ etiqueta: string | null; nivel: string | null; lon: number; lat: number }[]>
+
+/**
+ * Lo básico de GISmart, para la ayuda: lo que no sale de la cinta. Revisado
+ * contra el programa el 15 de octubre de 2026; si cambia un atajo o un botón,
+ * hay que cambiarlo aquí también.
+ */
+const GUIA = [
+  "Ctrl+K busca cubiertas, cables, direcciones, coordenadas y funciones de la cinta.",
+  "Ctrl+I abre o cierra este asistente.",
+  "La tecla ? muestra todos los atajos; los números eligen las herramientas del mapa (la barra de la izquierda).",
+  "Para mover, renombrar, crear o quitar elementos hay que activar su capa: Inicio › Capas › Activar capa, o tocando la capa en el panel de la izquierda.",
+  "La conectividad de una cubierta se consulta con «Conectividad fina» (pestaña Consultas); después se ve con «Ver conexiones» en su ficha.",
+  "Trace de un hilo: Red de fibra › Consultas › Hilos, elegir el cable en el mapa, seleccionar el hilo en la tabla y pulsar «Hacia la fuente» o «Hacia abajo». O en Red de fibra › Reportes › Trace, pegar el UUID del hilo o del puerto y pulsar «Hacia arriba» o «Hacia abajo» (esos botones hacen el recorrido; no hay otro). También se le puede pedir a este asistente.",
+  "La tabla de atributos (Avanzado › Consulta › Tabla) se exporta a Excel con el botón de la hoja de cálculo de su barra («Exportar a Excel»): sale lo que se ve en la tabla.",
+  "La pestaña Avanzado tiene Resumen, Tabla de atributos, Consultar por atributos, Cercanía, Marcadores, Imprimir y este asistente.",
+]
+
+const entre = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+/** Minúsculas y sin tildes, para comparar el nivel como lo escriba Gemini. */
+const plano = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+
+/**
+ * Las etiquetas de las cubiertas de un nivel («primer», «segundo», «empalme»:
+ * basta parte del nombre). Sin esto, «las de primer nivel» obligaba a Gemini a
+ * buscar de a 12 por nombre y se quedaba sin vueltas. `funcion_cub` es un enum
+ * en la base (Primer nivel, Segundo nivel, Empalme) y PostgREST no acepta
+ * `ilike` sobre un enum (42883), así que se filtra aquí: son pocas filas.
+ */
+async function etiquetasPorNivel(nivel: string): Promise<{ etiquetas: string[]; sinEtiqueta: number }> {
+  const buscado = plano(nivel)
+  const cubiertas = await filas<Cubierta>(cliente("geo_fiber").from("cubierta_empalme").select("id, etiqueta, funcion_cub").limit(1000))
+  const delNivel = cubiertas.filter((c) => c.funcion_cub && plano(c.funcion_cub).includes(buscado))
+  const etiquetas = delNivel.map((c) => c.etiqueta?.trim() ?? "").filter(Boolean)
+  return {
+    etiquetas: [...new Set(etiquetas)].sort((a, b) => a.localeCompare(b, "es", { numeric: true })),
+    // Las de empalme no tenían etiqueta en la base (15 de octubre de 2026):
+    // sin decirlo, Gemini las seguía buscando por nombre.
+    sinEtiqueta: delNivel.length - etiquetas.length,
+  }
+}
+
+export function herramientasDelAsistente({
+  acciones,
+  leerTrace,
+  geocodificar,
+  leerCubiertas,
+  leerCables,
+}: {
+  acciones: AccionDelAsistente[]
+  leerTrace: LeerTrace
+  geocodificar?: Geocodificar
+  leerCubiertas?: LeerCubiertas
+  leerCables?: LeerCables
+}): Herramienta[] {
   return [
     {
       name: "buscar_elementos",
       description:
-        "Busca cubiertas (cajas de empalme o mufas), cables y cabeceras por parte de su nombre o código. Úsala para encontrar algo antes de pedir su ficha.",
+        "Busca cubiertas (cajas de empalme), cables y cabeceras por parte de su nombre o código, o lista todas las cubiertas de un nivel. Úsala para encontrar algo antes de pedir su ficha.",
       parameters: {
         type: "object",
         properties: {
           texto: { type: "string", description: "Parte de la etiqueta de la cubierta (CO19, 13/14), del código del cable (2102262) o del nombre de la cabecera" },
           tipo: { type: "string", enum: ["cubierta", "cable", "cabecera"], description: "Para buscar solo en un tipo" },
+          nivel: {
+            type: "string",
+            description: "Para listar todas las cubiertas de un nivel: «primer», «segundo» o «empalme» (sin texto devuelve solo sus etiquetas)",
+          },
         },
-        required: ["texto"],
       },
       async ejecutar(args) {
         const q = texto(args.texto)
-        if (!q) return { error: "Falta el texto a buscar." }
+        const nivel = texto(args.nivel, 40)
+        if (nivel && !q) {
+          const { etiquetas, sinEtiqueta } = await etiquetasPorNivel(nivel)
+          return {
+            nivel,
+            cubiertas: etiquetas.length + sinEtiqueta,
+            etiquetas,
+            ...(sinEtiqueta ? { aviso: `${sinEtiqueta} de estas cubiertas no tienen etiqueta en la base: no se pueden nombrar ni seleccionar por nombre.` } : {}),
+          }
+        }
+        if (!q) return { error: "Falta el texto a buscar (o el nivel, para listar las cubiertas de un nivel)." }
         const patron = `%${sinComodines(q)}%`
         const tipo = texto(args.tipo)
         const [cubiertas, cables, cabeceras] = await Promise.all([
@@ -158,18 +264,25 @@ export function herramientasDelAsistente({ acciones, leerTrace }: { acciones: Ac
         ])
         const porNivel: Record<string, number> = {}
         for (const c of cubiertas) porNivel[c.funcion_cub ?? "sin dato"] = (porNivel[c.funcion_cub ?? "sin dato"] ?? 0) + 1
+        // Los kilómetros, como los mide el mapa («Fibra total», Resumen): el
+        // largo del trazado de cada cable. Con las columnas de la base daba
+        // 18,75 km y la pantalla 18,73; ahora dicen lo mismo.
+        const tramos = leerCables
+          ? await leerCables()
+          : cables.map((c) => ({ hilos: c.cant_hilo ?? null, largoM: largoDe(c) }))
         const porHilos: Record<string, { cables: number; km: number }> = {}
-        for (const c of cables) {
-          const k = c.cant_hilo ? `${c.cant_hilo} hilos` : "sin dato"
+        for (const t of tramos) {
+          const k = t.hilos ? `${t.hilos} hilos` : "sin dato"
           porHilos[k] ??= { cables: 0, km: 0 }
           porHilos[k].cables++
-          porHilos[k].km = Math.round((porHilos[k].km + largoDe(c) / 1000) * 100) / 100
+          porHilos[k].km += t.largoM / 1000
         }
+        for (const v of Object.values(porHilos)) v.km = Math.round(v.km * 100) / 100
         return {
           cubiertas: cubiertas.length,
           cubiertas_por_nivel: porNivel,
-          cables: cables.length,
-          km_de_fibra: Math.round((cables.reduce((s, c) => s + largoDe(c), 0) / 1000) * 100) / 100,
+          cables: tramos.length,
+          km_de_fibra: Math.round((tramos.reduce((s, t) => s + t.largoM, 0) / 1000) * 100) / 100,
           cables_por_hilos: porHilos,
           cabeceras: cabeceras.map((c) => c.nombre),
         }
@@ -345,16 +458,31 @@ export function herramientasDelAsistente({ acciones, leerTrace }: { acciones: Ac
     },
     {
       name: "seleccionar_en_mapa",
-      description: "Selecciona varias cubiertas o varios cables en el mapa del usuario (resaltados) y los muestra en la tabla de atributos.",
+      description:
+        "Selecciona varias cubiertas o varios cables en el mapa del usuario (resaltados) y los muestra en la tabla de atributos. Para todas las cubiertas de un nivel, usa «nivel» en vez de los nombres.",
       parameters: {
         type: "object",
         properties: {
           tipo: { type: "string", enum: ["cubierta", "cable"] },
           nombres: { type: "array", items: { type: "string" }, description: "Etiquetas de las cubiertas o códigos de los cables" },
+          nivel: { type: "string", description: "Solo cubiertas: «primer», «segundo» o «empalme» para seleccionar todas las de ese nivel" },
         },
-        required: ["tipo", "nombres"],
+        required: ["tipo"],
       },
       async ejecutar(args) {
+        const nivel = args.tipo === "cable" ? "" : texto(args.nivel, 40)
+        if (nivel) {
+          // El navegador elige por el nivel de cada cubierta en el mapa: así
+          // entran también las que no tienen etiqueta (las de empalme).
+          const { etiquetas, sinEtiqueta } = await etiquetasPorNivel(nivel)
+          const total = etiquetas.length + sinEtiqueta
+          if (total === 0) return { error: `No hay cubiertas con el nivel «${nivel}».` }
+          acciones.push({ tipo: "seleccionar", capa: "cubierta", nombres: etiquetas, nivel })
+          return {
+            hecho: `Quedarán seleccionadas las ${total} cubiertas de ese nivel en el mapa y en la tabla.`,
+            ...(sinEtiqueta ? { aviso: `${sinEtiqueta} no tienen etiqueta en la base; se ven en la tabla sin nombre.` } : {}),
+          }
+        }
         const nombres = (Array.isArray(args.nombres) ? args.nombres : []).map((n) => texto(n)).filter(Boolean).slice(0, 300)
         if (nombres.length === 0) return { error: "Faltan los nombres." }
         acciones.push({ tipo: "seleccionar", capa: args.tipo === "cable" ? "cable" : "cubierta", nombres })
@@ -380,11 +508,135 @@ export function herramientasDelAsistente({ acciones, leerTrace }: { acciones: Ac
         return { hecho: "Se abrirá la ventana del trace con el recorrido en el mapa." }
       },
     },
+    {
+      name: "ayuda_gismart",
+      description:
+        "Dónde está cada función de GISmart (la cinta de arriba) y para qué sirve, y lo básico del programa (atajos, cómo editar). Úsala cuando pregunten cómo hacer algo en GISmart o dónde está una función.",
+      parameters: {
+        type: "object",
+        properties: {
+          tema: { type: "string", description: "Palabras clave de lo que se quiere hacer: «trace», «hilos», «medir distancia», «exportar excel»" },
+        },
+        required: ["tema"],
+      },
+      async ejecutar(args) {
+        const tema = texto(args.tema)
+        const comandos = comandosDeLaCinta()
+        let hallados = buscarComandos(comandos, tema, 6)
+        // Con una frase entera («cómo exporto la tabla a excel») no coincide
+        // nada: se prueba palabra por palabra.
+        if (hallados.length === 0) {
+          const vistos = new Set<string>()
+          hallados = tema
+            .split(/\s+/)
+            .filter((p) => p.length >= 4)
+            .flatMap((p) => buscarComandos(comandos, p, 3))
+            .filter((c) => !vistos.has(c.id) && Boolean(vistos.add(c.id)))
+            .slice(0, 6)
+        }
+        return {
+          funciones: hallados.map((c) => ({ funcion: c.etiqueta, donde: c.ruta, que_hace: c.descripcion })),
+          basico: GUIA,
+        }
+      },
+    },
+    {
+      name: "cerca_de",
+      description:
+        "Las cubiertas más cercanas a una dirección, una coordenada o una cubierta, con su distancia en metros, y marca el punto con un círculo en el mapa del usuario. Para «¿qué cubierta queda más cerca de…?». La red está en La Unión (Valle del Cauca).",
+      parameters: {
+        type: "object",
+        properties: {
+          direccion: { type: "string", description: "Dirección o lugar («Calle 12 # 5-30», «parque principal») o una coordenada «4.533, -76.103»" },
+          cubierta: { type: "string", description: "Etiqueta de una cubierta, para buscar alrededor de ella" },
+          nivel: { type: "string", description: "Solo cubiertas de ese nivel: «primer», «segundo» o «empalme»" },
+          radio_m: { type: "number", description: "Radio del círculo en metros (por defecto 300)" },
+          cantidad: { type: "number", description: "Cuántas devolver (por defecto 5, como mucho 10)" },
+        },
+      },
+      async ejecutar(args) {
+        if (!leerCubiertas) return { error: "La búsqueda por cercanía no está disponible en el servidor." }
+        const cubiertas = (await leerCubiertas()).filter((c) => Number.isFinite(c.lon) && Number.isFinite(c.lat))
+        const nombre = texto(args.cubierta, 40)
+        const direccion = texto(args.direccion, 120)
+        let centro: { lon: number; lat: number; lugar: string; aproximado: boolean }
+        if (nombre) {
+          const c = cubiertas.find((x) => x.etiqueta && plano(x.etiqueta) === plano(nombre))
+          if (!c) return { error: `No encontré la cubierta «${nombre}» en el mapa.` }
+          centro = { lon: c.lon, lat: c.lat, lugar: `la cubierta ${c.etiqueta}`, aproximado: false }
+        } else if (direccion) {
+          const coordenada = leerCoordenada(direccion)
+          if (coordenada) {
+            centro = { ...coordenada, lugar: textoDeCoordenada(coordenada), aproximado: false }
+          } else {
+            if (!geocodificar) return { error: "La búsqueda de direcciones no está disponible en el servidor." }
+            // Las direcciones se buscan en el municipio de la red, salvo que nombren otro.
+            const enLaRed = cubiertas.length
+              ? {
+                  lon: cubiertas.reduce((suma, c) => suma + c.lon, 0) / cubiertas.length,
+                  lat: cubiertas.reduce((suma, c) => suma + c.lat, 0) / cubiertas.length,
+                }
+              : null
+            const consulta = /uni[oó]n|valle|cauca|,/i.test(direccion) ? direccion : `${direccion}, La Unión, Valle del Cauca`
+            const encontradas = await geocodificar(consulta, enLaRed)
+            if (encontradas.length === 0) {
+              return {
+                error: `No encontré «${direccion}» en las direcciones de OpenStreetMap. Prueba escribiéndola de otra forma, con un lugar conocido o con una coordenada.`,
+              }
+            }
+            centro = { lon: encontradas[0].lon, lat: encontradas[0].lat, lugar: encontradas[0].etiqueta, aproximado: true }
+          }
+        } else {
+          return { error: "Falta la dirección, la coordenada o la cubierta." }
+        }
+
+        const radio = Math.round(entre(Number(args.radio_m) || 300, 20, 5000))
+        const cantidad = Math.round(entre(Number(args.cantidad) || 5, 1, 10))
+        const nivel = texto(args.nivel, 40)
+        const candidatas = cubiertas
+          .filter((c) => !nivel || (c.nivel !== null && plano(c.nivel).includes(plano(nivel))))
+          .filter((c) => !(nombre && c.etiqueta && plano(c.etiqueta) === plano(nombre)))
+          .map((c) => ({
+            etiqueta: c.etiqueta ?? "(sin etiqueta)",
+            nivel: c.nivel,
+            distancia_m: Math.round(distanciaM([centro.lon, centro.lat], [c.lon, c.lat])),
+          }))
+          .sort((a, b) => a.distancia_m - b.distancia_m)
+        const dentro = candidatas.filter((c) => c.distancia_m <= radio)
+        acciones.push({ tipo: "cercania", lon: centro.lon, lat: centro.lat, radioM: radio, etiqueta: centro.lugar.slice(0, 60) })
+        return {
+          punto: {
+            lugar: centro.lugar,
+            ...(centro.aproximado ? { aviso: "Ubicación aproximada según OpenStreetMap: que el usuario confirme en el mapa el punto marcado." } : {}),
+          },
+          radio_m: radio,
+          dentro_del_radio: dentro.length,
+          mas_cercanas: (dentro.length ? dentro : candidatas).slice(0, cantidad),
+          ...(dentro.length === 0 && candidatas.length ? { nota: `Ninguna dentro de ${radio} m: estas son las más cercanas.` } : {}),
+        }
+      },
+    },
   ]
 }
 
 /** Las instrucciones del asistente: quién es, qué sabe de la red y cómo responder. */
-export const INSTRUCCIONES = `Eres el asistente de GISmart, el SIG de la red de fibra óptica FTTH de G&G Technology en La Unión (Valle del Cauca, Colombia). Respondes en español, claro y breve, a técnicos e ingenieros de la red.
+export const INSTRUCCIONES = `Eres el asistente de GISmart, el SIG de la red de fibra óptica FTTH de G&G Technology en La Unión (Valle del Cauca, Colombia). Respondes en español a técnicos e ingenieros de la red, que quieren el dato y seguir trabajando.
+
+Cómo responder (lo más importante):
+- La primera línea ES la respuesta: la cifra, el nombre o el sí/no. En negrita solo ese dato clave, nunca la frase entera. Sin introducciones («Claro», «Aquí tienes», «En la red de La Unión hay…») y sin repetir la pregunta.
+- Responde solo lo que se preguntó. Un dato que no pidieron no va en la respuesta; si es útil, ponlo como sugerencia.
+- Corto: una o dos líneas casi siempre. Lista o tabla solo con tres elementos o más; una tabla de cinco filas como mucho, salvo que pidan todo.
+- No cuentes lo que hiciste en el mapa (el panel ya lo muestra con fichas) ni ofrezcas más ayuda al final (para eso están las sugerencias).
+- Preguntas de concepto: dos frases como mucho, solo con lo que se sabe de esta red, sin suponer.
+- «¿Cómo hago…?» o «¿dónde está…?»: los pasos en una lista numerada corta, tal como los devuelve ayuda_gismart (pestaña › grupo › botón y qué pulsar). Nunca inventes clics, botones ni ventanas.
+- Si falta un dato para responder (qué cubierta, qué cable), pregunta solo eso, en una línea.
+- Cifras con su unidad y coma decimal: 18,73 km, 116,7 m, 0,5 dB.
+
+Ejemplos de forma (las cifras y los nombres de estos ejemplos son inventados: los datos salen siempre de las herramientas):
+- «¿Cuántas cubiertas hay?» → «**120 cubiertas**: 15 de primer nivel, 103 de segundo y 2 de empalme.»
+- «¿Qué cables llegan a CO50?» → «Llega el **2100001** (144 hilos, 80,2 m) desde CO49; sale el **2100002** (48 hilos, 60,5 m) hacia N7.»
+- «¿A dónde llega el hilo 3 del cable 2100001?» → «Al **puerto 2 de la OLT** en el **HUB LA UNION**: 8 pasos, 4,1 km y 0,4 dB.»
+- «¿Qué cubierta queda más cerca de…?» → «**7-may** (segundo nivel), a **20 m**. Le siguen 9-sep (41 m) y CO40 (75 m).»
 
 Cómo es la red:
 - Una cabecera central (HUB LA UNION) con la OLT. De ahí salen cables de fibra hacia cubiertas de empalme (también llamadas mufas o cajas de empalme).
@@ -397,4 +649,10 @@ Reglas:
 - Solo consultas: no puedes crear, borrar ni cambiar nada de la red. Si te lo piden, explica que eso se hace en el SIG con la capa activa.
 - Para ubicar algo en el mapa usa mostrar_en_mapa; para varias cosas, seleccionar_en_mapa; para pintar un recorrido, abrir_trace.
 - Para el trace de «el hilo N del cable X»: pide ficha_cable con con_hilos para conseguir el UUID del hilo y luego usa trace (o abrir_trace si quieren verlo).
-- Da las longitudes en metros o kilómetros y la atenuación en dB. No muestres UUID salvo que te los pidan.`
+- Para «todas las de primer nivel» (o segundo, o empalme) usa el parámetro nivel: en buscar_elementos para listarlas, en seleccionar_en_mapa para seleccionarlas.
+- Da las longitudes en metros o kilómetros y la atenuación en dB. No muestres UUID salvo que te los pidan.
+- En tus respuestas di siempre «cubierta», nunca «mufa», aunque el usuario diga mufa.
+- Si preguntan cómo hacer algo en GISmart o dónde está una función, usa ayuda_gismart y di dónde está (pestaña › grupo › botón).
+- Para «¿qué cubierta queda más cerca de…?» usa cerca_de. Si la ubicación es aproximada, dilo y pide confirmar el punto marcado en el mapa.
+- Para comparar varias cosas usa una tabla en Markdown (| columna | columna |); para pasos, una lista numerada corta.
+- Termina siempre con una última línea «Sugerencias: » y hasta tres preguntas cortas de seguimiento que el usuario podría hacerte a continuación, separadas por « | ». Solo preguntas que puedas responder con tus herramientas y sobre lo que se está hablando.`

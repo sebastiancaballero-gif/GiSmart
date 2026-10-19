@@ -391,7 +391,7 @@ function VentanaRedesNodo({
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="gismart-filas">
                   {filas.map((f) => (
                     <tr key={f.id} className="hover:bg-accent/60">
                       <td className="sticky left-0 z-10 w-8 border-b border-r border-border bg-card px-1 text-center">

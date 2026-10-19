@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
+  Bot,
   Box,
   Building2,
   Command,
@@ -47,6 +48,7 @@ type Opcion =
   | { tipo: "comando"; comando: ComandoBuscable }
   | { tipo: "direccion"; resultado: SearchResult }
   | { tipo: "buscarDirecciones"; texto: string }
+  | { tipo: "preguntarIA"; texto: string }
 
 const ICONO_DE_TIPO: Record<TipoBuscable, { icono: typeof Box; color: string }> = {
   node: { icono: Box, color: LAYER_COLORS.node },
@@ -72,6 +74,7 @@ export function DashboardHeader({
   onElegirElemento,
   comandos,
   onElegirComando,
+  onPreguntarIA,
   pedirFoco = 0,
 }: {
   title?: string
@@ -93,6 +96,8 @@ export function DashboardHeader({
   comandos?: ComandoBuscable[]
   /** Se llama al elegir una función: hace lo mismo que su botón. */
   onElegirComando?: (comando: ComandoBuscable) => void
+  /** Lo escrito como pregunta para el asistente de IA (modulos/avanzado/asistente). */
+  onPreguntarIA?: (texto: string) => void
   /** Al cambiar, el buscador toma el foco (botón «Búsqueda» del ribbon). */
   pedirFoco?: number
 }) {
@@ -178,7 +183,7 @@ export function DashboardHeader({
       setResults(encontradas)
       setSearchError(encontradas.length === 0 ? `Sin direcciones para «${termino}».` : null)
       // La primera dirección queda resaltada: Enter la elige.
-      if (encontradas.length > 0) setActiva(enLaRed.length + funciones.length)
+      if (encontradas.length > 0) setActiva((alAsistentePrimero ? 1 : 0) + enLaRed.length + funciones.length)
     } catch {
       if (consulta === consultaRef.current) setSearchError("No se pudo buscar direcciones. Revisa la conexión.")
     } finally {
@@ -187,16 +192,22 @@ export function DashboardHeader({
   }
 
   const ofrecerDirecciones = texto.length >= 3 && !coordenada && !fueraDeRango && buscadoEn !== texto
-  const opciones: Opcion[] = useMemo(
-    () => [
+  // Preguntarle al asistente: al final de la lista, o primera (y elegida con
+  // Enter) cuando lo escrito tiene forma de pregunta: «¿…?» o cuatro palabras o más.
+  const ofrecerAsistente = Boolean(onPreguntarIA) && texto.length >= 3 && !coordenada
+  const alAsistentePrimero = ofrecerAsistente && (/^¿|\?$/.test(texto) || texto.split(/\s+/).length >= 4)
+  const opciones: Opcion[] = useMemo(() => {
+    const asistente = ofrecerAsistente ? [{ tipo: "preguntarIA" as const, texto }] : []
+    return [
+      ...(alAsistentePrimero ? asistente : []),
       ...(coordenada ? [{ tipo: "coordenada" as const, coordenada }] : []),
       ...enLaRed.map((elemento) => ({ tipo: "elemento" as const, elemento })),
       ...funciones.map((comando) => ({ tipo: "comando" as const, comando })),
       ...results.map((resultado) => ({ tipo: "direccion" as const, resultado })),
       ...(ofrecerDirecciones ? [{ tipo: "buscarDirecciones" as const, texto }] : []),
-    ],
-    [coordenada, enLaRed, funciones, results, ofrecerDirecciones, texto],
-  )
+      ...(alAsistentePrimero ? [] : asistente),
+    ]
+  }, [coordenada, enLaRed, funciones, results, ofrecerDirecciones, ofrecerAsistente, alAsistentePrimero, texto])
   // El aviso de la búsqueda de direcciones (sin resultados o con error) solo
   // tiene sentido para el texto que se buscó.
   const mensaje = fueraDeRango
@@ -258,6 +269,10 @@ export function DashboardHeader({
     } else if (opcion.tipo === "comando") {
       // Una función no es un lugar: el campo queda limpio para la próxima búsqueda.
       onElegirComando?.(opcion.comando)
+      setQuery("")
+    } else if (opcion.tipo === "preguntarIA") {
+      // La pregunta se va al asistente, que se abre y la responde.
+      onPreguntarIA?.(opcion.texto)
       setQuery("")
     } else if (opcion.tipo === "coordenada") {
       const texto = textoDeCoordenada(opcion.coordenada)
@@ -402,7 +417,9 @@ export function DashboardHeader({
                         ? "coordenada"
                         : opcion.tipo === "buscarDirecciones"
                           ? "buscar-direcciones"
-                          : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`
+                          : opcion.tipo === "preguntarIA"
+                            ? "preguntar-ia"
+                            : `${opcion.resultado.lat}-${opcion.resultado.lon}-${i}`
                   return (
                     <li key={clave}>
                       {opcion.tipo === "coordenada" && (
@@ -426,6 +443,15 @@ export function DashboardHeader({
                           }`}
                         >
                           Funciones
+                        </p>
+                      )}
+                      {opcion.tipo === "preguntarIA" && (
+                        <p
+                          className={`px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${
+                            i > 0 ? "mt-1 border-t border-border pt-2" : ""
+                          }`}
+                        >
+                          Asistente IA
                         </p>
                       )}
                       {primeraDireccion && (
@@ -479,6 +505,14 @@ export function DashboardHeader({
                                 {opcion.comando.ruta}
                                 {opcion.comando.descripcion !== opcion.comando.etiqueta && ` · ${opcion.comando.descripcion}`}
                               </span>
+                            </span>
+                          </>
+                        ) : opcion.tipo === "preguntarIA" ? (
+                          <>
+                            <Bot className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            <span className="flex min-w-0 flex-col">
+                              <span className="line-clamp-2 font-semibold">Preguntar al asistente: «{opcion.texto}»</span>
+                              <span className="truncate text-[11px] text-muted-foreground">Responde con los datos de la red · Ctrl+I lo abre</span>
                             </span>
                           </>
                         ) : opcion.tipo === "buscarDirecciones" ? (

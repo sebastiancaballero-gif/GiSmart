@@ -658,6 +658,32 @@ console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n"
   }
 }
 
+// --- 10. la función según el nivel de la cubierta -----------------------------
+console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD SEGÚN EL NIVEL DE LA CUBIERTA\n")
+{
+  const { funcionDeConectividad, FUNCION_CONECTIVIDAD_N0: N0, FUNCION_CONECTIVIDAD_N12: N12 } = await import("../lib/map/conectividad.ts")
+  comprobar("nivel 0 (empalme): _n0", funcionDeConectividad(0, "Empalme") === N0)
+  comprobar("nivel 1 y nivel 2: _n12", funcionDeConectividad(1, "Primer nivel") === N12 && funcionDeConectividad(2, "Segundo nivel") === N12)
+  comprobar("sin nivel: _n0 solo si es de empalme", funcionDeConectividad(null, "Empalme") === N0 && funcionDeConectividad(null, null) === N12)
+
+  // Con la base real: una cubierta de cada nivel responde por la ruta.
+  const conNivel = await (
+    await fetch(`${process.env.SUPABASE_URL}/rest/v1/cubierta_empalme?select=id,etiqueta,nivel&order=id`, {
+      headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": "geo_fiber" },
+    })
+  ).json()
+  for (const nivel of [0, 1, 2]) {
+    const cubierta = conNivel.find((c) => c.nivel === nivel)
+    if (!cubierta) continue
+    const r = await pedirRuta(cubierta.id)
+    comprobar(
+      `nivel ${nivel} (${cubierta.etiqueta ?? "sin etiqueta"}): la ruta responde con su función`,
+      r.status === 200 && Array.isArray(r.cuerpo?.cables),
+      `HTTP ${r.status}${r.cuerpo?.funcion ? ` · ${r.cuerpo.funcion}` : ""}${r.cuerpo?.message ? ` · ${r.cuerpo.message}` : ""}`,
+    )
+  }
+}
+
 console.log(
   `\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}` +
     (sinDatos ? ` ${sinDatos} quedaron pendientes por el estado de la base (ver SIN DATOS y PENDIENTE arriba).` : "") +

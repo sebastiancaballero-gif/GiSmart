@@ -103,5 +103,89 @@ const pedir = (id, token) =>
 comprobar("sin sesión: 401", (await pedir("01a0c524-b611-7fc7-b56e-c93273914aa3")).status === 401)
 comprobar("id que no es UUID: 400", (await pedir("no-es-un-uuid", emitirToken("Prueba", "operador"))).status === 400)
 
+console.log("\n5) SECCIÓN DISTRIBUCIÓN (de la caché del trace)\n")
+{
+  const { armarDistribucion, salidaDeLaCubierta, salidasDelModelo, clasificarRespuestaDistribucion, idsParaDistribucion, SIN_CONECTAR } =
+    await import("../lib/map/distribucion-cable.ts")
+  const { GET: GET_DISTRIBUCION } = await import("../app/api/cables/[id]/distribucion/route.ts")
+
+  comprobar("salidas del modelo: 1x8PC → 8", salidasDelModelo("1x8PC") === 8 && salidasDelModelo("1 x 16") === 16 && salidasDelModelo("raro") === null)
+  const d1 = { id: "d1", num_divisor: 1, modelo_divisor: "1x8PC", id_cubierta_ubica: "co05" }
+  const d2 = { id: "d2", num_divisor: 2, modelo_divisor: "1x8PC", id_cubierta_ubica: "co05" }
+  comprobar("salida de la cubierta: puerto 1 del divisor 2 → 9, como el SIG anterior", salidaDeLaCubierta(d2, 1, [d2, d1]) === 9)
+  comprobar("salida del divisor 1: el mismo puerto", salidaDeLaCubierta(d1, 7, [d1, d2]) === 7)
+  comprobar("con números de divisor repetidos no se inventa la salida", salidaDeLaCubierta(d2, 1, [d2, { ...d1, num_divisor: 2 }]) === null)
+
+  const cache = [
+    // Hilo a: sale del puerto S3 del divisor 2 de CO05 y llega a la NAP 13/14.
+    {
+      id_origen: "a",
+      direccion: "UPSTREAM",
+      fecha_calculo: "2026-10-01",
+      path_secuencia: [
+        { paso: 2, tipo_contenedor: "DIVISOR", id_contenedor: "d2", tip_destino: "PUERTO", puerto_destino: "s3" },
+        { paso: 1, tipo_contenedor: "CUB", id_contenedor: "n2", tip_destino: "HILO" },
+      ],
+    },
+    {
+      id_origen: "a",
+      direccion: "DOWNSTREAM",
+      fecha_calculo: "2026-10-01",
+      path_secuencia: [{ paso: 1, tipo_contenedor: "CUB", id_contenedor: "nap", tip_destino: "PUERTO", puerto_destino: "e-nap" }],
+    },
+    // Hilo b (feeder): no cruza divisores hacia la fuente; llega a la entrada del divisor 1 de CO05.
+    { id_origen: "b", direccion: "UPSTREAM", fecha_calculo: "2026-10-01", path_secuencia: [{ paso: 1, tipo_contenedor: "OLT" }] },
+    {
+      id_origen: "b",
+      direccion: "DOWNSTREAM",
+      fecha_calculo: "2026-10-01",
+      path_secuencia: [{ paso: 1, tipo_contenedor: "CUB", id_contenedor: "co05", tip_destino: "PUERTO", puerto_destino: "e1" }],
+    },
+  ]
+  const ids = idsParaDistribucion(cache)
+  comprobar("pide solo los puertos de los pasos que importan", [...ids.puertos].sort().join(",") === "e-nap,e1,s3", ids.puertos.join(","))
+  const filas = armarDistribucion({
+    hilos: ["a", "b", "c"],
+    cache,
+    puertos: new Map([
+      ["s3", { id: "s3", numero_puerto: 3, id_equipo_pert: "d2", tipo_equipo_pert: "DIV_N1" }],
+      ["e-nap", { id: "e-nap", numero_puerto: 1, id_equipo_pert: "dnap", tipo_equipo_pert: "DIV_N2" }],
+      ["e1", { id: "e1", numero_puerto: 1, id_equipo_pert: "d1", tipo_equipo_pert: "DIV_N1" }],
+    ]),
+    divisores: new Map([d1, d2, { id: "dnap", num_divisor: 1, modelo_divisor: "1x8PC", id_cubierta_ubica: "nap" }].map((d) => [d.id, d])),
+    cubiertas: new Map([
+      ["co05", { id: "co05", etiqueta: "CO05", funcion_cub: "Primer nivel" }],
+      ["nap", { id: "nap", etiqueta: "13/14", funcion_cub: "Segundo nivel" }],
+    ]),
+    divisoresDeLaCubierta: new Map([["co05", [d1, d2]]]),
+  })
+  const [a, b, c] = filas
+  comprobar(
+    "hilo de distribución: cubierta, divisor, puerto y salida",
+    a.cubierta === "CO05" && a.divisor === 2 && a.puertoDivisor === 3 && a.salida === 11,
+    JSON.stringify(a),
+  )
+  comprobar("llega a una cubierta de segundo nivel: «NAP 13/14»", a.destino === "NAP 13/14", String(a.destino))
+  comprobar(
+    "hilo del feeder: sin divisor de origen, llega al divisor de primer nivel",
+    b.cubierta === null && b.destino === "Divisor 1 de CO05",
+    String(b.destino),
+  )
+  comprobar("hilo sin recorrido: «Sin conectar»", c.cubierta === null && c.destino === SIN_CONECTAR)
+
+  const leida = clasificarRespuestaDistribucion(200, JSON.parse(JSON.stringify({ hilos: filas })))
+  comprobar("servidor → navegador: la fila llega entera", leida.estado === "ok" && JSON.stringify(leida.hilos[0]) === JSON.stringify(a))
+  const error = clasificarRespuestaDistribucion(502, { message: "falla", detalle: "tab_fiber.element_connection → 42501: permiso" })
+  comprobar("error con su mensaje y su detalle", error.estado === "error" && error.mensaje === "falla" && error.detalle?.includes("42501"))
+
+  const pedirDistribucion = (id, token) =>
+    GET_DISTRIBUCION(
+      new Request(`http://local/api/cables/${id}/distribucion`, { headers: token ? { authorization: `Bearer ${token}` } : {} }),
+      { params: Promise.resolve({ id }) },
+    )
+  comprobar("la ruta sin sesión: 401", (await pedirDistribucion("01a0c524-b611-7fc7-b56e-c93273914aa3")).status === 401)
+  comprobar("la ruta con un id que no es UUID: 400", (await pedirDistribucion("no-es-un-uuid", emitirToken("Prueba", "operador"))).status === 400)
+}
+
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)
 process.exit(fallos ? 1 : 0)

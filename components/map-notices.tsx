@@ -62,7 +62,7 @@ export function MapNotice({
   return (
     <div
       role={tono === "error" ? "alert" : tono === "aviso" ? "status" : undefined}
-      className={`relative flex max-w-full items-start gap-2 overflow-hidden rounded-lg bg-card/95 py-2 pl-3.5 pr-2.5 text-xs font-medium leading-snug text-foreground shadow-lg ring-1 backdrop-blur animate-gismart-fade-in ${anillo} ${
+      className={`relative flex max-w-full items-start gap-2 overflow-hidden rounded-lg bg-card/95 py-2 pl-3.5 pr-2.5 text-xs font-medium leading-snug text-foreground shadow-lg ring-1 backdrop-blur gismart-aviso ${anillo} ${
         interactivo || onCerrar ? "pointer-events-auto" : ""
       }`}
     >

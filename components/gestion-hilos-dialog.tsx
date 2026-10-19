@@ -37,6 +37,12 @@ import { Tooltip } from "@/components/ui/tooltip"
 import type { AccesoAlMapa, CableElegido } from "@/components/network-map"
 import { BolitaDeHilo } from "@/components/bolita-de-hilo"
 import { colorParaMostrar, obtenerHilosDeCable, type HiloDeCable, type ResultadoHilos } from "@/lib/map/hilos-cable"
+import {
+  SIN_CONECTAR,
+  obtenerDistribucionDeCable,
+  type DistribucionDeHilo,
+  type ResultadoDistribucion,
+} from "@/lib/map/distribucion-cable"
 import type { DireccionTrace } from "@/lib/map/trace"
 
 /**
@@ -56,8 +62,12 @@ import type { DireccionTrace } from "@/lib/map/trace"
  * hacer. Las columnas que la función todavía no devuelve (origen, equipo,
  * servicio) se marcan «pendiente» en vez de llenarse de rayas.
  *
- * Los hilos salen de `tab_fiber.fn_obtener_hilos_cable_json`. Los botones de
- * corte y recorrido están puestos pero sin funcionar: faltan sus funciones.
+ * Dos pestañas, como en el SIG anterior: «Sección feeder» (antes «Sección
+ * troncal»), con los hilos de `tab_fiber.fn_obtener_hilos_cable_json`, y
+ * «Sección distribución», con la cubierta de primer nivel, el divisor y la
+ * salida de donde sale cada hilo y el equipo al que llega (de la caché del
+ * trace, ver `lib/map/distribucion-cable.ts`). La simulación de corte está
+ * puesta pero sin funcionar: falta su función.
  */
 
 /**
@@ -191,6 +201,39 @@ const clave = (g: string, c: string) => `${g}-${c}`
 
 type Vista = "sin-cable" | "sin-id" | "cargando" | "error" | "vacio" | "datos"
 
+type Pestana = "feeder" | "distribucion"
+const PESTANAS: { id: Pestana; nombre: string }[] = [
+  { id: "feeder", nombre: "Sección feeder" },
+  { id: "distribucion", nombre: "Sección distribución" },
+]
+
+/**
+ * Columnas de «Sección distribución», con los nombres del SIG anterior salvo
+ * «CEO Origen» → «Cubierta nivel 1» y «Salida CEO» → «Salida».
+ */
+const COLUMNAS_DISTRIBUCION: {
+  titulo: string
+  ancho: string
+  valor: (h: HiloDeCable, d: DistribucionDeHilo | undefined) => React.ReactNode
+}[] = [
+  { titulo: "Identificador", ancho: "min-w-28", valor: (h) => h.identificador ?? <Vacio /> },
+  { titulo: "Número", ancho: "min-w-20", valor: (h) => <NumeroDeHilo hilo={h} /> },
+  {
+    titulo: "Cubierta nivel 1",
+    ancho: "min-w-32",
+    valor: (_, d) => (d?.cubierta ? <span className="font-semibold">{d.cubierta}</span> : <Vacio />),
+  },
+  { titulo: "Divisor", ancho: "min-w-20", valor: (_, d) => d?.divisor ?? <Vacio /> },
+  { titulo: "Pto divisor", ancho: "min-w-24", valor: (_, d) => d?.puertoDivisor ?? <Vacio /> },
+  { titulo: "Salida", ancho: "min-w-20", valor: (_, d) => d?.salida ?? <Vacio /> },
+  {
+    titulo: "Equipo destino",
+    ancho: "min-w-40",
+    valor: (_, d) =>
+      !d?.destino ? <Vacio /> : d.destino === SIN_CONECTAR ? <span className="italic text-muted-foreground">{d.destino}</span> : d.destino,
+  },
+]
+
 /**
  * Cómo se presenta el hilo en «Recorrido del trace»: con el identificador del
  * cable (su UUID, como en la tabla del trace), lo que se lee al pasar el mouse
@@ -288,8 +331,14 @@ function VentanaHilos({
   const [hastaCeo, setHastaCeo] = useState(false)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
   const [intento, setIntento] = useState(0)
+  const [pestana, setPestana] = useState<Pestana>("feeder")
+  // La sección distribución se pide al abrir su pestaña y queda guardada con
+  // su cable (y su intento): volver a la pestaña no la pide otra vez.
+  const [distribucion, setDistribucion] = useState<{ id: string; intento: number; r: ResultadoDistribucion } | null>(null)
+  const [intentoDistribucion, setIntentoDistribucion] = useState(0)
 
   const idCable = cable?.id ?? null
+  const distribucionCargada = distribucion?.id === idCable && distribucion.intento === intentoDistribucion
 
   useEffect(() => {
     if (!open || !idCable) return
@@ -301,6 +350,17 @@ function VentanaHilos({
       vigente = false
     }
   }, [open, idCable, intento])
+
+  useEffect(() => {
+    if (!open || !idCable || pestana !== "distribucion" || distribucionCargada) return
+    let vigente = true
+    void obtenerDistribucionDeCable(idCable).then((r) => {
+      if (vigente) setDistribucion({ id: idCable, intento: intentoDistribucion, r })
+    })
+    return () => {
+      vigente = false
+    }
+  }, [open, idCable, pestana, intentoDistribucion, distribucionCargada])
 
   // Al volver a abrir (por ejemplo después de ver el recorrido de un hilo), la
   // grilla baja hasta el hilo que seguía seleccionado.
@@ -386,6 +446,24 @@ function VentanaHilos({
   const hiloElegido = seleccion && seleccion.cable === idCable ? hilos.find((h) => h.id === seleccion.hilo) ?? null : null
   const colorElegido = hiloElegido ? colorParaMostrar(hiloElegido.colorHilo, hiloElegido.numero) : null
 
+  // Sección distribución del cable elegido, por UUID del hilo.
+  const distribucionActual = idCable && distribucion?.id === idCable ? distribucion.r : null
+  const distribucionPorHilo = useMemo(
+    () => new Map((distribucionActual?.estado === "ok" ? distribucionActual.hilos : []).map((d) => [d.id.toLowerCase(), d])),
+    [distribucionActual],
+  )
+  const enDistribucion = pestana === "distribucion"
+  // Mientras los hilos no estén, la pestaña muestra lo mismo que la otra (elegir cable, cargando, error…).
+  const vistaDistribucion: "cargando" | "error" | "datos" | null =
+    !enDistribucion || vista !== "datos"
+      ? null
+      : !distribucionActual
+        ? "cargando"
+        : distribucionActual.estado === "error"
+          ? "error"
+          : "datos"
+  const conDivisor = hilos.filter((h) => h.uuid && distribucionPorHilo.get(h.uuid.toLowerCase())?.cubierta).length
+
   function cambiarFiltro(cambio: Partial<{ buffer: number | null; texto: string }>) {
     if (idCable) setFiltro({ ...filtroActual, cable: idCable, ...cambio })
   }
@@ -406,6 +484,11 @@ function VentanaHilos({
   function reintentar() {
     setResultado(null)
     setIntento((n) => n + 1)
+  }
+
+  function reintentarDistribucion() {
+    setDistribucion(null)
+    setIntentoDistribucion((n) => n + 1)
   }
 
   /**
@@ -445,6 +528,11 @@ function VentanaHilos({
   // Lo que dice la barra de abajo: el último mensaje o, si no hay, el estado.
   const barra: Mensaje =
     mensaje ??
+    (vistaDistribucion === "cargando"
+      ? { texto: `Armando la sección distribución de ${cable?.codigo}…`, tono: "info" }
+      : distribucionActual?.estado === "error" && vistaDistribucion === "error"
+        ? { texto: distribucionActual.mensaje, tono: "error" }
+        : null) ??
     {
       "sin-cable": { texto: "Pulsa «Elegir en el mapa» y haz click sobre un cable.", tono: "info" as const },
       "sin-id": { texto: `${cable?.codigo} se dibujó en el mapa y no existe en la base.`, tono: "aviso" as const },
@@ -460,7 +548,7 @@ function VentanaHilos({
     }[vista]
 
   const filtrando = filtroActual.buffer !== null || filtroActual.texto.trim() !== ""
-  const muestraTabla = vista === "datos" || vista === "cargando"
+  const muestraTabla = vista === "cargando" || (vista === "datos" && vistaDistribucion !== "error")
 
   // Celdas fijas a la izquierda (flecha y número): siguen a la vista al
   // desplazar la grilla a lo ancho. Llevan fondo propio para tapar lo que pasa
@@ -556,12 +644,33 @@ function VentanaHilos({
               tabla guarda su alto y la ventana se desplaza. */}
           <div className="flex shrink-0 flex-col">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <span className="rounded-t-lg border border-b-0 border-border bg-card px-3.5 py-1.5 text-xs font-semibold text-foreground">
-                Sección troncal
-                {vista === "datos" && (
-                  <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">{hilos.length}</span>
-                )}
-              </span>
+              <div role="tablist" aria-label="Secciones del cable" className="flex items-end gap-1">
+                {PESTANAS.map((p) => {
+                  const activa = pestana === p.id
+                  // Feeder: todos los hilos; distribución: los que salen de un divisor (ya leída).
+                  const cuenta =
+                    vista !== "datos" ? null : p.id === "feeder" ? hilos.length : distribucionActual?.estado === "ok" ? conDivisor : null
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={activa}
+                      onClick={() => setPestana(p.id)}
+                      className={`rounded-t-lg border border-b-0 px-3.5 py-1.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                        activa
+                          ? "border-border bg-card text-foreground"
+                          : "border-transparent bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      {p.nombre}
+                      {cuenta !== null && (
+                        <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">{cuenta}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
               {vista === "datos" && (
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <button
@@ -611,7 +720,7 @@ function VentanaHilos({
 
             <div
               role={muestraTabla ? "grid" : undefined}
-              aria-label="Hilos del cable"
+              aria-label={enDistribucion ? "Sección distribución del cable" : "Hilos del cable"}
               aria-busy={vista === "cargando"}
               tabIndex={vista === "datos" ? 0 : undefined}
               onKeyDown={(e) => {
@@ -625,7 +734,7 @@ function VentanaHilos({
               }}
               className={`relative h-[min(24rem,46vh)] rounded-b-xl rounded-tr-xl border border-border bg-card shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                 muestraTabla ? "overflow-auto" : "overflow-hidden"
-              }`}
+              } ${enDistribucion ? "rounded-tl-xl" : ""}`}
             >
               {vista === "sin-cable" && (
                 <EstadoVacio
@@ -679,7 +788,34 @@ function VentanaHilos({
                 </EstadoVacio>
               )}
 
-              {muestraTabla && (
+              {vistaDistribucion === "error" && distribucionActual?.estado === "error" && (
+                <EstadoVacio
+                  icono={CircleAlert}
+                  tono="error"
+                  titulo="No se pudo armar la sección distribución"
+                  texto={distribucionActual.mensaje}
+                  detalle={`caché del trace (tab_fiber.element_connection)${distribucionActual.detalle ? ` → ${distribucionActual.detalle}` : ""}`}
+                >
+                  <Boton icono={RefreshCw} onClick={reintentarDistribucion}>
+                    Reintentar
+                  </Boton>
+                </EstadoVacio>
+              )}
+
+              {muestraTabla && enDistribucion && cable && (
+                <TablaDistribucion
+                  cargando={vista === "cargando" || vistaDistribucion === "cargando"}
+                  visibles={visibles}
+                  filtroBuffer={filtroActual.buffer}
+                  buffers={buffers}
+                  porHilo={distribucionPorHilo}
+                  hiloElegido={hiloElegido}
+                  onElegir={elegirHilo}
+                  onQuitarFiltro={() => cambiarFiltro({ buffer: null, texto: "" })}
+                />
+              )}
+
+              {muestraTabla && !enDistribucion && (
                 <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
                   <thead>
                     {/* Grupos de columnas */}
@@ -743,7 +879,7 @@ function VentanaHilos({
                       )}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="gismart-filas">
                     {vista === "cargando" &&
                       Array.from({ length: 9 }, (_, i) => (
                         <tr key={`hueso-${i}`} aria-hidden="true" className={i % 2 === 1 ? "bg-foreground/[0.035]" : ""}>
@@ -855,11 +991,15 @@ function VentanaHilos({
                 </table>
               )}
             </div>
-            {vista === "datos" && (filtrando || hayPendientes) && (
+            {vista === "datos" && (enDistribucion ? vistaDistribucion === "datos" : filtrando || hayPendientes) && (
               <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Info className="size-3 shrink-0" aria-hidden="true" />
                 {filtrando ? `Mostrando ${visibles.length} de ${hilos.length} hilos. ` : ""}
-                {hayPendientes ? "Las columnas «pendiente» se llenan cuando la función de hilos devuelva esos datos." : ""}
+                {enDistribucion
+                  ? `${conDivisor} de ${hilos.length} hilos salen de un divisor. Cubierta, divisor y salida: de dónde sale el hilo; equipo destino: dónde termina hacia abajo (según el trace).`
+                  : hayPendientes
+                    ? "Las columnas «pendiente» se llenan cuando la función de hilos devuelva esos datos."
+                    : ""}
               </p>
             )}
           </div>
@@ -979,10 +1119,139 @@ function VentanaHilos({
 
         <BarraDeEstado
           mensaje={barra}
-          cargando={vista === "cargando" && !mensaje}
-          accion={vista === "error" ? { texto: "Reintentar", onClick: reintentar } : undefined}
+          cargando={(vista === "cargando" || vistaDistribucion === "cargando") && !mensaje}
+          accion={
+            vista === "error"
+              ? { texto: "Reintentar", onClick: reintentar }
+              : vistaDistribucion === "error"
+                ? { texto: "Reintentar", onClick: reintentarDistribucion }
+                : undefined
+          }
         />
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * La grilla de «Sección distribución»: los mismos hilos (con el mismo filtro y
+ * la misma selección que la otra pestaña) con la cubierta, el divisor y la
+ * salida de donde salen y el equipo al que llegan. Tiene pocas columnas: no
+ * hace falta fijar ninguna.
+ */
+function TablaDistribucion({
+  cargando,
+  visibles,
+  filtroBuffer,
+  buffers,
+  porHilo,
+  hiloElegido,
+  onElegir,
+  onQuitarFiltro,
+}: {
+  cargando: boolean
+  visibles: HiloDeCable[]
+  filtroBuffer: number | null
+  buffers: { buffer: number; hilos: number }[]
+  /** La sección distribución de cada hilo, por su UUID en minúsculas. */
+  porHilo: Map<string, DistribucionDeHilo>
+  hiloElegido: HiloDeCable | null
+  onElegir: (h: HiloDeCable) => void
+  onQuitarFiltro: () => void
+}) {
+  const total = 1 + COLUMNAS_DISTRIBUCION.length
+  return (
+    <table className="w-full min-w-max border-separate border-spacing-0 text-xs">
+      <thead>
+        <tr>
+          <th className="sticky top-0 z-30 w-8 min-w-8 max-w-8 border-b border-r border-border bg-muted" aria-label="Fila seleccionada" />
+          {COLUMNAS_DISTRIBUCION.map((c) => (
+            <th
+              key={c.titulo}
+              scope="col"
+              className={`sticky top-0 z-30 ${c.ancho} border-b border-border bg-muted px-2.5 py-2 text-left font-semibold text-foreground`}
+            >
+              {c.titulo}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="gismart-filas">
+        {cargando &&
+          Array.from({ length: 9 }, (_, i) => (
+            <tr key={`hueso-${i}`} aria-hidden="true" className={i % 2 === 1 ? "bg-foreground/[0.035]" : ""}>
+              <td className="w-8 min-w-8 max-w-8 border-b border-r border-border" />
+              {COLUMNAS_DISTRIBUCION.map((c, j) => (
+                <td key={c.titulo} className="border-b border-border px-2.5 py-2.5">
+                  {j === 1 ? <Hueso redondo /> : <Hueso ancho={j % 2 === 0 ? "w-14" : "w-10"} />}
+                </td>
+              ))}
+            </tr>
+          ))}
+
+        {!cargando && visibles.length === 0 && (
+          <tr>
+            <td colSpan={total} className="p-0">
+              <div className="flex flex-col items-center gap-2 px-6 py-10 text-center text-xs text-muted-foreground">
+                <SearchX className="size-6 text-muted-foreground/60" aria-hidden="true" />
+                Ningún hilo coincide con el filtro.
+                <button
+                  type="button"
+                  onClick={onQuitarFiltro}
+                  className="flex items-center gap-1 rounded-full bg-card px-2.5 py-1 font-semibold text-foreground ring-1 ring-border hover:bg-accent"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                  Quitar filtro
+                </button>
+              </div>
+            </td>
+          </tr>
+        )}
+
+        {!cargando &&
+          visibles.map((h, i) => {
+            const elegido = hiloElegido?.id === h.id
+            const colorBuffer = colorParaMostrar(h.colorBuffer, h.buffer)
+            const empiezaBuffer = filtroBuffer === null && h.buffer !== null && (i === 0 || visibles[i - 1].buffer !== h.buffer)
+            const fondo = elegido ? "bg-primary/12" : i % 2 === 1 ? "bg-foreground/[0.035]" : "bg-card"
+            const buffer = buffers.find((b) => b.buffer === h.buffer)
+            const d = h.uuid ? porHilo.get(h.uuid.toLowerCase()) : undefined
+            return (
+              <Fragment key={h.id}>
+                {empiezaBuffer && (
+                  <tr aria-hidden="true">
+                    <td colSpan={total} className="border-b border-border bg-muted/60 p-0">
+                      <span className="flex w-fit items-center gap-2 px-3 py-1 text-[11px] font-semibold text-foreground">
+                        {colorBuffer && <span className="size-2.5 rounded-full ring-1 ring-foreground/20" style={{ backgroundColor: colorBuffer }} />}
+                        Buffer {h.buffer}
+                        {h.colorBuffer && <span className="font-normal text-muted-foreground">· {h.colorBuffer}</span>}
+                        {buffer && <span className="font-normal text-muted-foreground">· {buffer.hilos} hilos</span>}
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                <tr
+                  id={`hilo-${h.id}`}
+                  aria-selected={elegido}
+                  onClick={() => onElegir(h)}
+                  className={`cursor-pointer ${fondo} ${elegido ? "" : "hover:bg-accent/70"}`}
+                >
+                  <td
+                    className="w-8 min-w-8 max-w-8 border-b border-r border-border px-1 text-center"
+                    style={colorBuffer ? { boxShadow: `inset 3px 0 0 ${colorBuffer}` } : undefined}
+                  >
+                    {elegido && <ChevronRight className="mx-auto size-3.5 text-primary" aria-hidden="true" />}
+                  </td>
+                  {COLUMNAS_DISTRIBUCION.map((c) => (
+                    <td key={c.titulo} className="whitespace-nowrap border-b border-border px-2.5 py-1 tabular-nums text-foreground">
+                      {c.valor(h, d)}
+                    </td>
+                  ))}
+                </tr>
+              </Fragment>
+            )
+          })}
+      </tbody>
+    </table>
   )
 }

@@ -372,7 +372,7 @@ export function TablaTrace({
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="gismart-filas">
               {actual.filas.map((f, i) => (
                 <Fila key={`${ruta}-${i}`} fila={f} indice={i} marcada={ubicada === i} onUbicar={() => onUbicar(f, i)} />
               ))}

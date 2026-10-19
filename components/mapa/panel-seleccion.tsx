@@ -5,6 +5,7 @@ import { MAX_NOMBRE } from "@/lib/texto"
 import type LineString from "ol/geom/LineString"
 import Point from "ol/geom/Point"
 import { toLonLat } from "ol/proj"
+import { getUid } from "ol/util"
 import { getLength } from "ol/sphere"
 import {
   Box,
@@ -157,9 +158,14 @@ export function PanelSeleccion({
   // En pantallas angostas el panel va abajo y a todo el ancho, como una hoja:
   // arriba a la derecha tapaba la barra de herramientas del mapa. Ahí sube
   // desde el borde al aparecer (`gismart-panel` en globals.css). En escritorio
-  // empieza debajo del zoom (12 px + 82 px de alto), sin taparle el «−».
+  // empieza debajo del zoom (12 px + 82 px de alto), sin taparle el «−», y
+  // entra desde la derecha (`gismart-ficha`).
+  //
+  // El contenido va con la clave del elemento: al elegir otro, sus secciones
+  // vuelven a aparecer una tras otra en vez de cambiar de golpe.
   return (
-    <div data-tapa-mapa className="absolute right-3 top-[6.5rem] z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
+    <div data-tapa-mapa className="absolute right-3 top-[6.5rem] z-20 w-72 overflow-hidden rounded-xl bg-card/95 shadow-xl ring-1 ring-border backdrop-blur gismart-panel gismart-ficha max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:max-h-[60%] max-sm:w-auto max-sm:overflow-y-auto">
+      <div key={getUid(feature)} className="gismart-escalonado">
       <div className="border-b border-border px-3.5 pb-3 pt-3">
         <div className="flex items-center justify-between">
           <span
@@ -350,6 +356,7 @@ export function PanelSeleccion({
           </span>
         </p>
       )}
+      </div>
     </div>
   )
 }

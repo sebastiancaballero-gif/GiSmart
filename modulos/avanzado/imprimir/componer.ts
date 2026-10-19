@@ -5,6 +5,10 @@ import { LAYER_COLORS } from "@/lib/network-colors"
 export type OpcionesDeLamina = {
   titulo: string
   subtitulo: string
+  /** Con el mapa base (calles, terreno) detrás de la red. */
+  fondo: boolean
+  /** Lo que exige el proveedor del mapa base («© OpenStreetMap»); va al pie si sale el fondo. */
+  atribucion?: string | null
   leyenda: boolean
   escalaYNorte: boolean
   /** La fecha que se imprime abajo, o `null` para no ponerla. */
@@ -25,12 +29,13 @@ const textoDeLargo = (m: number) => (m >= 1000 ? `${m / 1000} km` : `${m} m`)
 /**
  * La lámina para imprimir o guardar: arriba el título y el lugar; en medio el
  * mapa tal como se ve, con la escala y el norte abajo a la izquierda y la
- * leyenda abajo a la derecha; y una franja al pie con la fecha y GISmart.
+ * leyenda abajo a la derecha; y una franja al pie con la fecha, GISmart y,
+ * si sale el mapa base, su atribución.
  * `escala` es la de la pantalla (devicePixelRatio): todo se dibuja a esa
  * resolución para que la imagen salga nítida.
  */
 export function componerLamina(
-  mapa: { lienzo: HTMLCanvasElement; metrosPorPixel: number },
+  mapa: { lienzo: HTMLCanvasElement; lienzoSinFondo?: HTMLCanvasElement; metrosPorPixel: number },
   opciones: OpcionesDeLamina,
   escala = 1,
 ): HTMLCanvasElement {
@@ -64,9 +69,9 @@ export function componerLamina(
     ctx.fillText(opciones.subtitulo, u(16), u(49))
   }
 
-  // El mapa.
+  // El mapa, con el fondo o sin él.
   const y0 = alto.cabecera
-  ctx.drawImage(mapa.lienzo, 0, y0)
+  ctx.drawImage(!opciones.fondo && mapa.lienzoSinFondo ? mapa.lienzoSinFondo : mapa.lienzo, 0, y0)
   ctx.strokeStyle = "#cbd5e1"
   ctx.lineWidth = u(1)
   ctx.strokeRect(0, y0, ancho, mapa.lienzo.height)
@@ -192,9 +197,10 @@ export function componerLamina(
   ctx.font = fuente(10)
   ctx.textBaseline = "middle"
   ctx.fillText("GISmart · SIG de red FTTH · G&G Technology SAS", u(16), yPie + alto.pie / 2)
-  if (opciones.fecha) {
+  const derecha = [opciones.fondo ? opciones.atribucion : null, opciones.fecha].filter(Boolean).join("  ·  ")
+  if (derecha) {
     ctx.textAlign = "right"
-    ctx.fillText(opciones.fecha, ancho - u(16), yPie + alto.pie / 2)
+    ctx.fillText(derecha, ancho - u(16), yPie + alto.pie / 2)
     ctx.textAlign = "left"
   }
   ctx.textBaseline = "alphabetic"

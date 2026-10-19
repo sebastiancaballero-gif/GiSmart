@@ -321,7 +321,7 @@ export function TablaAtributos({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="gismart-filas">
             {filas.map((e) => {
               const marcada = seleccion.has(e.clave)
               return (

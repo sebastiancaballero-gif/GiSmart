@@ -49,7 +49,8 @@ fila con su UUID. Se probó a emparejarlos por el orden de creación y solo coin
 | `cubierta_empalme` | `geo_fiber` | Cubiertas de empalme (mufas). |
 | `cable_fibra` | `geo_fiber` | Cables de fibra. |
 | `cabecera_central` | `geo_infra` | Cabeceras centrales (origen de la red). |
-| `get_json_conectividad_cubierta(uuid)` | `public` | Conectividad interna de una mufa, generada al momento. Lee de `tab_fiber`. |
+| `get_json_conectividad_cubierta_n0(uuid)` | `public` | Conectividad interna de una cubierta de empalme (`nivel` 0), generada al momento. Lee de `tab_fiber`. |
+| `get_json_conectividad_cubierta_n12(uuid)` | `public` | La misma, para las cubiertas de primer y segundo nivel (`nivel` 1 y 2); trae además `Splitters`. Desde el 19 de octubre de 2026 reemplazan a `get_json_conectividad_cubierta`, que ya no existe. |
 
 ### `usuario_app`, recreada en septiembre de 2026
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useImperativeHandle, useState, type Ref } from "react"
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react"
 import type { AccesoAlMapa } from "@/components/network-map"
 import { getUser } from "@/lib/auth"
 import type { HerramientaAvanzada } from "./cinta"
@@ -15,11 +15,16 @@ import { VentanaImprimir } from "./imprimir/ventana-imprimir"
 import { PanelAsistente } from "./asistente/panel-asistente"
 import type { AccionDelAsistente } from "./asistente/acciones"
 import { normalizar } from "@/lib/map/busqueda"
+import { PanelApariencia } from "./vista/panel-apariencia"
+import { APARIENCIA_INICIAL, CAPAS_CON_OPACIDAD, guardarApariencia, leerApariencia, type Apariencia } from "./vista/apariencia"
+import { copiarMapa } from "./vista/copiar-mapa"
 
 /** Lo que el tablero le pide al módulo: abrir una de sus herramientas. */
 export type ManejadorDelModulo = {
   /** Abre la herramienta; devuelve qué decirle al usuario si no se pudo. */
   abrir: (herramienta: HerramientaAvanzada) => string | void
+  /** Abre el asistente y le hace esa pregunta (desde el buscador, Ctrl+K). */
+  preguntar: (texto: string) => void
 }
 
 /** El usuario conectado, para guardar lo de cada quien por separado. */
@@ -67,6 +72,34 @@ export function ModuloAvanzado({
   const [imprimir, setImprimir] = useState(false)
   // El asistente queda abierto (con su conversación) hasta que se cierra.
   const [asistente, setAsistente] = useState(false)
+  // Una pregunta que llega del buscador; el panel la envía al abrirse y la suelta.
+  const [pedido, setPedido] = useState<{ texto: string; n: number } | null>(null)
+  // Siempre creciente: el panel recuerda el último que atendió.
+  const pedidosRef = useRef(0)
+  // Si el asistente marcó un punto con su círculo, al cerrarlo se quita.
+  const [circulo, setCirculo] = useState(false)
+  // Mapa base y transparencia (en el lugar de Resumen y Cercanía) y el minimapa:
+  // lo elegido se recuerda por usuario (vista/apariencia.ts).
+  const [panelFondo, setPanelFondo] = useState(false)
+  const [apariencia, setApariencia] = useState<Apariencia>(() =>
+    typeof window === "undefined" ? APARIENCIA_INICIAL : leerApariencia(usuarioActual()),
+  )
+  // Mientras se espera el recuadro para acercar.
+  const [recuadro, setRecuadro] = useState(false)
+  // Un aviso corto abajo (Copiar mapa, Anterior sin historial…), como el de la cinta.
+  const [aviso, setAviso] = useState<string | null>(null)
+  const avisoRef = useRef(0)
+
+  function avisar(texto: string) {
+    setAviso(texto)
+    window.clearTimeout(avisoRef.current)
+    avisoRef.current = window.setTimeout(() => setAviso(null), 3_500)
+  }
+
+  function cambiarApariencia(nueva: Apariencia) {
+    setApariencia(nueva)
+    guardarApariencia(usuarioActual(), nueva)
+  }
 
   useImperativeHandle(ref, () => ({
     abrir(herramienta) {
@@ -82,11 +115,45 @@ export function ModuloAvanzado({
         case "resumen":
           setResumen((abierto) => !abierto)
           setCercania(false)
+          setPanelFondo(false)
           return
         case "cercania":
           setCercania((abierto) => !abierto)
           setResumen(false)
+          setPanelFondo(false)
           return
+        case "fondo":
+          setPanelFondo((abierto) => !abierto)
+          setResumen(false)
+          setCercania(false)
+          return
+        case "minimapa":
+          cambiarApariencia({ ...apariencia, minimapa: !apariencia.minimapa })
+          return
+        case "anterior":
+          if (!mapa.api.current?.vistaAnterior()) return "No hay una vista anterior."
+          return
+        case "siguiente":
+          if (!mapa.api.current?.vistaSiguiente()) return "No hay una vista siguiente."
+          return
+        case "recuadro": {
+          const api = mapa.api.current
+          if (!api) return "El mapa todavía no está listo."
+          setRecuadro(true)
+          void api.acercarConRecuadro("Arrastra un recuadro sobre la zona a la que quieres acercarte.").finally(() => setRecuadro(false))
+          return
+        }
+        case "copiar": {
+          const api = mapa.api.current
+          if (!api) return "El mapa todavía no está listo."
+          avisar("Copiando el mapa…")
+          copiarMapa(api, { lugar, conFondo: apariencia.fondo !== "ninguno" })
+            .then((r) =>
+              avisar(r === "copiado" ? "Mapa copiado: pégalo en WhatsApp o en un correo con Ctrl+V." : "El navegador no dejó copiar la imagen: se descargó como PNG."),
+            )
+            .catch((e: unknown) => avisar(`No se pudo copiar el mapa: ${e instanceof Error ? e.message : String(e)}`))
+          return
+        }
         case "imprimir":
           setImprimir(true)
           return
@@ -101,12 +168,59 @@ export function ModuloAvanzado({
           return
         case "asistente":
           setAsistente((abierto) => !abierto)
+          setPedido(null)
           return
         default:
           return "Esa herramienta todavía no está disponible."
       }
     },
+    preguntar(texto) {
+      setAsistente(true)
+      pedidosRef.current += 1
+      setPedido({ texto, n: pedidosRef.current })
+    },
   }))
+
+  // Ctrl+I («IA») abre o cierra el asistente desde cualquier parte del tablero.
+  useEffect(() => {
+    function alPulsar(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+        e.preventDefault()
+        setAsistente((abierto) => !abierto)
+        setPedido(null)
+      }
+    }
+    window.addEventListener("keydown", alPulsar)
+    return () => window.removeEventListener("keydown", alPulsar)
+  }, [])
+
+  /**
+   * La clave del elemento del mapa que se llama así, para que los nombres de
+   * las respuestas lleven al mapa. Solo si hay uno: con dos «N1» no hay a
+   * cuál llevar.
+   */
+  const buscarNombre = useMemo(() => {
+    const porNombre = new Map<string, string | null>()
+    for (const e of mapa.indice) {
+      if (e.tipo === "zone") continue
+      for (const n of [e.nombre, ...(e.alias ?? [])]) {
+        const k = normalizar(n)
+        if (k.length < 2) continue
+        porNombre.set(k, porNombre.has(k) && porNombre.get(k) !== e.clave ? null : e.clave)
+      }
+    }
+    return (nombre: string) => porNombre.get(normalizar(nombre)) ?? null
+  }, [mapa.indice])
+
+  const soltarPedido = useCallback(() => setPedido(null), [])
+
+  function cerrarAsistente() {
+    setAsistente(false)
+    setPedido(null)
+    // El círculo es del asistente; si Cercanía está abierta, el suyo se queda.
+    if (circulo && !cercania) mapa.api.current?.pintarCercania(null)
+    setCirculo(false)
+  }
 
   useEffect(() => {
     onActivos?.([
@@ -114,8 +228,30 @@ export function ModuloAvanzado({
       ...(tabla ? ["Tabla"] : []),
       ...(cercania ? ["Cercanía"] : []),
       ...(asistente ? ["Asistente IA"] : []),
+      ...(panelFondo ? ["Mapa base"] : []),
+      ...(apariencia.minimapa ? ["Minimapa"] : []),
+      ...(recuadro ? ["Recuadro"] : []),
     ])
-  }, [resumen, tabla, cercania, asistente, onActivos])
+  }, [resumen, tabla, cercania, asistente, panelFondo, apariencia.minimapa, recuadro, onActivos])
+
+  // El aspecto elegido se aplica al mapa al empezar y en cada cambio. El mapa
+  // publica su API apenas se monta: si todavía no está, se reintenta un rato.
+  useEffect(() => {
+    let intentos = 0
+    let temporizador = 0
+    const aplicar = () => {
+      const api = mapa.api.current
+      if (!api) {
+        if (intentos++ < 40) temporizador = window.setTimeout(aplicar, 250)
+        return
+      }
+      api.ponerFondo(apariencia.fondo)
+      for (const { id } of CAPAS_CON_OPACIDAD) api.ponerOpacidad(id, apariencia.opacidades[id])
+      api.ponerMinimapa(apariencia.minimapa)
+    }
+    aplicar()
+    return () => window.clearTimeout(temporizador)
+  }, [apariencia, mapa.api])
 
   // Lo seleccionado se ve en el mapa, en ámbar. Cerrar la tabla lo suelta.
   useEffect(() => {
@@ -169,9 +305,15 @@ export function ModuloAvanzado({
         if (elemento) mapa.ubicar(elemento.clave)
         else avisos.push(`No encontré ${accion.capa} «${accion.nombre}» en el mapa.`)
       } else if (accion.tipo === "seleccionar") {
-        const encontrados = accion.nombres.map((n) => ({ n, e: buscar(accion.capa, n) }))
+        const nivel = accion.nivel ? normalizar(accion.nivel) : ""
+        const encontrados = nivel
+          ? mapa.indice
+              .filter((e) => e.tipo === "node" && normalizar(e.categoria ?? "").includes(nivel))
+              .map((e) => ({ n: e.nombre, e }))
+          : accion.nombres.map((n) => ({ n, e: buscar(accion.capa, n) }))
         const claves = encontrados.flatMap((x) => (x.e ? [x.e.clave] : []))
         const faltan = encontrados.filter((x) => !x.e).map((x) => x.n)
+        if (nivel && claves.length === 0) avisos.push(`No hay cubiertas de «${accion.nivel}» en el mapa.`)
         if (claves.length > 0) {
           setCapaTabla(accion.capa === "cable" ? "fiber" : "node")
           setSeleccion(new Set(claves))
@@ -184,6 +326,9 @@ export function ModuloAvanzado({
         }
       } else if (accion.tipo === "trace") {
         onRecorrerTrace?.(accion.idOrigen, accion.direccion, accion.etiqueta)
+      } else if (accion.tipo === "cercania") {
+        mapa.api.current?.pintarCercania({ centro: [accion.lon, accion.lat], radioM: accion.radioM }, { encuadrar: true })
+        setCirculo(true)
       }
     }
     return avisos
@@ -215,12 +360,32 @@ export function ModuloAvanzado({
           }}
         />
       )}
+      {panelFondo && (
+        <PanelApariencia
+          apariencia={apariencia}
+          onCambiar={cambiarApariencia}
+          onCerrar={() => setPanelFondo(false)}
+          espacioAbajo={tabla ? altoTabla : 0}
+        />
+      )}
+      {aviso && (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-16 left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-gismart-fade-in rounded-lg bg-foreground/90 px-4 py-2 text-center text-xs font-medium text-background shadow-lg"
+        >
+          {aviso}
+        </div>
+      )}
       {asistente && (
         <PanelAsistente
           ficha={() => mapa.api.current?.puntoDeLaFicha()?.nombre ?? null}
           lugar={lugar}
           onAcciones={aplicarAcciones}
-          onCerrar={() => setAsistente(false)}
+          onCerrar={cerrarAsistente}
+          buscarNombre={buscarNombre}
+          onUbicar={mapa.ubicar}
+          pedido={pedido}
+          onPedidoAtendido={soltarPedido}
         />
       )}
       {tabla && (
