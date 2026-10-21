@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { dia } from "@joint/core"
 import {
   AlertTriangle,
+  FileDown,
+  Loader2,
   Maximize,
   Minimize,
   Route,
@@ -13,20 +15,21 @@ import {
   ZoomOut,
 } from "lucide-react"
 
+import { useExportarPdf } from "@/hooks/use-exportar-pdf"
 import type { ModoConectividad } from "@/lib/map/conectividad"
-import {
-  parseMufaData,
-  type MufaCampoJSON,
-} from "@/lib/schematic/mufa-field-data"
+import { parseMufaData, type MufaCampoJSON } from "@/lib/schematic/mufa-field-data"
 import {
   aplicarEnrutamiento,
   cargarEscenarioCampo,
   cellNamespaceCampo,
+  claveEmpalme,
+  etiquetaOrigen,
   listarEmpalmesCampo,
   resaltarEmpalmeCampo,
   type ModoEnrutamiento,
   type RegistroEmpalmeCampo,
 } from "@/lib/schematic/mufa-field-graph"
+import { TEMA_CYBER } from "@/lib/schematic/tema-lienzo"
 
 type MufaSchematicProps = {
   /**
@@ -49,6 +52,22 @@ type MufaSchematicProps = {
 const LIMITES_ZOOM = { min: 0.35, max: 2.2, paso: 0.15 }
 
 /**
+ * El esquema es una consola de ingeniería oscura sea cual sea el tema de la
+ * página: la barra, el panel y el lienzo comparten la paleta de `TEMA_CYBER`.
+ */
+const TEMA = TEMA_CYBER
+
+const CLASE_BOTON =
+  "flex h-8 items-center gap-1.5 rounded-none border border-cyan-500/30 bg-slate-900 px-2.5 font-mono text-[11px] uppercase tracking-wider text-cyan-100 transition hover:border-cyan-400/80 hover:text-white hover:shadow-[0_0_12px_rgba(34,211,238,0.45)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-50"
+
+const CLASE_BOTON_ICONO =
+  "flex size-8 items-center justify-center rounded-none text-cyan-100 transition hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_10px_rgba(34,211,238,0.35)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-300"
+
+function nombreArchivoPdf(id: string): string {
+  return `empalmes-${id.replace(/[^\w.-]+/g, "_")}.pdf`
+}
+
+/**
  * Vista de conectividad interna de una MUFA alimentada por el JSON de campo:
  * cables a los lados, bandejas instaladas al centro y empalmes de solo lectura.
  */
@@ -67,6 +86,8 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
   // cuando JointJS dibuja por primera vez.
   const mufa = useMemo(() => parseMufaData(datos), [datos])
   const empalmes = useMemo(() => listarEmpalmesCampo(mufa), [mufa])
+
+  const pdf = useExportarPdf()
 
   const modoRef = useRef(modoEnrutamiento)
   useEffect(() => {
@@ -102,13 +123,6 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
     const container = containerRef.current
     if (!container) return
 
-    // El lienzo de JointJS se dibuja en <canvas>/SVG, así que no puede resolver
-    // clases de Tailwind: se leen los tokens de tema actuales (oklch(...) ya
-    // resuelto) para que el fondo y la grilla respeten el modo claro/oscuro.
-    const tema = getComputedStyle(document.documentElement)
-    const fondoLienzo = tema.getPropertyValue("--card").trim() || "#f8fafc"
-    const colorGrilla = tema.getPropertyValue("--border").trim() || "#dbe3ec"
-
     const graph = new dia.Graph({}, { cellNamespace: cellNamespaceCampo })
     const paper = new dia.Paper({
       model: graph,
@@ -116,8 +130,8 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
       width: "100%",
       height: "100%",
       gridSize: 10,
-      drawGrid: { name: "dot", args: { color: colorGrilla, thickness: 1 } },
-      background: { color: fondoLienzo },
+      drawGrid: { name: "dot", args: { color: TEMA.grilla, thickness: 1 } },
+      background: { color: TEMA.fondo },
       async: true,
       sorting: dia.Paper.sorting.APPROX,
       // Solo lectura: no se crean empalmes desde la interfaz.
@@ -191,16 +205,12 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
   }, [])
 
   // Dibuja el escenario cuando llegan datos nuevos.
-  const dibujarEscenario = useCallback(() => {
+  useEffect(() => {
     const graph = graphRef.current
     if (!graph) return
-    cargarEscenarioCampo(graph, mufa, modoRef.current)
+    cargarEscenarioCampo(graph, mufa, modoRef.current, TEMA)
     ajustarVista()
   }, [mufa, ajustarVista])
-
-  useEffect(() => {
-    dibujarEscenario()
-  }, [dibujarEscenario])
 
   // Al cambiar el modo, se actualizan al instante todos los enlaces del grafo.
   useEffect(() => {
@@ -220,6 +230,32 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
     }
     void rootRef.current?.requestFullscreen()
   }, [])
+
+  const { exportar } = pdf
+  const descargarPdf = useCallback(() => {
+    const conexion = mufa.conexionDirecta
+      ? "fusión directa"
+      : `${mufa.bandejasInstaladas} bandejas`
+    void exportar({
+      titulo: `Reporte de empalmes · MUFA ${mufa.id}`,
+      subtitulo: `${mufa.tipo} · ${mufa.estado} · ${mufa.cables.length} cables · ${empalmes.length} empalmes · ${conexion} · ${new Date().toLocaleString("es")}`,
+      nombreArchivo: nombreArchivoPdf(mufa.id),
+      filas: empalmes.map((empalme) => ({
+        origenHilo: `H${empalme.origen.numero}`,
+        origenColor: empalme.origen.color.hex,
+        origenCable: empalme.origen.cableCodigo,
+        destinoHilo: `H${empalme.destino.numero}`,
+        destinoColor: empalme.destino.color.hex,
+        destinoCable: empalme.destino.cableCodigo,
+        traza: etiquetaOrigen(empalme.origen),
+        via:
+          empalme.via === "directo"
+            ? `Fusión directa ${empalme.numero} · ${empalme.tipoEmpalme}`
+            : `Bandeja ${empalme.numeroBandeja} · Slot ${empalme.slot} · ${empalme.tipoEmpalme}`,
+        atenuacion: String(empalme.atenuacion),
+      })),
+    })
+  }, [exportar, mufa, empalmes])
 
   // El lienzo ocupa "100%" del contenedor, pero al cambiar de tamaño hay que
   // recalcular el encuadre para que el esquema aproveche el espacio nuevo.
@@ -271,61 +307,64 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
   return (
     <div
       ref={rootRef}
-      className={`flex size-full flex-col overflow-hidden bg-background ${className ?? ""}`}
+      className={`flex size-full flex-col overflow-hidden bg-slate-950 text-slate-100 ${className ?? ""}`}
     >
-      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
-        <div className="mr-auto">
-          <h2 className="text-sm font-semibold text-foreground">
-            Conectividad interna · {mufa.id}
+      <header className="flex flex-wrap items-center gap-3 border-b border-cyan-500/20 bg-slate-950 px-4 py-2.5">
+        <div className="mr-auto min-w-0">
+          <h2 className="truncate font-mono text-sm font-semibold tracking-tight text-slate-100">
+            <span className="text-slate-400">MUFA::</span>
+            <span className="text-cyan-300">{mufa.id}</span>
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="font-mono text-[11px] text-slate-400">
             {mufa.tipo} · {mufa.estado} · {mufa.cables.length} cables · {empalmes.length}{" "}
             empalmes
           </p>
         </div>
 
         <div
-          className="rounded-lg bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-800 ring-1 ring-orange-500/30 dark:text-orange-200"
+          className={`rounded-none border px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider ${
+            mufa.conexionDirecta
+              ? "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-200"
+              : "border-amber-400/40 bg-amber-500/10 text-amber-200"
+          }`}
           role="status"
           aria-live="polite"
         >
-          Bandejas activas: {mufa.bandejasInstaladas}
-          {mufa.capacidadBandejas !== null && ` de ${mufa.capacidadBandejas}`}
+          {mufa.conexionDirecta ? (
+            "Fusión directa · sin bandejas"
+          ) : (
+            <>
+              Bandejas activas: {mufa.bandejasInstaladas}
+              {mufa.capacidadBandejas !== null && ` de ${mufa.capacidadBandejas}`}
+            </>
+          )}
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg bg-card p-1 ring-1 ring-border">
-          <button
-            type="button"
-            onClick={alAlternarEnrutamiento}
-            title={
-              ortogonal
-                ? "Cambiar a enrutamiento curvo"
-                : "Cambiar a enrutamiento ortogonal"
-            }
-            aria-label={
-              ortogonal
-                ? "Cambiar a enrutamiento curvo"
-                : "Cambiar a enrutamiento ortogonal"
-            }
-            aria-pressed={ortogonal}
-            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground transition hover:bg-accent"
-          >
-            <IconoRuta className="size-4" />
-            {ortogonal ? "Ortogonal" : "Curvo"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={alAlternarEnrutamiento}
+          title={ortogonal ? "Cambiar a enrutamiento curvo" : "Cambiar a enrutamiento ortogonal"}
+          aria-label={
+            ortogonal ? "Cambiar a enrutamiento curvo" : "Cambiar a enrutamiento ortogonal"
+          }
+          aria-pressed={ortogonal}
+          className={CLASE_BOTON}
+        >
+          <IconoRuta className="size-3.5" />
+          {ortogonal ? "Ortogonal" : "Curvo"}
+        </button>
 
-        <div className="flex items-center gap-1 rounded-lg bg-card p-1 ring-1 ring-border">
+        <div className="flex items-center border border-cyan-500/30 bg-slate-900">
           <button
             type="button"
             onClick={() => aplicarZoom(zoom - LIMITES_ZOOM.paso)}
             title="Alejar"
             aria-label="Alejar"
-            className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
+            className={CLASE_BOTON_ICONO}
           >
             <ZoomOut className="size-4" />
           </button>
-          <span className="min-w-11 text-center text-xs font-medium tabular-nums text-muted-foreground">
+          <span className="min-w-12 text-center font-mono text-[11px] tabular-nums text-cyan-200">
             {Math.round(zoom * 100)}%
           </span>
           <button
@@ -333,7 +372,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
             onClick={() => aplicarZoom(zoom + LIMITES_ZOOM.paso)}
             title="Acercar"
             aria-label="Acercar"
-            className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
+            className={CLASE_BOTON_ICONO}
           >
             <ZoomIn className="size-4" />
           </button>
@@ -342,7 +381,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
             onClick={ajustarVista}
             title="Ajustar a la vista"
             aria-label="Ajustar a la vista"
-            className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
+            className={CLASE_BOTON_ICONO}
           >
             <Scan className="size-4" />
           </button>
@@ -352,12 +391,36 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
             title={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"}
             aria-label={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"}
             aria-pressed={pantallaCompleta}
-            className="flex size-8 items-center justify-center rounded-md text-foreground transition hover:bg-accent"
+            className={CLASE_BOTON_ICONO}
           >
             {pantallaCompleta ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={descargarPdf}
+          disabled={pdf.exportando}
+          title="Descargar el reporte de empalmes en PDF"
+          className={`${CLASE_BOTON} border-fuchsia-400/50 text-fuchsia-100 hover:border-fuchsia-300 hover:shadow-[0_0_14px_rgba(232,121,249,0.5)] focus-visible:ring-fuchsia-300`}
+        >
+          {pdf.exportando ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <FileDown className="size-3.5" />
+          )}
+          {pdf.exportando ? "Generando…" : "Descargar PDF"}
+        </button>
       </header>
+
+      {pdf.error && (
+        <p
+          role="alert"
+          className="border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 font-mono text-[11px] text-rose-200"
+        >
+          No se pudo generar el PDF: {pdf.error}
+        </p>
+      )}
 
       {mufa.avisos.length > 0 && <AvisosDatos avisos={mufa.avisos} />}
 
@@ -368,15 +431,15 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
           role="application"
           aria-label={`Esquema de empalmes de ${mufa.id}`}
         />
-        <ListaEmpalmes empalmes={empalmes} />
+        <ListaEmpalmes empalmes={empalmes} conexionDirecta={mufa.conexionDirecta} />
       </div>
 
-      <footer className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+      <footer className="border-t border-cyan-500/20 px-4 py-2 font-mono text-[11px] text-slate-400">
         {modo === "escritura"
           ? "Cargado desde el JSON de conectividad. Cambiar los empalmes desde el lienzo todavía no está disponible."
           : "Vista de solo lectura cargada desde el JSON de conectividad."}{" "}
-        Use el botón Ortogonal/Curvo para cambiar el dibujo de los empalmes. Ctrl + rueda para
-        acercar, arrastre el fondo para desplazarse.
+        Ortogonal/Curvo cambia el dibujo de los empalmes. Ctrl + rueda para acercar, arrastre el
+        fondo para desplazarse.
       </footer>
     </div>
   )
@@ -384,7 +447,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
 
 function AvisosDatos({ avisos }: { avisos: string[] }) {
   return (
-    <div className="flex items-start gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300">
+    <div className="flex items-start gap-2 border-b border-amber-400/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
       <ul className="space-y-0.5">
         {avisos.map((aviso) => (
@@ -395,41 +458,63 @@ function AvisosDatos({ avisos }: { avisos: string[] }) {
   )
 }
 
-function ListaEmpalmes({ empalmes }: { empalmes: RegistroEmpalmeCampo[] }) {
+function ListaEmpalmes({
+  empalmes,
+  conexionDirecta,
+}: {
+  empalmes: RegistroEmpalmeCampo[]
+  conexionDirecta: boolean
+}) {
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-card">
-      <h3 className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Empalmes ({empalmes.length})
+    <aside className="flex w-80 shrink-0 flex-col border-l border-cyan-500/20 bg-slate-900/70">
+      <h3 className="flex items-center justify-between border-b border-cyan-500/20 px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-widest text-cyan-300">
+        Empalmes
+        <span className="border border-cyan-500/30 px-2 py-0.5 tabular-nums text-cyan-200">
+          {empalmes.length}
+        </span>
       </h3>
 
       {empalmes.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-muted-foreground">
-          No hay empalmes documentados en las bandejas instaladas.
+        <p className="px-4 py-4 text-xs text-slate-400">
+          {conexionDirecta
+            ? "La cubierta no tiene fusiones documentadas."
+            : "No hay empalmes documentados en las bandejas instaladas."}
         </p>
       ) : (
-        <ul className="flex-1 divide-y divide-border overflow-y-auto">
+        <ul className="flex-1 divide-y divide-slate-800 overflow-y-auto">
           {empalmes.map((empalme) => (
             <li
-              key={`${empalme.bandejaId}-${empalme.slot}`}
-              className="px-3 py-2 text-xs"
+              key={claveEmpalme(empalme)}
+              className="border-l-2 border-transparent px-4 py-2.5 text-xs transition-colors hover:border-cyan-400 hover:bg-cyan-500/5"
             >
               <div className="flex items-center gap-2">
                 <InsigniaHilo
                   hex={empalme.origen.color.hex}
                   etiqueta={`H${empalme.origen.numero}`}
                 />
-                <span className="text-muted-foreground">→</span>
+                <span className="text-slate-500">→</span>
                 <InsigniaHilo
                   hex={empalme.destino.color.hex}
                   etiqueta={`H${empalme.destino.numero}`}
                 />
+                <span className="ml-auto font-mono text-[11px] tabular-nums text-amber-200">
+                  {empalme.atenuacion} dB
+                </span>
               </div>
-              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                Bandeja {empalme.numeroBandeja} · Slot {empalme.slot} · {empalme.tipoEmpalme} ·{" "}
-                {empalme.atenuacion} dB
+              <p
+                className="mt-1 truncate font-mono text-[11px] text-cyan-300"
+                title={`Origen: ${empalme.origen.cableCodigo} · Buffer ${empalme.origen.buffer} · Hilo ${empalme.origen.numero}`}
+              >
+                {etiquetaOrigen(empalme.origen)}
               </p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                {empalme.origen.cableCodigo} → {empalme.destino.cableCodigo}
+              <p className="truncate text-[11px] text-slate-400">
+                {empalme.via === "directo"
+                  ? `Fusión directa ${empalme.numero} · ${empalme.tipoEmpalme}`
+                  : `Bandeja ${empalme.numeroBandeja} · Slot ${empalme.slot} · ${empalme.tipoEmpalme}`}
+              </p>
+              <p className="truncate font-mono text-[11px] text-slate-500">
+                {empalme.origen.cableCodigo} → {empalme.destino.cableCodigo} · B
+                {empalme.destino.buffer}-H{empalme.destino.numero}
               </p>
             </li>
           ))}
@@ -441,10 +526,10 @@ function ListaEmpalmes({ empalmes }: { empalmes: RegistroEmpalmeCampo[] }) {
 
 function InsigniaHilo({ hex, etiqueta }: { hex: string; etiqueta: string }) {
   return (
-    <span className="flex items-center gap-1.5 font-medium tabular-nums text-foreground">
+    <span className="flex items-center gap-1.5 font-mono font-semibold tabular-nums text-slate-100">
       <span
-        className="size-2.5 shrink-0 rounded-sm ring-1 ring-slate-400"
-        style={{ backgroundColor: hex }}
+        className="size-2.5 shrink-0 rounded-full ring-1 ring-white/30"
+        style={{ backgroundColor: hex, boxShadow: `0 0 6px ${hex}` }}
       />
       {etiqueta}
     </span>

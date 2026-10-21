@@ -15,6 +15,10 @@ import { fiberColor, fiberColorByName, getColorITU, type FiberColor } from "./fi
  *    no vienen dadas, así que se reparten secuencialmente entre las bandejas
  *    instaladas (`can_band_inst`) según la capacidad de cada una.
  *
+ * Y una cubierta puede no tener bandejas: con `can_band_inst: 0` las fusiones
+ * son directas entre el cable de entrada y el de salida, y `Conectividades`
+ * llega en la raíz del JSON, sin arreglo de bandejas.
+ *
  * Este módulo no importa JointJS: valida, normaliza y deja el modelo listo
  * para el renderizado en `mufa-field-graph.ts`.
  */
@@ -23,20 +27,26 @@ import { fiberColor, fiberColorByName, getColorITU, type FiberColor } from "./fi
 // Forma del JSON de entrada (tal cual llega del backend)
 // ---------------------------------------------------------------------------
 
+/**
+ * Los mockups usan identificadores numéricos y la base devuelve UUID en
+ * texto. Se admiten los dos y se comparan siempre como texto.
+ */
+export type IdCampo = number | string
+
 export type HiloCampoJSON = {
-  hilo_id: number
+  hilo_id: IdCampo
   numero: number
   color: string
 }
 
 export type BufferCampoJSON = {
-  Buffer_id: number
+  Buffer_id: IdCampo
   color: string
   hilos: HiloCampoJSON[]
 }
 
 export type CableCampoJSON = {
-  cable_id: number
+  cable_id: IdCampo
   codigo: string
   sentido: string
   can_hilos?: number
@@ -44,8 +54,8 @@ export type CableCampoJSON = {
 }
 
 export type ExtremoEmpalmeJSON = {
-  cable_id: number
-  hilo_id: number
+  cable_id: IdCampo
+  hilo_id: IdCampo
   /**
    * Una punta en un puerto de divisor (funciones por nivel de la base): trae
    * el puerto y el divisor en vez del hilo. El esquema todavía no dibuja
@@ -57,11 +67,12 @@ export type ExtremoEmpalmeJSON = {
 
 /**
  * Una fusión entre dos hilos. `Slot` sólo viene en el formato con slots
- * explícitos; `Conectividad` es el número de orden del formato nuevo.
+ * explícitos; `Conectividad` es el número de orden en los mockups y el UUID
+ * del registro en la base.
  */
 export type ConectividadCampoJSON = {
   Slot?: number
-  Conectividad?: number
+  Conectividad?: IdCampo
   "Tipo empalme": string
   atenuacion: number
   origen: ExtremoEmpalmeJSON
@@ -81,7 +92,7 @@ export type BandejaCampoJSON = {
 }
 
 export type MufaCampoJSON = {
-  mufa_id: number
+  mufa_id: IdCampo
   tipo: string
   estado: string
   /**
@@ -89,15 +100,17 @@ export type MufaCampoJSON = {
    * envía hoy, así que puede faltar.
    */
   capacidad_band?: number
-  can_band_inst: number
+  /** `0` (o sin dato) significa que no hay bandejas: las fusiones son directas. */
+  can_band_inst: number | null
   cables: CableCampoJSON[]
   /** Formato anterior (clave en minúscula). */
   bandejas?: BandejaCampoJSON[]
   /** Formato nuevo (clave capitalizada). */
   Bandejas?: BandejaCampoJSON[]
   /**
-   * Formato de las funciones por nivel (`get_json_conectividad_cubierta_n0` y
-   * `_n12`): las fusiones llegan sueltas, sin bandejas.
+   * Fusiones en la raíz, sin bandeja: así llegan de las funciones por nivel
+   * (`get_json_conectividad_cubierta_n0` y `_n12`) y en las cubiertas sin
+   * bandejas.
    */
   Conectividades?: ConectividadCampoJSON[]
   /** Divisores de la cubierta (`_n12`). El esquema todavía no los dibuja. */
@@ -111,19 +124,19 @@ export type MufaCampoJSON = {
 export type RolCableCampo = "entrada" | "salida"
 
 export type HiloCampoParseado = {
-  hiloId: number
+  hiloId: IdCampo
   portId: string
   cableId: string
   cableCodigo: string
   rol: RolCableCampo
   buffer: number
-  bufferId: number
+  bufferId: IdCampo
   numero: number
   color: FiberColor
 }
 
 export type BufferCampoParseado = {
-  bufferId: number
+  bufferId: IdCampo
   numero: number
   color: FiberColor
   hilos: HiloCampoParseado[]
@@ -131,7 +144,7 @@ export type BufferCampoParseado = {
 
 export type CableCampoParseado = {
   id: string
-  cableId: number
+  cableId: IdCampo
   codigo: string
   rol: RolCableCampo
   buffers: BufferCampoParseado[]
@@ -152,34 +165,50 @@ export type SlotCampoParseado = {
 
 export type BandejaCampoParseada = {
   id: string
-  bandejaId: number
+  bandejaId: IdCampo
   numero: number
   capacidad: number
   slotsUsados: number
   slots: SlotCampoParseado[]
 }
 
-export type EmpalmeCampoParseado = {
-  /** Id del elemento bandeja en el lienzo. */
-  bandejaId: string
-  numeroBandeja: number
-  slot: number
+type EmpalmeCampoBase = {
   tipoEmpalme: string
   atenuacion: number
   origen: HiloCampoParseado
   destino: HiloCampoParseado
+}
+
+/** Fusión alojada en el slot de una bandeja: se dibuja en dos tramos. */
+export type EmpalmeEnBandeja = EmpalmeCampoBase & {
+  via: "bandeja"
+  /** Id del elemento bandeja en el lienzo. */
+  bandejaId: string
+  numeroBandeja: number
+  slot: number
   portIdEntrada: string
   portIdSalida: string
 }
 
+/** Fusión directa entre dos cables, en una cubierta sin bandejas. */
+export type EmpalmeDirecto = EmpalmeCampoBase & {
+  via: "directo"
+  /** Orden de la fusión en el JSON, desde 1. */
+  numero: number
+}
+
+export type EmpalmeCampoParseado = EmpalmeEnBandeja | EmpalmeDirecto
+
 export type MufaCampoParseada = {
   id: string
-  mufaId: number
+  mufaId: IdCampo
   tipo: string
   estado: string
   /** `null` cuando el JSON no declara la capacidad física de la cubierta. */
   capacidadBandejas: number | null
   bandejasInstaladas: number
+  /** Sin bandejas instaladas: las fusiones van directo de cable a cable. */
+  conexionDirecta: boolean
   cables: CableCampoParseado[]
   entradas: CableCampoParseado[]
   salidas: CableCampoParseado[]
@@ -191,7 +220,7 @@ export type MufaCampoParseada = {
 /** Capacidad de fusiones por bandeja cuando el JSON no la declara. */
 export const CAPACIDAD_SLOTS_POR_BANDEJA = 12
 
-export function portIdHilo(hiloId: number): string {
+export function portIdHilo(hiloId: IdCampo): string {
   return `hilo-${hiloId}`
 }
 
@@ -276,21 +305,22 @@ function parsearCable(cable: CableCampoJSON, avisos: string[]): CableCampoParsea
   }
 }
 
-function indexarHilos(
-  cables: CableCampoParseado[],
-  avisos: string[],
-): Map<number, HiloCampoParseado> {
-  const indice = new Map<number, HiloCampoParseado>()
+/** Índice de hilos por `hilo_id` en texto, para que `7` y `"7"` coincidan. */
+type IndiceHilos = Map<string, HiloCampoParseado>
+
+function indexarHilos(cables: CableCampoParseado[], avisos: string[]): IndiceHilos {
+  const indice: IndiceHilos = new Map()
   for (const cable of cables) {
     for (const buffer of cable.buffers) {
       for (const hilo of buffer.hilos) {
-        if (indice.has(hilo.hiloId)) {
+        const clave = String(hilo.hiloId)
+        if (indice.has(clave)) {
           avisos.push(
             `El hilo_id ${hilo.hiloId} está repetido entre cables; se usa la primera aparición.`,
           )
           continue
         }
-        indice.set(hilo.hiloId, hilo)
+        indice.set(clave, hilo)
       }
     }
   }
@@ -318,7 +348,9 @@ function conexionesDeBandeja(bandeja: BandejaCampoJSON): ConectividadCampoJSON[]
 
 function etiquetarConexion(conexion: ConectividadCampoJSON, posicion: number): string {
   if (conexion.Slot != null) return `Slot ${conexion.Slot}`
-  if (conexion.Conectividad != null) return `Conectividad ${conexion.Conectividad}`
+  // Cuando `Conectividad` es un UUID no le dice nada a quien lee el aviso: la
+  // posición en la lista sí.
+  if (typeof conexion.Conectividad === "number") return `Conectividad ${conexion.Conectividad}`
   return `Fusión ${posicion + 1}`
 }
 
@@ -329,8 +361,8 @@ function etiquetarConexion(conexion: ConectividadCampoJSON, posicion: number): s
  */
 function validarConexion(
   conexion: ConectividadCampoJSON,
-  hilosPorId: Map<number, HiloCampoParseado>,
-  ocupados: Set<number>,
+  hilosPorId: IndiceHilos,
+  ocupados: Set<string>,
   etiqueta: string,
   avisos: string[],
 ): ConexionValidada | undefined {
@@ -339,8 +371,8 @@ function validarConexion(
     return undefined
   }
 
-  const origen = hilosPorId.get(conexion.origen.hilo_id)
-  const destino = hilosPorId.get(conexion.destino.hilo_id)
+  const origen = hilosPorId.get(String(conexion.origen.hilo_id))
+  const destino = hilosPorId.get(String(conexion.destino.hilo_id))
 
   if (!origen) {
     avisos.push(`${etiqueta} ignorada: el hilo de origen ${conexion.origen.hilo_id} no existe.`)
@@ -360,21 +392,21 @@ function validarConexion(
     avisos.push(`${etiqueta} ignorada: origen y destino son ambos de ${origen.rol}.`)
     return undefined
   }
-  if (ocupados.has(origen.hiloId)) {
+  if (ocupados.has(String(origen.hiloId))) {
     avisos.push(
       `${etiqueta} ignorada: el hilo ${origen.cableCodigo}·H${origen.numero} ya está empalmado.`,
     )
     return undefined
   }
-  if (ocupados.has(destino.hiloId)) {
+  if (ocupados.has(String(destino.hiloId))) {
     avisos.push(
       `${etiqueta} ignorada: el hilo ${destino.cableCodigo}·H${destino.numero} ya está empalmado.`,
     )
     return undefined
   }
 
-  ocupados.add(origen.hiloId)
-  ocupados.add(destino.hiloId)
+  ocupados.add(String(origen.hiloId))
+  ocupados.add(String(destino.hiloId))
 
   // Se normaliza entrada → salida para que la flecha apunte al destino.
   return {
@@ -407,8 +439,9 @@ function armarSlot(
   }
 }
 
-function armarEmpalmes(bandeja: BandejaCampoParseada): EmpalmeCampoParseado[] {
+function armarEmpalmes(bandeja: BandejaCampoParseada): EmpalmeEnBandeja[] {
   return bandeja.slots.map((slot) => ({
+    via: "bandeja",
     bandejaId: bandeja.id,
     numeroBandeja: bandeja.numero,
     slot: slot.slot,
@@ -427,10 +460,10 @@ function armarEmpalmes(bandeja: BandejaCampoParseada): EmpalmeCampoParseado[] {
  */
 function ensamblarConSlots(
   fuente: BandejaCampoJSON[],
-  hilosPorId: Map<number, HiloCampoParseado>,
+  hilosPorId: IndiceHilos,
   avisos: string[],
 ): BandejaCampoParseada[] {
-  const ocupados = new Set<number>()
+  const ocupados = new Set<string>()
 
   return fuente.map((bandeja, indice) => {
     const numero = bandeja.Numero_bandeja ?? indice + 1
@@ -467,20 +500,21 @@ function ensamblarConSlots(
  */
 function distribuirEnBandejas(
   fuente: BandejaCampoJSON[],
+  conexiones: ConectividadCampoJSON[],
   instaladas: number,
-  hilosPorId: Map<number, HiloCampoParseado>,
+  hilosPorId: IndiceHilos,
   avisos: string[],
 ): BandejaCampoParseada[] {
   const capacidad = capacidadDeclarada(fuente[0])
   const bandejaOrigen = fuente[0]?.bandeja_id ?? 0
 
-  const ocupados = new Set<number>()
-  const validas = fuente
-    .flatMap((bandeja) => conexionesDeBandeja(bandeja))
-    .flatMap((conexion, posicion) => {
-      const validada = validarConexion(conexion, hilosPorId, ocupados, etiquetarConexion(conexion, posicion), avisos)
-      return validada ? [validada] : []
-    })
+  // Primero se validan todas: así se sabe cuántas bandejas hacen falta y
+  // ninguna fusión válida se pierde por falta de lugar.
+  const ocupados = new Set<string>()
+  const validas = conexiones.flatMap((conexion, posicion) => {
+    const validada = validarConexion(conexion, hilosPorId, ocupados, etiquetarConexion(conexion, posicion), avisos)
+    return validada ? [validada] : []
+  })
 
   const necesarias = Math.ceil(validas.length / capacidad)
   const total = Math.max(instaladas, necesarias)
@@ -522,9 +556,13 @@ const esPuertoDeDivisor = (extremo: ExtremoEmpalmeJSON | undefined) =>
  * Aparta las conexiones con un puerto de divisor: el esquema todavía no dibuja
  * divisores. Antes cada una dejaba su propio aviso «el hilo de origen
  * undefined no existe» (234 en 68 cubiertas); ahora es uno solo que dice qué
- * pasa.
+ * pasa. Vale para las que vienen en bandejas y para las de la raíz.
  */
-function apartarConexionesDeDivisor(fuente: BandejaCampoJSON[], avisos: string[]): BandejaCampoJSON[] {
+function apartarConexionesDeDivisor(
+  fuente: BandejaCampoJSON[],
+  enRaiz: ConectividadCampoJSON[],
+  avisos: string[],
+): { fuente: BandejaCampoJSON[]; enRaiz: ConectividadCampoJSON[] } {
   let apartadas = 0
   const filtrar = (lista: ConectividadCampoJSON[] | undefined) => {
     if (!lista) return lista
@@ -538,6 +576,7 @@ function apartarConexionesDeDivisor(fuente: BandejaCampoJSON[], avisos: string[]
     Empalmes_internos: filtrar(bandeja.Empalmes_internos),
     Conectividades: filtrar(bandeja.Conectividades),
   }))
+  const raiz = filtrar(enRaiz) ?? []
   if (apartadas > 0) {
     avisos.push(
       apartadas === 1
@@ -545,7 +584,36 @@ function apartarConexionesDeDivisor(fuente: BandejaCampoJSON[], avisos: string[]
         : `${apartadas} conexiones con puertos de divisor no se dibujan: el esquema todavía no muestra los divisores.`,
     )
   }
-  return resultado
+  return { fuente: resultado, enRaiz: raiz }
+}
+
+/**
+ * Cubierta sin bandejas: cada fusión une directamente el hilo del cable de
+ * entrada con el del cable de salida, sin slot intermedio.
+ */
+function conectarDirecto(
+  conexiones: ConectividadCampoJSON[],
+  hilosPorId: IndiceHilos,
+  avisos: string[],
+): EmpalmeDirecto[] {
+  const ocupados = new Set<string>()
+  const empalmes: EmpalmeDirecto[] = []
+
+  conexiones.forEach((conexion, posicion) => {
+    const etiqueta = etiquetarConexion(conexion, posicion)
+    const validada = validarConexion(conexion, hilosPorId, ocupados, etiqueta, avisos)
+    if (!validada) return
+    empalmes.push({
+      via: "directo",
+      numero: empalmes.length + 1,
+      tipoEmpalme: validada.tipoEmpalme,
+      atenuacion: validada.atenuacion,
+      origen: validada.origen,
+      destino: validada.destino,
+    })
+  })
+
+  return empalmes
 }
 
 /**
@@ -591,16 +659,30 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
 
   const hilosPorId = indexarHilos(cables, avisos)
   const instaladas = Math.max(0, json.can_band_inst ?? 0)
-  // Las funciones por nivel (`_n0`, `_n12`) mandan las fusiones sueltas: se
-  // leen como una sola bandeja sin slots, que se reparte como el formato nuevo.
-  const fuente = apartarConexionesDeDivisor(
-    json.bandejas ?? json.Bandejas ?? (json.Conectividades ? [{ bandeja_id: 0, Conectividades: json.Conectividades }] : []),
-    avisos,
-  )
+  // Las conexiones con un puerto de divisor se apartan con un solo aviso,
+  // vengan en bandejas o en la raíz (las funciones por nivel `_n0` y `_n12`
+  // mandan las fusiones sueltas, en la raíz).
+  const { fuente, enRaiz } = apartarConexionesDeDivisor(json.bandejas ?? json.Bandejas ?? [], json.Conectividades ?? [], avisos)
+  const enBandejas = fuente.flatMap(conexionesDeBandeja)
+
+  if (instaladas === 0) {
+    if (enBandejas.length > 0) {
+      avisos.push(
+        `El JSON trae ${enBandejas.length} fusión(es) dentro de bandejas, pero declara 0 bandejas instaladas: se dibujan como fusiones directas.`,
+      )
+    }
+    return {
+      ...resumen(json, cables, entradas, salidas, avisos),
+      bandejasInstaladas: 0,
+      conexionDirecta: true,
+      bandejas: [],
+      empalmes: conectarDirecto([...enRaiz, ...enBandejas], hilosPorId, avisos),
+    }
+  }
 
   let bandejas: BandejaCampoParseada[]
-  if (requiereReparto(fuente, instaladas)) {
-    bandejas = distribuirEnBandejas(fuente, instaladas, hilosPorId, avisos)
+  if (enRaiz.length > 0 || requiereReparto(fuente, instaladas)) {
+    bandejas = distribuirEnBandejas(fuente, [...enRaiz, ...enBandejas], instaladas, hilosPorId, avisos)
   } else {
     bandejas = ensamblarConSlots(fuente.slice(0, instaladas), hilosPorId, avisos)
     if (fuente.length > instaladas) {
@@ -611,19 +693,33 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
   }
 
   return {
+    ...resumen(json, cables, entradas, salidas, avisos),
+    bandejasInstaladas: instaladas,
+    conexionDirecta: false,
+    bandejas,
+    empalmes: bandejas.flatMap(armarEmpalmes),
+  }
+}
+
+/** Lo que el modelo comparte con y sin bandejas. */
+function resumen(
+  json: MufaCampoJSON,
+  cables: CableCampoParseado[],
+  entradas: CableCampoParseado[],
+  salidas: CableCampoParseado[],
+  avisos: string[],
+) {
+  return {
     id: `MUFA-${json.mufa_id}`,
     mufaId: json.mufa_id,
     tipo: json.tipo,
     estado: json.estado,
     capacidadBandejas: json.capacidad_band ?? null,
-    bandejasInstaladas: instaladas,
     cables,
     entradas,
     salidas,
-    bandejas,
-    empalmes: bandejas.flatMap(armarEmpalmes),
     avisos,
-  }
+  } satisfies Partial<MufaCampoParseada>
 }
 
 /** Reexport útil para quien sólo necesite el HEX ITU sin el modelo completo. */
