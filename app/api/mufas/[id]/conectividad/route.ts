@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server"
-import { exigirSesion } from "@/lib/auth-server"
-import { funcionDeConectividad } from "@/lib/map/conectividad"
-import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion, responderConFuncion } from "@/lib/supabase-servidor"
+import { FUNCION_CONECTIVIDAD } from "@/lib/map/conectividad"
+import { responderConFuncion } from "@/lib/supabase-servidor"
 
 /**
  * Conectividad interna de una cubierta (bandejas, empalmes e hilos), generada
- * por una función de la base según el nivel de la cubierta: las de empalme
- * (nivel 0) con `public.get_json_conectividad_cubierta_n0`, las de primer y
- * segundo nivel con `public.get_json_conectividad_cubierta_n12` (ver
- * `funcionDeConectividad`). Primero se lee el nivel en
- * `geo_fiber.cubierta_empalme`.
+ * por `public.get_json_conectividad_cubierta_n0` para todas las cubiertas, sea
+ * cual sea su nivel (ver `FUNCION_CONECTIVIDAD`). Antes las de primer y segundo
+ * nivel iban con `_n12` y se leía el nivel en `geo_fiber.cubierta_empalme`.
  *
  * El ingeniero de backend la pensó para llamarla desde el navegador con
  * `supabase.rpc(...)`. Aquí va por el servidor, como todo lo demás: la clave
@@ -20,48 +17,11 @@ import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion, res
  * que la función no existe (PGRST202).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  // Sesión y UUID antes de leer el nivel: sin eso no se le pregunta nada a la base.
-  const sinSesion = exigirSesion(request)
-  if (sinSesion) return sinSesion
-  const { id } = await params
-  if (!UUID.test(id)) return NextResponse.json({ message: "El identificador de la cubierta no es válido." }, { status: 400 })
-
-  const geo = clienteSupabase("geo_fiber")
-  if (!geo) return faltaConfiguracion()
-  let funcion: string
-  try {
-    const { data, error } = await geo.from("cubierta_empalme").select("nivel, funcion_cub").eq("id", id).maybeSingle()
-    if (error) {
-      console.error(`[conectividad ${id}] nivel de la cubierta: ${error.code} ${error.message}`)
-      return NextResponse.json(
-        {
-          message: "No se pudo leer el nivel de la cubierta para elegir su función de conectividad.",
-          funcion: "geo_fiber.cubierta_empalme",
-          ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}`),
-        },
-        { status: 502 },
-      )
-    }
-    // Una cubierta que no está en la base no tiene conectividad: como cuando la función no devuelve nada.
-    if (!data) return NextResponse.json({ message: "Esta cubierta no existe en la base." }, { status: 404 })
-    const fila = data as { nivel: number | null; funcion_cub: string | null }
-    funcion = funcionDeConectividad(fila.nivel, fila.funcion_cub)
-  } catch (e) {
-    return NextResponse.json(
-      {
-        message: "No se pudo conectar con Supabase para leer la conectividad.",
-        funcion: "geo_fiber.cubierta_empalme",
-        ...detalleSoloEnDesarrollo(e instanceof Error ? e.message : String(e)),
-      },
-      { status: 502 },
-    )
-  }
-
   return responderConFuncion({
     request,
     params,
     idInvalido: "El identificador de la cubierta no es válido.",
-    funcion,
+    funcion: FUNCION_CONECTIVIDAD,
     argumento: "p_cubierta_id",
     mensajes: {
       nombre: "conectividad",

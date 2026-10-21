@@ -10,6 +10,13 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.13.1 — 21 de octubre de 2026
+
+- **«Conectividad fina» usa siempre `get_json_conectividad_cubierta_n0`**, sea cual sea el
+  nivel de la cubierta. Las de primer y segundo nivel iban con `_n12`, que ahora falla en
+  la base («column c.cant_div does not exist»). La ruta ya no lee el nivel antes de
+  consultar: una consulta menos por cubierta.
+
 ## 1.13.0 — 20 de octubre de 2026
 
 **Cables por tipo de red**, según `tipo_red_prin` de la base:

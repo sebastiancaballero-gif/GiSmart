@@ -128,13 +128,18 @@ async function consultarRuta(id) {
   return clasificarRespuesta(status, cuerpo)
 }
 
-// Mufas de la base, para tener casos reales de cada estado.
+// Mufas de la base, para tener casos reales de cada estado. La fila entera y
+// el nombre como lo lee la app: la columna pasó de `etiqueta` a `salidas_div1`
+// el 20-oct-2026 (ver lib/map/nombre-cubierta.ts).
+const { nombreDeCubierta } = await import("../lib/map/nombre-cubierta.ts")
 const clave = process.env.SUPABASE_SECRET_KEY
-const mufas = await (
-  await fetch(`${process.env.SUPABASE_URL}/rest/v1/cubierta_empalme?select=id,etiqueta&order=id`, {
+const filasDeCubiertas = await (
+  await fetch(`${process.env.SUPABASE_URL}/rest/v1/cubierta_empalme?select=*&order=id`, {
     headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": "geo_fiber" },
   })
 ).json()
+if (!Array.isArray(filasDeCubiertas)) throw new Error(`cubierta_empalme no se pudo leer: ${JSON.stringify(filasDeCubiertas)}`)
+const mufas = filasDeCubiertas.map((f) => ({ id: f.id, etiqueta: nombreDeCubierta(f), nivel: f.nivel }))
 const CO02 = mufas.find((m) => m.etiqueta === "CO02")?.id
 const INEXISTENTE = "00000000-0000-4000-8000-000000000000"
 
@@ -674,8 +679,8 @@ console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n"
   }
 }
 
-// --- 10. la función según el nivel de la cubierta -----------------------------
-console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD SEGÚN EL NIVEL DE LA CUBIERTA\n")
+// --- 10. la función de conectividad (_n0 para todos los niveles) --------------
+console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD (_n0 PARA TODOS LOS NIVELES)\n")
 {
   // El formato de _n0 y _n12: las fusiones sueltas (sin bandejas) y puntas en puertos de divisor.
   const hilos = (desde, n) => Array.from({ length: n }, (_, i) => ({ hilo_id: `h${desde + i}`, numero: i + 1, color: "Azul" }))
@@ -716,17 +721,11 @@ console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD SEGÚN EL NIVEL DE LA CUBIERTA\n"
   )
 }
 {
-  const { funcionDeConectividad, FUNCION_CONECTIVIDAD_N0: N0, FUNCION_CONECTIVIDAD_N12: N12 } = await import("../lib/map/conectividad.ts")
-  comprobar("nivel 0 (empalme): _n0", funcionDeConectividad(0, "Empalme") === N0)
-  comprobar("nivel 1 y nivel 2: _n12", funcionDeConectividad(1, "Primer nivel") === N12 && funcionDeConectividad(2, "Segundo nivel") === N12)
-  comprobar("sin nivel: _n0 solo si es de empalme", funcionDeConectividad(null, "Empalme") === N0 && funcionDeConectividad(null, null) === N12)
+  const { FUNCION_CONECTIVIDAD } = await import("../lib/map/conectividad.ts")
+  comprobar("todas las cubiertas van con _n0", FUNCION_CONECTIVIDAD === "get_json_conectividad_cubierta_n0")
 
   // Con la base real: una cubierta de cada nivel responde por la ruta.
-  const conNivel = await (
-    await fetch(`${process.env.SUPABASE_URL}/rest/v1/cubierta_empalme?select=id,etiqueta,nivel&order=id`, {
-      headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": "geo_fiber" },
-    })
-  ).json()
+  const conNivel = mufas
   for (const nivel of [0, 1, 2]) {
     const cubierta = conNivel.find((c) => c.nivel === nivel)
     if (!cubierta) continue

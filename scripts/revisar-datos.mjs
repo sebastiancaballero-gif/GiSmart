@@ -364,9 +364,8 @@ if (!mufas.length) {
   for (let i = 0; i < mufas.length; i += 8) {
     await Promise.all(
       mufas.slice(i, i + 8).map(async (m) => {
-        // La función según el nivel, como la ruta (funcionDeConectividad en lib/map/conectividad.ts).
-        const empalme = m.nivel === 0 || (m.nivel == null && /empalme/i.test(m.funcion_cub ?? ""))
-        const funcion = empalme ? "get_json_conectividad_cubierta_n0" : "get_json_conectividad_cubierta_n12"
+        // La misma función para todas, como la ruta (FUNCION_CONECTIVIDAD en lib/map/conectividad.ts).
+        const funcion = "get_json_conectividad_cubierta_n0"
         const { data, error } = await publico.rpc(funcion, { p_cubierta_id: m.id })
         if (error) {
           resultado.error++

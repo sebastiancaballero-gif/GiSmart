@@ -714,8 +714,8 @@ function MapaDeRed({
       } else {
         setAvisoConsulta({
           texto: `${nombre}: ${resultado.mensaje}`,
-          // La función que tocaba por el nivel de la cubierta (_n0 o _n12), si la ruta llegó a elegirla.
-          detalle: `${resultado.funcion ?? "get_json_conectividad_cubierta_n0 / _n12"}${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+          // La función que falló, si la ruta la informó (FUNCION_CONECTIVIDAD).
+          detalle: `${resultado.funcion ?? "get_json_conectividad_cubierta_n0"}${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
           tono: "error",
         })
       }
