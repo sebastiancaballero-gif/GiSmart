@@ -103,10 +103,17 @@ const pedir = (id, token) =>
 comprobar("sin sesión: 401", (await pedir("01a0c524-b611-7fc7-b56e-c93273914aa3")).status === 401)
 comprobar("id que no es UUID: 400", (await pedir("no-es-un-uuid", emitirToken("Prueba", "operador"))).status === 400)
 
-console.log("\n5) SECCIÓN DISTRIBUCIÓN (de la caché del trace)\n")
+console.log("\n5) RECORRIDO DE LOS HILOS: SECCIÓN DISTRIBUCIÓN Y FEEDER (de la caché del trace)\n")
 {
-  const { armarDistribucion, salidaDeLaCubierta, salidasDelModelo, clasificarRespuestaDistribucion, idsParaDistribucion, SIN_CONECTAR } =
-    await import("../lib/map/distribucion-cable.ts")
+  const {
+    armarDistribucion,
+    salidaDeLaCubierta,
+    salidasDelModelo,
+    clasificarRespuestaDistribucion,
+    idsParaDistribucion,
+    entradasPorLeer,
+    SIN_CONECTAR,
+  } = await import("../lib/map/distribucion-cable.ts")
   const { GET: GET_DISTRIBUCION } = await import("../app/api/cables/[id]/distribucion/route.ts")
 
   comprobar("salidas del modelo: 1x8PC → 8", salidasDelModelo("1x8PC") === 8 && salidasDelModelo("1 x 16") === 16 && salidasDelModelo("raro") === null)
@@ -172,6 +179,104 @@ console.log("\n5) SECCIÓN DISTRIBUCIÓN (de la caché del trace)\n")
     String(b.destino),
   )
   comprobar("hilo sin recorrido: «Sin conectar»", c.cubierta === null && c.destino === SIN_CONECTAR)
+
+  // Sección feeder: el ODF y la OLT, hacia la fuente. El hilo a termina en la
+  // salida del divisor 2; se sigue desde su entrada (e2), que llega al ODF y a
+  // la OLT. El hilo f (feeder) llega directo. El g termina en un divisor cuya
+  // entrada vuelve a él: no puede quedar dando vueltas.
+  const subidaDesdeE2 = {
+    id_origen: "e2",
+    direccion: "UPSTREAM",
+    fecha_calculo: "2026-10-01",
+    path_secuencia: [
+      { paso: 1, tipo_contenedor: "CUB", id_contenedor: "co05", tip_destino: "HILO" },
+      { paso: 2, tipo_contenedor: "ODF", id_contenedor: "bdj1", tip_destino: "PUERTO", puerto_destino: "p-odf" },
+      { paso: 3, tipo_contenedor: "OLT", id_contenedor: "tjt4", tip_destino: "PUERTO", puerto_origen: "p-odf", puerto_destino: "p-olt" },
+    ],
+  }
+  const feeder = {
+    id_origen: "f",
+    direccion: "UPSTREAM",
+    fecha_calculo: "2026-10-01",
+    path_secuencia: [
+      { paso: 1, tipo_contenedor: "ODF", id_contenedor: "bdj1", tip_destino: "PUERTO", puerto_destino: "p-odf2" },
+      { paso: 2, tipo_contenedor: "OLT", id_contenedor: "tjt4", tip_destino: "PUERTO", puerto_origen: "p-odf2", puerto_destino: "p-olt2" },
+    ],
+  }
+  const ciclo = (origen) => ({
+    id_origen: origen,
+    direccion: "UPSTREAM",
+    fecha_calculo: "2026-10-01",
+    path_secuencia: [{ paso: 1, tipo_contenedor: "DIVISOR", id_contenedor: "d3", tip_destino: "PUERTO", puerto_destino: "s-d3" }],
+  })
+  const entradas = new Map([
+    ["d2", "e2"],
+    ["d3", "e3"],
+  ])
+  comprobar(
+    "pide la caché desde la entrada del divisor donde termina el hilo",
+    entradasPorLeer(["a", "b", "c", "f"], [...cache, feeder], entradas).join(",") === "e2",
+  )
+  comprobar("con esa caché ya leída, no pide más", entradasPorLeer(["a", "f"], [...cache, feeder, subidaDesdeE2], entradas).length === 0)
+  const idsArriba = idsParaDistribucion([subidaDesdeE2, feeder])
+  comprobar(
+    "pide los puertos del ODF y de la OLT",
+    ["p-odf", "p-olt", "p-odf2", "p-olt2"].every((p) => idsArriba.puertos.includes(p)),
+    idsArriba.puertos.join(","),
+  )
+  const conOrigen = armarDistribucion({
+    hilos: ["a", "f", "g", "c"],
+    cache: [...cache, subidaDesdeE2, feeder, ciclo("g"), ciclo("e3")],
+    puertos: new Map(
+      [
+        { id: "s3", numero_puerto: 3, id_equipo_pert: "d2", tipo_equipo_pert: "DIV_N1" },
+        { id: "p-odf", numero_puerto: 11, nombre: null, id_equipo_pert: "bdj1", tipo_equipo_pert: "BDJ_ODF" },
+        { id: "p-olt", numero_puerto: 5, id_equipo_pert: "tjt4", tipo_equipo_pert: "TJT_OLT" },
+        { id: "p-odf2", numero_puerto: 1, nombre: "B1-1", id_equipo_pert: "bdj1", tipo_equipo_pert: "BDJ_ODF" },
+        { id: "p-olt2", numero_puerto: 11, id_equipo_pert: "tjt3", tipo_equipo_pert: "TJT_OLT" },
+      ].map((p) => [p.id, p]),
+    ),
+    divisores: new Map([d1, d2].map((d) => [d.id, d])),
+    cubiertas: new Map([["co05", { id: "co05", etiqueta: "CO05", funcion_cub: "Primer nivel" }]]),
+    divisoresDeLaCubierta: new Map([["co05", [d1, d2]]]),
+    entradas,
+    tarjetas: new Map(
+      [
+        { id: "bdj1", num_slot: 144, tipo_equipo: "ODF", id_equipo: "odf1" },
+        { id: "tjt4", num_slot: 4, tipo_equipo: "OLT", id_equipo: "olt1" },
+        { id: "tjt3", num_slot: 3, tipo_equipo: "OLT", id_equipo: "olt1" },
+      ].map((t) => [t.id, t]),
+    ),
+    equipos: new Map(
+      [
+        { id: "odf1", codigo: "1", tipo_equipo: "ODF" },
+        { id: "olt1", codigo: "OLT-01", tipo_equipo: "OLT" },
+      ].map((e) => [e.id, e]),
+    ),
+  })
+  const [a2, f2, g2, c2] = conOrigen
+  comprobar(
+    "hilo de distribución: cruza el divisor y llega al ODF (bandeja y puerto)",
+    a2.odf === "ODF 1" && a2.bandejaOdf === 144 && a2.puertoOdf === "11",
+    JSON.stringify(a2),
+  )
+  comprobar(
+    "… y a la OLT, con su tarjeta y su puerto (sin repetir «OLT» si el código ya lo dice)",
+    a2.olt === "OLT-01" && a2.tarjetaOlt === 4 && a2.puertoOlt === "5",
+  )
+  comprobar("sigue sabiendo de qué divisor sale", a2.cubierta === "CO05" && a2.divisor === 2 && a2.salida === 11)
+  comprobar(
+    "hilo del feeder: llega directo; el puerto por su nombre si lo tiene",
+    f2.odf === "ODF 1" && f2.puertoOdf === "B1-1" && f2.tarjetaOlt === 3 && f2.puertoOlt === "11",
+    JSON.stringify(f2),
+  )
+  comprobar("divisores que se vuelven a sí mismos: termina, sin ODF ni OLT", g2.odf === null && g2.olt === null)
+  comprobar("sin recorrido: sin ODF ni OLT", c2.odf === null && c2.olt === null)
+  const leidaConOrigen = clasificarRespuestaDistribucion(200, JSON.parse(JSON.stringify({ hilos: conOrigen })))
+  comprobar(
+    "servidor → navegador: el ODF y la OLT llegan enteros",
+    leidaConOrigen.estado === "ok" && JSON.stringify(leidaConOrigen.hilos[0]) === JSON.stringify(a2),
+  )
 
   const leida = clasificarRespuestaDistribucion(200, JSON.parse(JSON.stringify({ hilos: filas })))
   comprobar("servidor → navegador: la fila llega entera", leida.estado === "ok" && JSON.stringify(leida.hilos[0]) === JSON.stringify(a))

@@ -101,7 +101,8 @@ export function expiracionGuardada(): number | null {
  */
 export async function verificarSesion(): Promise<{ expira: number; usuario: string | null } | "invalida" | "sin-red"> {
   try {
-    const res = await fetch("/api/auth/sesion", { credentials: "same-origin", cache: "no-store" })
+    // Con tope: si no responde, cuenta como «sin red» en vez de dejar el tablero esperando.
+    const res = await fetch("/api/auth/sesion", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(15_000) })
     if (res.status === 401) return "invalida"
     if (!res.ok) return "sin-red"
     const cuerpo = (await res.json()) as { expira?: unknown; usuario?: unknown }

@@ -269,6 +269,8 @@ export function RecorridoTraceDialog({ ref, mapa }: { ref?: Ref<ManejadorDelTrac
       cubiertas,
       // Se encuadra después, con la ventana ya en su tamaño: el mapa se mueve una vez.
       encuadrar: false,
+      // Una raya corre sobre el recorrido hacia la OLT o hacia el usuario.
+      direccion,
     })
     setVerPasos(false)
     setRuta(0)

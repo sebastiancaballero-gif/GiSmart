@@ -10,6 +10,13 @@ import type { Geometry } from "ol/geom"
  */
 export type LayerBucket = { label: string; count: number; color: string; width?: number }
 
+/**
+ * Color de una categoría cuyos elementos tienen distinto color en el mapa (por
+ * ejemplo, cables de 48 hilos de feeder y de distribución): el símbolo no puede
+ * ser el de uno solo.
+ */
+export const COLOR_CATEGORIA_MIXTA = "#64748b"
+
 /** Resumen de lo cargado en el mapa, que consume el panel lateral. */
 export type NetworkStats = {
   counts: { nodes: number; fibers: number; zones: number; cabeceras: number }
@@ -29,7 +36,9 @@ export type NetworkStats = {
 
 /**
  * Cuenta los elementos por categoría, ordenados de mayor a menor. `clasificar`
- * define a qué categoría pertenece cada elemento y de qué color se muestra.
+ * define a qué categoría pertenece cada elemento y de qué color se muestra. Si
+ * los de una misma categoría tienen distinto color, su símbolo queda neutro
+ * (`COLOR_CATEGORIA_MIXTA`).
  */
 export function agrupar(
   features: Feature<Geometry>[],
@@ -42,8 +51,13 @@ export function agrupar(
   const buckets: Record<string, LayerBucket> = Object.create(null)
   features.forEach((f) => {
     const { label, color, width } = clasificar(f)
-    if (buckets[label]) buckets[label].count += 1
-    else buckets[label] = { label, color, width, count: 1 }
+    const bucket = buckets[label]
+    if (!bucket) {
+      buckets[label] = { label, color, width, count: 1 }
+      return
+    }
+    bucket.count += 1
+    if (bucket.color !== color) bucket.color = COLOR_CATEGORIA_MIXTA
   })
   return Object.values(buckets).sort((a, b) => b.count - a.count)
 }

@@ -7,7 +7,7 @@ import View from "ol/View"
 import TileLayer from "ol/layer/Tile"
 import VectorLayer from "ol/layer/Vector"
 import VectorSource from "ol/source/Vector"
-import Feature from "ol/Feature"
+import Feature, { type FeatureLike } from "ol/Feature"
 import GeoJSON from "ol/format/GeoJSON"
 import Collection from "ol/Collection"
 import Point from "ol/geom/Point"
@@ -32,8 +32,24 @@ import { unByKey } from "ol/Observable"
 import { getUid } from "ol/util"
 import { Hand, Box, Spline, Hexagon, Trash2, Pencil, Ruler, Square, Loader2, Keyboard } from "lucide-react"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { MEASURE_COLOR, destinoStyle, extremoStyle, largoEnKm, marcadorStyle, resalteStyle, sentidoStyle, traceStyle } from "@/lib/map/symbology"
-import type { GeometriaDeTramo } from "@/lib/map/trace"
+import {
+  ESTILO_FLUJO_TRACE,
+  FLUJO_TRACE,
+  MEASURE_COLOR,
+  PERIODO_FLUJO_TRACE,
+  TIPO_RED_NOMBRES,
+  brilloDeCableStyle,
+  destinoStyle,
+  extremoStyle,
+  largoEnKm,
+  marcadorStyle,
+  resalteStyle,
+  sentidoStyle,
+  textoDeLongitud,
+  traceStyle,
+} from "@/lib/map/symbology"
+import type { DireccionTrace, GeometriaDeTramo } from "@/lib/map/trace"
+import { getVectorContext } from "ol/render"
 import {
   CABECERA_FIELD_LABELS,
   FIBER_FIELD_LABELS,
@@ -43,14 +59,21 @@ import {
   categoriaDeCable,
   categoriaDeMufa,
   colorForFuncionCub,
+  colorForTipoRed,
   fiberStyle,
+  nivelDeLeyenda,
   fiberWidth,
   measureStyle,
   nodeStyle,
+  ponerFondoOscuro,
+  SENTIDO_SENAL,
+  tipoDeRed,
   zoneStyle,
   NOMBRE_VISIBLE,
   type FeatureType,
 } from "@/lib/map/symbology"
+import { getCurrentTheme } from "@/lib/theme"
+import { sentidoDeLaSenal } from "@/lib/map/sentido-senal"
 import { loadRealCabeceras, loadRealFiberCables, loadRealMufas, type ErrorDeCapa } from "@/lib/map/loaders"
 import { agrupar, categoriaVisible, type NetworkStats } from "@/lib/map/capas"
 import { guardarVista, leerVistaGuardada, type VistaGuardada } from "@/lib/map/vista-guardada"
@@ -160,6 +183,8 @@ export type MapaApi = {
     cubiertas?: string[]
     ventana?: Recuadro
     encuadrar?: boolean
+    /** Hacia dónde se recorrió: una raya corre sobre el recorrido en ese sentido. */
+    direccion?: DireccionTrace
   }) => {
     pintados: number
     faltan: string[]
@@ -228,7 +253,13 @@ export type MapaApi = {
    * y cuántos metros del terreno mide un píxel en el centro, para la escala.
    */
   /** El mapa como imagen, con el fondo y sin él (para imprimir con o sin el mapa base). */
-  capturarMapa: () => Promise<{ lienzo: HTMLCanvasElement; lienzoSinFondo: HTMLCanvasElement; metrosPorPixel: number } | null>
+  capturarMapa: () => Promise<{
+    lienzo: HTMLCanvasElement
+    lienzoSinFondo: HTMLCanvasElement
+    metrosPorPixel: number
+    /** El mapa base no terminó de bajar en 10 s: la imagen puede salir sin algunas teselas. */
+    incompleta?: boolean
+  } | null>
   /** Vuelve a la vista anterior o a la siguiente, como atrás y adelante en el navegador. `false` si no hay. */
   vistaAnterior: () => boolean
   vistaSiguiente: () => boolean
@@ -254,8 +285,24 @@ function vistasParecidas(a: VistaDelHistorial, b: VistaDelHistorial): boolean {
     Math.abs(a.rotacion - b.rotacion) < 1e-3
   )
 }
-/** El tendido de fibra en el minimapa: una línea fina, para ver la forma de la red. */
-const estiloDelMinimapa = new Style({ stroke: new Stroke({ color: LAYER_COLORS.fiber, width: 1.2 }) })
+/** Cuántos segundos corre la raya del recorrido del trace después de pintarlo. */
+const SEGUNDOS_DE_FLUJO = 15
+
+/** Cuánto espera la captura del mapa (Imprimir, Copiar mapa) a que termine de dibujarse. */
+const ESPERA_CAPTURA_MS = 10_000
+
+// El tendido de fibra en el minimapa: una línea fina, para ver la forma de la
+// red, con el color de su tipo de red (feeder azul, distribución magenta), como el mapa.
+const estilosDelMinimapa = new globalThis.Map<string, Style>()
+function estiloDelMinimapa(f: FeatureLike): Style {
+  const color = colorForTipoRed(f.get("tipo_red_prin") as string | undefined)
+  let estilo = estilosDelMinimapa.get(color)
+  if (!estilo) {
+    estilo = new Style({ stroke: new Stroke({ color, width: 1.2 }) })
+    estilosDelMinimapa.set(color, estilo)
+  }
+  return estilo
+}
 
 /** El minimapa: el mapa base y el tendido de fibra en chico, con el recuadro de lo que se ve. */
 function crearMinimapa(tendido: VectorSource): OverviewMap {
@@ -430,6 +477,8 @@ function MapaDeRed({
   const [sentidoSource] = useState(() => new VectorSource())
   // Punto rojo sobre el elemento activo (ver el efecto del marcador).
   const [marcadorSource] = useState(() => new VectorSource())
+  // Brillo del cable bajo el puntero (ver procesarPuntero).
+  const [brilloSource] = useState(() => new VectorSource())
   // Puntas del cable consultado con el botón «Cable».
   const [extremosSource] = useState(() => new VectorSource())
   // Pin del punto buscado (dirección o coordenada).
@@ -446,6 +495,10 @@ function MapaDeRed({
   const [cercaniaSource] = useState(() => new VectorSource())
   // Si hay un recorrido pintado: la leyenda lo explica mientras tanto.
   const [hayRecorrido, setHayRecorrido] = useState(false)
+  // Hasta cuándo corre la raya del recorrido (ver la capa del trace): unos
+  // segundos después de pintarlo, para mostrar el sentido sin gastar CPU todo
+  // el rato que el recorrido queda en el mapa.
+  const flujoHastaRef = useRef(0)
   // OpenStreetMap, o el proveedor configurado en NEXT_PUBLIC_TESELAS_URL.
   const [baseMapSource] = useState(fuenteDelMapaBase)
 
@@ -456,6 +509,7 @@ function MapaDeRed({
   const measureLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const sentidoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const marcadorLayer = useRef<VectorLayer<VectorSource> | null>(null)
+  const brilloLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const extremosLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const destinoLayer = useRef<VectorLayer<VectorSource> | null>(null)
   const traceLayer = useRef<VectorLayer<VectorSource> | null>(null)
@@ -577,6 +631,29 @@ function MapaDeRed({
   // Guardarlo en una ref evita tener que reconstruir las capas al cambiarlo.
   const filtersRef = useRef(filters)
 
+  // Tipos de red ocultos desde la leyenda (click en «Feeder» o «Distribución»).
+  // Como el filtro del panel, se lee desde el estilo.
+  const [tiposOcultos, setTiposOcultos] = useState<string[]>([])
+  const tiposOcultosRef = useRef<ReadonlySet<string>>(new Set())
+
+  /** Si un cable se dibuja: su grupo de hilos pasa el filtro del panel y su tipo no se ocultó en la leyenda. */
+  const cableVisible = useCallback(
+    (f: Feature<Geometry>) =>
+      categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f)) && !tiposOcultosRef.current.has(tipoDeRed(f)),
+    [],
+  )
+
+  // Lo mismo con las cubiertas: los niveles ocultos desde la leyenda.
+  const [nivelesOcultos, setNivelesOcultos] = useState<string[]>([])
+  const nivelesOcultosRef = useRef<ReadonlySet<string>>(new Set())
+
+  /** Si una cubierta se dibuja: su nivel pasa el filtro del panel y no se ocultó en la leyenda. */
+  const cubiertaVisible = useCallback(
+    (f: Feature<Geometry>) =>
+      categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f)) && !nivelesOcultosRef.current.has(nivelDeLeyenda(f)),
+    [],
+  )
+
   // El efecto del filtro está por encima de donde se define `pedirRecalculo`,
   // así que se llega a él por referencia en vez de reordenar el componente.
   const pedirRecalculoRef = useRef<(() => void) | null>(null)
@@ -682,7 +759,13 @@ function MapaDeRed({
   useEffect(() => {
     marcadorSource.clear()
     const geometria = marcado?.getGeometry()
-    if (geometria) marcadorSource.addFeature(new Feature(geometria))
+    // Con los hilos y el tipo de red: la marca de un cable redibuja su trazo
+    // (grosor y color) dentro del contorno rojo.
+    if (geometria) {
+      marcadorSource.addFeature(
+        new Feature({ geometry: geometria, cant_hilo: marcado?.get("cant_hilo"), tipo_red_prin: marcado?.get("tipo_red_prin") }),
+      )
+    }
   }, [marcado, marcadorSource])
 
   const idMufaSeleccionada =
@@ -700,6 +783,26 @@ function MapaDeRed({
     fiberLayer.current?.changed()
     pedirRecalculoRef.current?.()
   }, [filters])
+
+  useEffect(() => {
+    tiposOcultosRef.current = new Set(tiposOcultos)
+    fiberLayer.current?.changed()
+    pedirRecalculoRef.current?.()
+  }, [tiposOcultos])
+
+  const alternarTipoDeRed = useCallback((tipo: string) => {
+    setTiposOcultos((ocultos) => (ocultos.includes(tipo) ? ocultos.filter((t) => t !== tipo) : [...ocultos, tipo]))
+  }, [])
+
+  useEffect(() => {
+    nivelesOcultosRef.current = new Set(nivelesOcultos)
+    nodeLayer.current?.changed()
+    pedirRecalculoRef.current?.()
+  }, [nivelesOcultos])
+
+  const alternarNivel = useCallback((nivel: string) => {
+    setNivelesOcultos((ocultos) => (ocultos.includes(nivel) ? ocultos.filter((n) => n !== nivel) : [...ocultos, nivel]))
+  }, [])
 
   const setTool = useCallback((next: MapTool) => {
     setInternalTool(next)
@@ -753,12 +856,27 @@ function MapaDeRed({
     // Lo mismo, pero contando solo lo que el filtro deja pintado. El filtro
     // oculta desde el estilo, así que los elementos siguen en la fuente y hay
     // que aplicar aquí la misma condición que usa la capa al dibujar.
-    const mufasVisibles = nodeFeatures.filter((f) =>
-      categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f)),
+    const mufasVisibles = nodeFeatures.filter(cubiertaVisible)
+    const cablesVisibles = fiberFeatures.filter(cableVisible)
+
+    // Sentido de la señal en cada cable (las flechas de cerca), recorriendo la
+    // red desde la cabecera: no se toma del dibujo, que puede ir al revés. Se
+    // guarda en el cable sin avisar del cambio (no es un dato que se edite) y
+    // solo se redibuja si alguno cambió.
+    const idDe = (v: unknown) => (typeof v === "string" && v ? v : null)
+    const sentidos = sentidoDeLaSenal(
+      fiberFeatures.map((f) => ({ clave: getUid(f), desde: idDe(f.get("id_elem_from")), hasta: idDe(f.get("id_elem_to")) })),
+      cabeceraSource.getFeatures().flatMap((f) => idDe(f.get("id")) ?? []),
     )
-    const cablesVisibles = fiberFeatures.filter((f) =>
-      categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f)),
-    )
+    let sentidoCambio = false
+    for (const f of fiberFeatures) {
+      const sentido = sentidos.get(getUid(f)) ?? 0
+      if (f.get(SENTIDO_SENAL) !== sentido) {
+        f.set(SENTIDO_SENAL, sentido, true)
+        sentidoCambio = true
+      }
+    }
+    if (sentidoCambio) fiberLayer.current?.changed()
 
     onStatsChangeRef.current?.({
       counts: {
@@ -782,7 +900,9 @@ function MapaDeRed({
         })),
         fibers: agrupar(fiberFeatures, (f) => ({
           label: categoriaDeCable(f),
-          color: LAYER_COLORS.fiber,
+          // El color de su tipo de red (feeder azul, distribución magenta),
+          // como en el mapa.
+          color: colorForTipoRed(f.get("tipo_red_prin") as string | undefined),
           // Mismo grosor que en el mapa: un cable de 144 hilos se ve más
           // grueso que uno de 48 también en el panel.
           width: fiberWidth(f.get("cant_hilo") as number | undefined),
@@ -823,7 +943,8 @@ function MapaDeRed({
             f,
             "fiber",
             typeof hilos === "number" && hilos > 0 ? `Cable · ${hilos} hilos` : "Cable",
-            textos(f, ["codigo", "nombre", "id"]),
+            // También la etiqueta NAP («1/8+13/16»): 97 cables la tienen.
+            textos(f, ["codigo", "nombre", "id", "etq_naps"]),
             categoriaDeCable(f),
           )
         }),
@@ -834,7 +955,7 @@ function MapaDeRed({
       ].filter((e) => e.nombre !== "")
       onIndiceChangeRef.current(indice)
     }
-  }, [nodeSource, fiberSource, zoneSource, cabeceraSource])
+  }, [nodeSource, fiberSource, zoneSource, cabeceraSource, cableVisible, cubiertaVisible])
 
   /**
    * Recuento agrupado.
@@ -1038,12 +1159,14 @@ function MapaDeRed({
       cubiertas = [],
       ventana,
       encuadrar = true,
+      direccion,
     }: {
       cables: string[]
       geometrias: GeometriaDeTramo[]
       cubiertas?: string[]
       ventana?: Recuadro
       encuadrar?: boolean
+      direccion?: DireccionTrace
     }) => {
       traceSource.clear()
       // Un recorrido nuevo: lo resaltado del anterior ya no vale.
@@ -1068,8 +1191,12 @@ function MapaDeRed({
           continue
         }
         // Una copia: el cable real no se toca, y el recorrido sigue en pie
-        // aunque se actualicen las capas.
-        traceSource.addFeature(new Feature({ geometry: linea.clone() }))
+        // aunque se actualicen las capas. La raya animada corre en el sentido
+        // del trace: con la señal hacia abajo, en contra hacia arriba (y sin
+        // animar si no se sabe el sentido de la señal en ese cable).
+        const sentido = cable.get(SENTIDO_SENAL)
+        const flujo = !direccion || (sentido !== 1 && sentido !== -1) ? 0 : direccion === "DOWNSTREAM" ? sentido : -sentido
+        traceSource.addFeature(new Feature({ geometry: linea.clone(), [FLUJO_TRACE]: flujo }))
         largoM += largoDeCableM(cable)
       }
       const formato = new GeoJSON()
@@ -1091,6 +1218,8 @@ function MapaDeRed({
         if (punto) traceSource.addFeature(new Feature({ geometry: punto.clone() }))
       }
       setHayRecorrido(traceSource.getFeatures().length > 0)
+      flujoHastaRef.current = Date.now() + SEGUNDOS_DE_FLUJO * 1000
+      mapRef.current?.render()
 
       if (encuadrar) encuadrarRecorrido(ventana)
       return { pintados: cables.length - faltan.length, faltan, largoM: Math.round(largoM) }
@@ -1219,8 +1348,15 @@ function MapaDeRed({
             tipo,
             nombre: ((f.get(NOMBRE_VISIBLE) as string | undefined) ?? "").trim() || TYPE_LABELS[tipo],
             categoria,
-            color: tipo === "node" ? colorForFuncionCub(f.get("funcion_cub") as string) : LAYER_COLORS[tipo],
-            visible: capaVisible && categoriaVisible(filtro, categoria),
+            color:
+              tipo === "node"
+                ? colorForFuncionCub(f.get("funcion_cub") as string)
+                : tipo === "fiber"
+                  ? colorForTipoRed(f.get("tipo_red_prin") as string | undefined)
+                  : LAYER_COLORS[tipo],
+            visible:
+              capaVisible &&
+              (tipo === "fiber" ? cableVisible(f) : tipo === "node" ? cubiertaVisible(f) : categoriaVisible(filtro, categoria)),
             hilos: typeof hilos === "number" && hilos > 0 ? hilos : null,
             largoM: tipo === "fiber" ? largoDeCableM(f) : null,
             lineas: tipo === "fiber" ? lineas : null,
@@ -1232,7 +1368,7 @@ function MapaDeRed({
       }
       return { extension, elementos }
     },
-    [cabeceraSource, nodeSource, fiberSource, zoneSource],
+    [cabeceraSource, nodeSource, fiberSource, zoneSource, cableVisible, cubiertaVisible],
   )
 
   const alCambiarLaVista = useCallback(
@@ -1332,6 +1468,17 @@ function MapaDeRed({
     return { nombre, punto: toLonLat(geometria.getCoordinates()) as [number, number] }
   }, [selected])
 
+  // Si el mapa base se ve oscuro, la camisa de los cables y el halo de los
+  // rótulos van oscuros (ver ponerFondoOscuro). Depende del tema y del estilo
+  // de Mapa base: «Calles» y «Gris» se ven claros aunque el tema sea oscuro.
+  const aplicarFondoOscuro = useCallback(() => {
+    const fondo = aparienciaRef.current.fondo
+    const oscuro = fondo === "oscuro" || ((fondo === "tema" || fondo === "ninguno") && getCurrentTheme() === "dark")
+    if (ponerFondoOscuro(oscuro)) {
+      for (const capa of [fiberLayer.current, nodeLayer.current, cabeceraLayer.current, zoneLayer.current]) capa?.changed()
+    }
+  }, [])
+
   // Imprimir: el mapa como imagen, juntando el lienzo de cada capa como en el
   // ejemplo de exportación de OpenLayers (los controles son HTML y no salen).
   //
@@ -1341,14 +1488,36 @@ function MapaDeRed({
   // que la casilla «Fondo del mapa» cambie la lámina sin volver a capturar.
   const capturarMapa = useCallback(
     () =>
-      new Promise<{ lienzo: HTMLCanvasElement; lienzoSinFondo: HTMLCanvasElement; metrosPorPixel: number } | null>((resolve) => {
+      new Promise<{
+        lienzo: HTMLCanvasElement
+        lienzoSinFondo: HTMLCanvasElement
+        metrosPorPixel: number
+        /** El mapa no terminó de dibujarse (una tesela que no bajó): se capturó lo que había. */
+        incompleta?: boolean
+      } | null>((resolve) => {
         const map = mapRef.current
         const tamano = map?.getSize()
         if (!map || !tamano) {
           resolve(null)
           return
         }
-        map.once("rendercomplete", () => {
+        // La lámina lleva el mapa base sin oscurecer (el lienzo no tiene el
+        // filtro del tema): mientras se captura, cables y rótulos van con su
+        // camisa clara, y después vuelven a como estaban.
+        const aclarado = ponerFondoOscuro(false)
+        if (aclarado) {
+          for (const capa of [fiberLayer.current, nodeLayer.current, cabeceraLayer.current, zoneLayer.current]) capa?.changed()
+        }
+        // Se compone una sola vez: al terminar de dibujar o, si eso no llega, al
+        // vencer el tope (ver abajo).
+        let hecho = false
+        // En un objeto: `componer` puede correr (si el mapa ya estaba dibujado)
+        // antes de que se arme el tope.
+        const tope: { id?: number } = {}
+        const componer = (incompleta: boolean) => {
+          if (hecho) return
+          hecho = true
+          window.clearTimeout(tope.id)
           const escala = window.devicePixelRatio || 1
           const nuevoLienzo = () => {
             const l = document.createElement("canvas")
@@ -1361,6 +1530,7 @@ function MapaDeRed({
           const ctx = lienzo.getContext("2d")
           const ctxSinFondo = lienzoSinFondo.getContext("2d")
           if (!ctx || !ctxSinFondo) {
+            if (aclarado) aplicarFondoOscuro()
             resolve(null)
             return
           }
@@ -1389,16 +1559,25 @@ function MapaDeRed({
             c.globalAlpha = 1
             c.setTransform(1, 0, 0, 1, 0, 0)
           }
+          if (aclarado) aplicarFondoOscuro()
           const view = map.getView()
           const centro = view.getCenter()
           const lat = centro ? toLonLat(centro)[1] : 0
           // En Web Mercator un metro del mapa mide 1/cos(latitud) metros del terreno.
           const metrosPorPixel = (view.getResolution() ?? 1) * Math.cos((lat * Math.PI) / 180)
-          resolve({ lienzo, lienzoSinFondo, metrosPorPixel })
-        })
+          resolve({ lienzo, lienzoSinFondo, metrosPorPixel, ...(incompleta ? { incompleta } : {}) })
+        }
+        const clave = map.once("rendercomplete", () => componer(false))
+        // `rendercomplete` espera a que bajen todas las teselas del mapa base: si
+        // una se queda colgada no llega nunca, e «Imprimir» y «Copiar mapa» se
+        // quedaban esperando. A los 10 s se compone con lo que ya está dibujado.
+        tope.id = window.setTimeout(() => {
+          unByKey(clave)
+          componer(true)
+        }, ESPERA_CAPTURA_MS)
         map.renderSync()
       }),
-    [],
+    [aplicarFondoOscuro],
   )
 
   const irEnElHistorial = useCallback((paso: -1 | 1) => {
@@ -1483,11 +1662,29 @@ function MapaDeRed({
 
   // El estilo del mapa base va como `data-fondo` en el contenedor (los filtros
   // están en globals.css); «Sin fondo» apaga la capa, que así ni se descarga.
-  const ponerFondo = useCallback((estilo: EstiloDeFondo) => {
-    aparienciaRef.current.fondo = estilo
-    baseLayerRef.current?.setVisible(estilo !== "ninguno")
-    if (containerRef.current) containerRef.current.dataset.fondo = estilo
-  }, [])
+  const ponerFondo = useCallback(
+    (estilo: EstiloDeFondo) => {
+      aparienciaRef.current.fondo = estilo
+      baseLayerRef.current?.setVisible(estilo !== "ninguno")
+      if (containerRef.current) containerRef.current.dataset.fondo = estilo
+      aplicarFondoOscuro()
+    },
+    [aplicarFondoOscuro],
+  )
+
+  // El tema cambia con el botón de la cabecera (una clase en <html>) o con el
+  // del sistema, si se sigue al sistema.
+  useEffect(() => {
+    aplicarFondoOscuro()
+    const observador = new MutationObserver(aplicarFondoOscuro)
+    observador.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    const sistema = window.matchMedia?.("(prefers-color-scheme: dark)")
+    sistema?.addEventListener?.("change", aplicarFondoOscuro)
+    return () => {
+      observador.disconnect()
+      sistema?.removeEventListener?.("change", aplicarFondoOscuro)
+    }
+  }, [aplicarFondoOscuro])
 
   const ponerOpacidad = useCallback((capa: CapaConOpacidad, opacidad: number) => {
     aparienciaRef.current.opacidades[capa] = Math.min(1, Math.max(0, opacidad))
@@ -1710,18 +1907,12 @@ function MapaDeRed({
     // lo detecta al hacer click: filtrar oculta y además vuelve inseleccionable.
     fiberLayer.current = new VectorLayer({
       source: fiberSource,
-      style: ((f: Feature<Geometry>, r: number) =>
-        categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f))
-          ? fiberStyle(f, r)
-          : undefined) as never,
+      style: ((f: Feature<Geometry>, r: number) => (cableVisible(f) ? fiberStyle(f, r) : undefined)) as never,
       declutter: true,
     })
     nodeLayer.current = new VectorLayer({
       source: nodeSource,
-      style: ((f: Feature<Geometry>, r: number) =>
-        categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f))
-          ? nodeStyle(f, r)
-          : undefined) as never,
+      style: ((f: Feature<Geometry>, r: number) => (cubiertaVisible(f) ? nodeStyle(f, r) : undefined)) as never,
       declutter: true,
     })
     cabeceraLayer.current = new VectorLayer({
@@ -1732,6 +1923,7 @@ function MapaDeRed({
     measureLayer.current = new VectorLayer({ source: measureSource, style: measureStyle as never })
     sentidoLayer.current = new VectorLayer({ source: sentidoSource, style: sentidoStyle as never })
     marcadorLayer.current = new VectorLayer({ source: marcadorSource, style: marcadorStyle as never })
+    brilloLayer.current = new VectorLayer({ source: brilloSource, style: brilloDeCableStyle as never })
     extremosLayer.current = new VectorLayer({ source: extremosSource, style: extremoStyle as never })
     destinoLayer.current = new VectorLayer({ source: destinoSource, style: destinoStyle as never })
     // `zIndex: 10`, como en el código del ingeniero: el recorrido queda por
@@ -1759,6 +1951,8 @@ function MapaDeRed({
         capaBase,
         cercaniaLayer.current,
         zoneLayer.current,
+        // Debajo del tendido: el brillo asoma alrededor del cable sin taparlo.
+        brilloLayer.current,
         fiberLayer.current,
         // Encima del tendido, para taparlo mientras dura, y debajo de las
         // mufas, para que la mufa pulsada se siga viendo.
@@ -1826,26 +2020,70 @@ function MapaDeRed({
       if (!encontrado) {
         ultimoResaltado = null
         globo.hidden = true
+        apagarBrillo()
         return
       }
 
       globo.hidden = false
       globo.style.transform = `translate(${pixel[0]}px, ${pixel[1]}px)`
 
-      // El texto solo se rearma cuando cambia el elemento, no en cada píxel.
+      // El texto (y el brillo) solo se rearman cuando cambia el elemento, no en cada píxel.
       if (encontrado !== ultimoResaltado) {
         ultimoResaltado = encontrado
         const tipo = tipoDeFeature(encontrado)
-        globo.textContent = tipo
-          ? `${TYPE_LABELS[tipo]} · ${(encontrado.get(NOMBRE_VISIBLE) as string) || TYPE_LABELS[tipo]}`
-          : ""
+        globo.textContent =
+          tipo === "fiber"
+            ? textoDelGloboDeCable(encontrado)
+            : tipo === "node"
+              ? // «Cubierta CO06 · Primer nivel»: el nivel, que antes solo se veía en la ficha.
+                [`Cubierta ${(encontrado.get(NOMBRE_VISIBLE) as string) || ""}`.trim(), encontrado.get("funcion_cub") as string | undefined]
+                  .filter(Boolean)
+                  .join(" · ")
+              : tipo
+                ? `${TYPE_LABELS[tipo]} · ${(encontrado.get(NOMBRE_VISIBLE) as string) || TYPE_LABELS[tipo]}`
+                : ""
+        apagarBrillo()
+        // El cable o la cubierta bajo el puntero brillan en su color: se sabe
+        // cuál se va a elegir cuando hay varios juntos.
+        if (tipo === "fiber" || tipo === "node" || tipo === "cabecera") {
+          brilloSource.addFeature(
+            new Feature({
+              geometry: encontrado.getGeometry(),
+              cant_hilo: encontrado.get("cant_hilo"),
+              tipo_red_prin: encontrado.get("tipo_red_prin"),
+              funcion_cub: encontrado.get("funcion_cub"),
+              es_cabecera: tipo === "cabecera",
+            }),
+          )
+        }
       }
+    }
+
+    /** Quita el brillo del cable, si lo hay (sin redibujar cuando no hay nada). */
+    function apagarBrillo() {
+      if (brilloSource.getFeatures().length > 0) brilloSource.clear()
+    }
+
+    /** «Cable 2107434 · Feeder · 144 hilos · 946 m»: lo que se lee del cable sin hacer click. */
+    function textoDelGloboDeCable(f: Feature<Geometry>): string {
+      const tipoRed = String(f.get("tipo_red_prin") ?? "").trim().toUpperCase()
+      const hilos = f.get("cant_hilo")
+      return [
+        `Cable ${(f.get(NOMBRE_VISIBLE) as string) || ""}`.trim(),
+        TIPO_RED_NOMBRES[tipoRed],
+        typeof hilos === "number" && hilos > 0 ? `${hilos} hilos` : null,
+        textoDeLongitud(largoDeCableM(f)),
+      ]
+        .filter(Boolean)
+        .join(" · ")
     }
 
     map.on("pointermove", (evt) => {
       // Mientras se arrastra el mapa no interesa lo que hay bajo el cursor.
       if (evt.dragging) {
         if (hoverRef.current) hoverRef.current.hidden = true
+        ultimoResaltado = null
+        apagarBrillo()
         return
       }
       pendiente = { pixel: evt.pixel, coordinate: evt.coordinate }
@@ -1858,6 +2096,7 @@ function MapaDeRed({
     map.getViewport().addEventListener("pointerleave", () => {
       ultimoResaltado = null
       if (hoverRef.current) hoverRef.current.hidden = true
+      apagarBrillo()
     })
     // El zoom se escribe en la barra de estado directamente, como las
     // coordenadas: cambia en cada cuadro de la animación de acercar, y por
@@ -1953,6 +2192,39 @@ function MapaDeRed({
       minimapaRef.current = control
     }
 
+    // La raya que corre sobre el recorrido del trace (ver FLUJO_TRACE). Se
+    // dibuja encima de la capa en cada cuadro y, durante unos segundos después
+    // de pintar el recorrido, pide el siguiente a unos 25 cuadros por segundo.
+    // Después queda quieta: correr todo el rato costaba un 12 % de CPU. Con la
+    // pestaña oculta no se pide ningún cuadro; con «reducir movimiento», tampoco.
+    let cuadroDelFlujo: ReturnType<typeof setTimeout> | null = null
+    const reducirMovimiento = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+    traceLayer.current.on("postrender", (evento) => {
+      const lineas = traceSource.getFeatures().filter((f) => f.get(FLUJO_TRACE))
+      if (lineas.length === 0) return
+      const contexto = getVectorContext(evento)
+      const corre = !reducirMovimiento && Date.now() < flujoHastaRef.current
+      // Quieta, la raya queda en su posición inicial.
+      const avance = corre ? ((evento.frameState?.time ?? 0) / 40) % PERIODO_FLUJO_TRACE : 0
+      const trazo = ESTILO_FLUJO_TRACE.getStroke()
+      for (const f of lineas) {
+        const geometria = f.getGeometry()
+        if (!geometria) continue
+        trazo?.setLineDashOffset(-(f.get(FLUJO_TRACE) as number) * avance)
+        contexto.setStyle(ESTILO_FLUJO_TRACE)
+        contexto.drawGeometry(geometria)
+      }
+      if (!corre || document.hidden || cuadroDelFlujo) return
+      cuadroDelFlujo = setTimeout(() => {
+        cuadroDelFlujo = null
+        map.render()
+      }, 40)
+    })
+    const alVolverALaPestana = () => {
+      if (!document.hidden) map.render()
+    }
+    document.addEventListener("visibilitychange", alVolverALaPestana)
+
     // Esc cancela el trazo en curso (mufa, fibra o zona), sin dejar nada a medias.
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") drawRef.current?.abortDrawing()
@@ -1962,6 +2234,8 @@ function MapaDeRed({
     return () => {
       cancelled = true
       window.removeEventListener("keydown", handleEscape)
+      document.removeEventListener("visibilitychange", alVolverALaPestana)
+      if (cuadroDelFlujo) clearTimeout(cuadroDelFlujo)
       map.setTarget(undefined)
       mapRef.current = null
       minimapaRef.current = null
@@ -2133,8 +2407,8 @@ function MapaDeRed({
     // Cada capa se encuadra sobre lo que realmente se ve: las que se pueden
     // filtrar por categoría pasan también su condición de pintado.
     const fuentes = {
-      nodes: [nodeSource, (f: Feature<Geometry>) => categoriaVisible(filtersRef.current?.nodes, categoriaDeMufa(f))],
-      fibers: [fiberSource, (f: Feature<Geometry>) => categoriaVisible(filtersRef.current?.fibers, categoriaDeCable(f))],
+      nodes: [nodeSource, cubiertaVisible],
+      fibers: [fiberSource, cableVisible],
       cabeceras: [cabeceraSource, undefined],
       zones: [zoneSource, undefined],
     } as const
@@ -2526,7 +2800,16 @@ function MapaDeRed({
         className="pointer-events-none absolute left-0 top-0 z-30 mt-[-2rem] rounded-md bg-foreground/90 px-2 py-1 text-[11px] font-medium text-background shadow-lg"
       />
 
-      <MapLegend sentido={tool === "sentido"} extremos={tool === "cable"} trace={hayRecorrido} resalte={hayResalte} />
+      <MapLegend
+        sentido={tool === "sentido"}
+        extremos={tool === "cable"}
+        trace={hayRecorrido}
+        resalte={hayResalte}
+        tiposOcultos={tiposOcultos}
+        onAlternarTipo={alternarTipoDeRed}
+        nivelesOcultos={nivelesOcultos}
+        onAlternarNivel={alternarNivel}
+      />
 
       {/* Panel del elemento seleccionado (components/mapa/panel-seleccion.tsx). */}
       {selected && (
@@ -2545,6 +2828,28 @@ function MapaDeRed({
           onCentrar={centrarEnSeleccion}
           onInformacion={() => setInfoOpen(true)}
           onQuitar={handleDeleteSelected}
+          cables={
+            selected.type === "node" && typeof selected.feature.get("id") === "string"
+              ? fiberSource
+                  .getFeatures()
+                  .filter((f) => f.get("id_elem_from") === selected.feature.get("id") || f.get("id_elem_to") === selected.feature.get("id")).length
+              : undefined
+          }
+          tramo={
+            selected.type === "fiber"
+              ? {
+                  origen: typeof selected.feature.get("id_elem_from") === "string" ? nombreDeElemento(selected.feature.get("id_elem_from")) : null,
+                  destino: typeof selected.feature.get("id_elem_to") === "string" ? nombreDeElemento(selected.feature.get("id_elem_to")) : null,
+                  idOrigen: typeof selected.feature.get("id_elem_from") === "string" ? selected.feature.get("id_elem_from") : null,
+                  idDestino: typeof selected.feature.get("id_elem_to") === "string" ? selected.feature.get("id_elem_to") : null,
+                }
+              : undefined
+          }
+          onIrA={(id) => {
+            // La cubierta (o la cabecera) de una punta del cable: se centra y se abre su ficha.
+            const punta = [...nodeSource.getFeatures(), ...cabeceraSource.getFeatures()].find((f) => f.get("id") === id)
+            if (punta) enfocarElemento(getUid(punta))
+          }}
         />
       )}
 

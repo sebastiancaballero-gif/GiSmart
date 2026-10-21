@@ -4,7 +4,7 @@ import { fiberColor, fiberColorByName } from "@/lib/schematic/fiber-colors"
 /**
  * Hilos de un cable, para «Gestión de hilos» (ribbon: Red de fibra → Hilos).
  *
- * Salen de la función `tab_fiber.fn_obtener_hilos_cable_json(p_id_cable)` de
+ * Salen de la función `tab_fiber.fn_get_json_hilos_cable(p_id_cable)` de
  * Carlos, a la que se le pasa el UUID del cable. Hoy trae el número, el buffer,
  * los colores, la tecnología y el estado de cada hilo; él la va a ampliar con
  * lo que mostraba la pantalla del SIG anterior (rack, ODF, puerto, equipo,

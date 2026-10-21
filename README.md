@@ -177,8 +177,10 @@ Esto es deliberado por tres razones:
 | `GET /api/mufas/{id}/conectividad` | Conectividad interna de una cubierta, generada por la función que le toca por su nivel: `get_json_conectividad_cubierta_n0` para las de empalme (nivel 0) y `get_json_conectividad_cubierta_n12` para las de primer y segundo nivel. Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
 | `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_json_conectividad_cubierta(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
 | `GET /api/cables/{id}/extremos` | Extremos de un cable (dónde sale y dónde entra), según `geo_fiber.fn_json_extremos_cable(p_uuid_cable)`. Solo lectura. |
-| `GET /api/cables/{id}/hilos` | Hilos de un cable para «Gestión de hilos», según `fn_obtener_hilos_cable_json`. Solo lectura. |
+| `GET /api/cables/{id}/hilos` | Hilos de un cable para «Gestión de hilos», según `fn_get_json_hilos_cable`. Solo lectura. |
+| `GET /api/cables/{id}/distribucion` | El recorrido de cada hilo del cable para «Gestión de hilos», armado con la caché del trace: de qué divisor sale (sección distribución), a qué ODF y OLT llega hacia la fuente (sección feeder) y dónde termina hacia abajo. Solo lectura. |
 | `GET /api/traces/{downstream\|upstream}/{id}` | Recorrido del trace desde un puerto o un hilo, leído de la caché `tab_fiber.element_connection` (ver la fila del Trace más abajo). Solo lectura. |
+| `GET /api/catalogos` | Los catálogos de `geo_fiber` que traducen los códigos de las fichas (`cat_tipos_elem`, `cat_cods_fabricante`, `cat_tipo_tecnologia_hilo`). Se guardan 10 minutos. Solo lectura. |
 | `GET /api/reverse-geocode` | Traduce `lon`/`lat` al nombre del municipio (Nominatim/OSM), para el subtítulo del mapa. |
 | `GET /api/geocode` | Busca municipios/zonas por texto (Nominatim/OSM, limitado a Colombia) para el buscador de la cabecera. |
 
@@ -218,10 +220,10 @@ reconozca los elementos sin recalibrar la vista:
   - Empalme pasivo → naranja
   - Sin dato → gris
 - **Cable de fibra:** línea cuyo **grosor crece con `cant_hilo`** (más hilos, trazo más
-  grueso). El color está preparado para separar troncal (azul) de distribución (magenta)
-  vía `tipo_red_prin`; hoy ese campo llega vacío en los 182 cables, así que todos se
-  dibujan con el color por defecto de la capa. Encima de la línea va la etiqueta NAP y
-  debajo la longitud.
+  grueso). El color sale de `tipo_red_prin`: FEEDER (20 cables) en azul y DISTRIBUTION
+  (162) en magenta; sin tipo, el azul de la capa. La leyenda, el desglose del panel y la
+  impresión usan los mismos colores. Encima de la línea va la etiqueta NAP y debajo la
+  longitud.
 
 Los símbolos y los cables llevan un **contorno blanco** para despegarse del mapa base:
 sin él, con 185 mufas concentradas el conjunto se leía como una mancha y los cables se
@@ -383,7 +385,7 @@ estado), así que se ven iguales.
 
 | Ventana | Qué hace hoy | Qué espera de la base |
 | --- | --- | --- |
-| **Gestión de hilos** (`gestion-hilos-dialog.tsx`) | Se elige el cable en el mapa (o abre con el seleccionado) y lista sus hilos con `tab_fiber.fn_obtener_hilos_cable_json(p_id_cable)`: número con su color, buffer, colores, tecnología y estado, agrupados por buffer, con filtro por buffer y buscador. Al elegir un hilo muestra su UUID. **Recorrido del hilo:** «Hacia la fuente» (hacia la OLT) y «Hacia abajo» cierran la ventana y abren «Recorrido del trace» con el UUID del hilo seleccionado, que sale de la caché del trace (`tab_fiber.element_connection`) y se pinta en el mapa. La ventana del trace muestra el hilo elegido (su color, número y cable) y, al cerrarla (equis, Esc o «Volver a los hilos»), se vuelve a Gestión de hilos con el mismo cable y el hilo seleccionado a la vista. | Rack, ODF, puertos, equipo, tarjeta, transporte y destino (columnas «pendiente»); simulación de corte; la casilla «Hasta CEO». |
+| **Gestión de hilos** (`gestion-hilos-dialog.tsx`) | Se elige el cable en el mapa (o abre con el seleccionado) y lista sus hilos con `tab_fiber.fn_get_json_hilos_cable(p_id_cable)`: número con su color, buffer, colores, tecnología y estado, agrupados por buffer, con filtro por buffer y buscador. Al elegir un hilo muestra su UUID. Del recorrido del trace (`GET /api/cables/{id}/distribucion`, `lib/map/distribucion-cable.ts`; se pide una vez al elegir el cable y sirve a las dos pestañas) la **sección feeder** llena el ODF con su bandeja y su puerto, la OLT con su tarjeta y su puerto y el equipo destino de cada hilo (subiendo desde la entrada de cada divisor que cruza, como el trace; mientras llega, esas celdas muestran su hueso, y si falla, una línea bajo la grilla dice por qué y deja reintentar), y la **sección distribución** dice de qué cubierta, divisor y salida sale cada hilo y a qué equipo llega. Lo que la función de hilos traiga de esas columnas manda sobre el trace. **Recorrido del hilo:** «Hacia la fuente» (hacia la OLT) y «Hacia abajo» cierran la ventana y abren «Recorrido del trace» con el UUID del hilo seleccionado, que sale de la caché del trace (`tab_fiber.element_connection`) y se pinta en el mapa. La ventana del trace muestra el hilo elegido (su color, número y cable) y, al cerrarla (equis, Esc o «Volver a los hilos»), se vuelve a Gestión de hilos con el mismo cable y el hilo seleccionado a la vista. | Rack, rack del equipo y transporta (columnas «pendiente»: la base no tiene racks ni servicios); simulación de corte; la casilla «Hasta CEO». |
 | **Elementos alimentados por fibra óptica** (`elementos-alimentados-dialog.tsx`) | Nodo origen: lista de cabeceras, búsqueda por caracteres, elegir el nodo en el mapa y ubicarlo. «Cod. Nivel 1 totales»: las cubiertas de primer nivel del mapa, con flechas y ubicar. | «Cod. Nivel 1 de la cabecera», puertos nivel 2, NAP conectada y recorridos. |
 | **Consulta de redes por nodo** (`redes-nodo-dialog.tsx`) | Lista de nodos (cabeceras), ubicar el nodo en el mapa y las pestañas Cables salientes, Cables entrantes, Primer nivel y Nivel 2. | «Cargar cubiertas», GPON / METH, exportar y las filas de cada pestaña. Columnas como en el SIG anterior: cables con identificador, código y longitud; cubiertas con identificador, código y dirección. |
 

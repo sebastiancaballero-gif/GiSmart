@@ -14,7 +14,7 @@
  *   - dos filas seguidas son un paso de la caché o el cruce de un divisor;
  *   - cada paso de la caché sigue en `tab_fiber.conectividad_fina` con el mismo
  *     tipo de conexión y atenuación (si no, la caché quedó vieja);
- *   - los hilos dicen lo mismo que Gestión de hilos (`fn_obtener_hilos_cable_json`);
+ *   - los hilos dicen lo mismo que Gestión de hilos (`fn_get_json_hilos_cable`);
  *   - el Excel de cada ruta se arma sin errores;
  *   - y cuenta los elementos con conectividad que no tienen recorrido en la
  *     caché en algún sentido (la ventana explica por qué).
@@ -35,6 +35,8 @@ const { emitirToken, COOKIE_SESION } = await import("../lib/auth-server.ts")
 const { GET } = await import("../app/api/traces/[direccion]/[id]/route.ts")
 const { clasificarRespuestaTrace, familiaDePuerto, normalizarPasos } = await import("../lib/map/trace.ts")
 const { clienteSupabase } = await import("../lib/supabase-servidor.ts")
+const { nombreDeCubierta } = await import("../lib/map/nombre-cubierta.ts")
+const { tarjetaDeFila } = await import("../lib/map/tarjeta-bandeja.ts")
 const { hojaDelTrace } = await import("../lib/map/trace-excel.ts")
 const { crearXlsx } = await import("../lib/excel.ts")
 const { normalizarHilos, colorParaMostrar } = await import("../lib/map/hilos-cable.ts")
@@ -59,8 +61,10 @@ const [cache, hilos, puertos, divisores, cubiertas, tarjetas, equipos, cabeceras
     .then((filas) => filas.map((p) => ({ ...p, tipo_equipo_pert: familiaDePuerto(p.tipo_equipo_pert) })))
     .then(porId),
   todas("tab_fiber", "divisor_optico", "id, num_divisor, cod_divisor, id_cubierta_ubica").then(porId),
-  todas("geo_fiber", "cubierta_empalme", "id, etiqueta, funcion_cub").then(porId),
-  todas("tab_fiber", "tarjeta_bandeja_eqp", "id, num_slot, tipo_equipo, id_equipo").then(porId),
+  // Entera, como la ruta: el nombre viene en `etiqueta` o en `salidas_div1`.
+  todas("geo_fiber", "cubierta_empalme", "*").then(porId),
+  // Entera, como la ruta: id_equipo y tipo_equipo pasaron a *_pert.
+  todas("tab_fiber", "tarjeta_bandeja_eqp", "*").then((filas) => porId(filas.map(tarjetaDeFila))),
   todas("tab_fiber", "equipo_red", "id, codigo, id_cabecera").then(porId),
   todas("geo_infra", "cabecera_central", "id, nombre").then(porId),
   todas("geo_fiber", "cable_fibra", "id, codigo, longitud_medida, longitud_calc").then(porId),
@@ -95,7 +99,7 @@ function esperado(f) {
     if (p.tipo_equipo_pert === "DIV") {
       const d = divisores.get(p.id_equipo_pert)
       const cu = d?.id_cubierta_ubica ? cubiertas.get(d.id_cubierta_ubica) : null
-      return { ...e, codigoUbica: texto(d?.num_divisor) ?? d?.cod_divisor ?? null, contenedor: nivel(cu?.funcion_cub), codigoContenedor: d?.id_cubierta_ubica ?? null, nombreContenedor: cu?.etiqueta ?? null }
+      return { ...e, codigoUbica: texto(d?.num_divisor) ?? d?.cod_divisor ?? null, contenedor: nivel(cu?.funcion_cub), codigoContenedor: d?.id_cubierta_ubica ?? null, nombreContenedor: nombreDeCubierta(cu) }
     }
     const t = p.id_equipo_pert ? tarjetas.get(p.id_equipo_pert) : null
     if (!t) return e
@@ -116,6 +120,8 @@ function anotar(tipo, detalle) {
   problemas.set(tipo, p)
 }
 const cuenta = { UPSTREAM: { rutas: 0, llegan: 0 }, DOWNSTREAM: { rutas: 0, llegan: 0 } }
+/** Las rutas que se cortan antes de la OLT (o, hacia abajo, de un divisor), con lo que dice la ventana. */
+const cortadas = []
 const hilosVistos = new Map()
 let pasosRevisados = 0
 let filasRevisadas = 0
@@ -139,6 +145,13 @@ async function revisar({ id_origen: id, direccion }) {
   r.tabla.rutas.forEach((ruta, i) => {
     cuenta[direccion].rutas++
     if (ruta.llega) cuenta[direccion].llegan++
+    else {
+      // Dónde termina: el último elemento de la ruta, por su nombre.
+      const ultima = [...ruta.filas].reverse().find((f) => f.tipo !== "Central")
+      const donde = ultima ? `${ultima.tipo} ${ultima.nombre ?? ""} de ${ultima.contenedor ?? "?"} ${ultima.nombreContenedor ?? ultima.codigoContenedor ?? ""}`.replace(/\s+/g, " ").trim() : "sin filas"
+      const aviso = (r.tabla.avisos ?? []).find((a) => /no llega|termina|corta|sin/i.test(typeof a === "string" ? a : (a?.texto ?? ""))) ?? r.tabla.avisos?.[0]
+      cortadas.push(`${dir} ${id}: termina en ${donde}${aviso ? ` · la ventana dice: ${typeof aviso === "string" ? aviso : (aviso.texto ?? JSON.stringify(aviso))}` : " · la ventana no dice por qué"}`)
+    }
     let suma = 0
     for (const f of ruta.filas) {
       filasRevisadas++
@@ -192,7 +205,7 @@ await Promise.all(
 const porCable = new Map()
 for (const f of hilosVistos.values()) porCable.set(f.codigoContenedor, [...(porCable.get(f.codigoContenedor) ?? []), f])
 for (const [idCable, filas] of porCable) {
-  const { data, error } = await clienteSupabase("tab_fiber").rpc("fn_obtener_hilos_cable_json", { p_id_cable: idCable })
+  const { data, error } = await clienteSupabase("tab_fiber").rpc("fn_get_json_hilos_cable", { p_id_cable: idCable })
   if (error) {
     anotar("Gestión de hilos no responde para un cable", `${idCable}: ${error.message}`)
     continue
@@ -221,6 +234,8 @@ if (sinUsar.length > 0) anotar("conexiones de conectividad_fina que ningún reco
 const segundos = Math.round((Date.now() - t0) / 1000)
 console.log(`\nRevisados en ${segundos} s: ${cache.length} recorridos, ${filasRevisadas} filas, ${pasosRevisados} pasos, ${hilosVistos.size} hilos contra Gestión de hilos.`)
 console.log(`Hacia arriba: ${cuenta.UPSTREAM.llegan} de ${cuenta.UPSTREAM.rutas} rutas llegan a la OLT. Hacia abajo: ${cuenta.DOWNSTREAM.llegan} de ${cuenta.DOWNSTREAM.rutas} llegan a un divisor.`)
+// Las que se quedan a mitad de camino, una por línea: son datos para el ingeniero de red.
+for (const c of cortadas.sort()) console.log(`   se corta: ${c}`)
 for (const d of ["UPSTREAM", "DOWNSTREAM"]) {
   const sin = [...conectados].filter((id) => !conRecorrido[d].has(id)).length
   console.log(`${sin} elementos con conectividad no tienen recorrido ${d === "UPSTREAM" ? "hacia arriba" : "hacia abajo"} en la caché (puertos de la OLT, salidas o entradas de divisor, hilos sueltos).`)

@@ -45,9 +45,11 @@ const CELDA = "whitespace-nowrap border-b border-border px-2 py-1"
  * tabla de lado y no debe dejar ver lo que pasa por debajo.
  */
 function fondoDeFila(indice: number, marcada: boolean) {
-  // En sRGB: en oklch, mezclar el ámbar con el fondo oscuro giraba el tono hacia el verde.
+  // En sRGB: en oklch, mezclar el ámbar con el fondo oscuro giraba el tono hacia
+  // el verde, y cualquier color con el blanco del tema claro (`oklch(1 0 0)`,
+  // tono 0) tiraba al rosado.
   if (marcada) return `color-mix(in srgb, ${RESALTE.color} 25%, var(--card))`
-  return indice % 2 === 1 ? "color-mix(in oklch, var(--foreground) 3.5%, var(--card))" : "var(--card)"
+  return indice % 2 === 1 ? "color-mix(in srgb, var(--foreground) 3.5%, var(--card))" : "var(--card)"
 }
 
 /** Un UUID entero, en monoespaciada y gris (se lee primero lo demás); un click lo selecciona todo para copiarlo. */
@@ -137,7 +139,7 @@ function Fila({
     <tr
       aria-current={marcada || undefined}
       style={{ "--fondo": fondoDeFila(indice, marcada) } as CSSProperties}
-      className={`group bg-[var(--fondo)] transition-colors ${marcada ? "" : "hover:bg-[color-mix(in_oklch,var(--accent)_70%,var(--card))]"}`}
+      className={`group bg-[var(--fondo)] transition-colors ${marcada ? "" : "hover:bg-[color-mix(in_srgb,var(--accent)_70%,var(--card))]"}`}
     >
       <td
         className={`${CELDA} sticky left-0 z-[1] border-r bg-inherit`}

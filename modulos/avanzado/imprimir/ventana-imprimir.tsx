@@ -58,8 +58,18 @@ export function VentanaImprimir({
       ?.capturarMapa()
       .then((c) => {
         if (!vigente) return
-        if (c) setCaptura(c)
-        else setMensaje({ texto: "No se pudo tomar la imagen del mapa.", tono: "error" })
+        if (!c) {
+          setMensaje({ texto: "No se pudo tomar la imagen del mapa.", tono: "error" })
+          return
+        }
+        setCaptura(c)
+        // El mapa base no terminó de bajar: se dice, para que no parezca un error de la lámina.
+        if (c.incompleta) {
+          setMensaje({
+            texto: "El mapa base no terminó de cargar: pueden faltar partes del fondo. Cierra y vuelve a abrir cuando cargue, o desmarca «Fondo del mapa».",
+            tono: "aviso",
+          })
+        }
       })
       .catch((e: unknown) =>
         setMensaje({

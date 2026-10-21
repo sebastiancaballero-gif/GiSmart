@@ -149,7 +149,12 @@ export function ModuloAvanzado({
           avisar("Copiando el mapa…")
           copiarMapa(api, { lugar, conFondo: apariencia.fondo !== "ninguno" })
             .then((r) =>
-              avisar(r === "copiado" ? "Mapa copiado: pégalo en WhatsApp o en un correo con Ctrl+V." : "El navegador no dejó copiar la imagen: se descargó como PNG."),
+              avisar(
+                (r.como === "copiado"
+                  ? "Mapa copiado: pégalo en WhatsApp o en un correo con Ctrl+V."
+                  : "El navegador no dejó copiar la imagen: se descargó como PNG.") +
+                  (r.incompleta ? " El mapa base no terminó de cargar: pueden faltar partes del fondo." : ""),
+              ),
             )
             .catch((e: unknown) => avisar(`No se pudo copiar el mapa: ${e instanceof Error ? e.message : String(e)}`))
           return

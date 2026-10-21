@@ -10,6 +10,155 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.13.0 — 20 de octubre de 2026
+
+**Cables por tipo de red**, según `tipo_red_prin` de la base:
+
+- **FEEDER** (20 cables): el azul de siempre.
+- **DISTRIBUTION** (162 cables): magenta. Los dos con línea continua.
+- Antes salían todos azules: el mapa esperaba los valores viejos del campo (FO-TRNC,
+  FO-DIST), que la base ya no usa.
+- **La leyenda** separa «Feeder» y «Distribución».
+- **El desglose de «Tendido de fibra»** del panel muestra el color de cada grupo. Si un
+  grupo mezclara los dos tipos, su símbolo quedaría gris.
+- **Al imprimir**, la leyenda trae «Fibra feeder» y «Fibra distribución».
+- **La ficha del cable** dice «Feeder (FEEDER)» o «Distribución (DISTRIBUTION)».
+
+**Cómo se ven los cables**:
+
+- **Alejado** (zoom 15,7 o menos), las cubiertas de segundo nivel son un punto de su color.
+  Antes, con su cruz, tapaban los cables de distribución y el casco urbano era una mancha.
+  Las de primer nivel y las de empalme conservan su símbolo.
+- **Los rótulos de los cables** (etiqueta NAP y longitud) salen de cerca, junto con los
+  de las cubiertas. Antes salían desde zoom 15 y se amontonaban.
+- **Al pasar el mouse**, el cable brilla en su color y el globo dice «Cable 2102603 ·
+  Distribución · 48 hilos · 93 m» (antes «Fibra · 2102603»).
+- **El cable elegido** lleva un contorno rojo con su propio color adentro y sus dos puntas
+  marcadas. Antes llevaba una raya roja discontinua encima y quedaba a rayas.
+- **La ficha del cable** dice su tipo con su color («DISTRIBUCIÓN» en magenta), la
+  longitud en metros si es corto («93 m», no «0.09 km») y el tramo («CO06 – 11-dic»): un
+  click en una punta lleva a esa cubierta y abre su ficha.
+- **Modo oscuro**: la camisa de los cables y el halo de los rótulos van oscuros cuando el
+  mapa base se ve oscuro. Blancos parecían contornos brillantes. Al imprimir vuelven a ser
+  claros, porque la lámina lleva el mapa base sin oscurecer.
+- **La leyenda filtra**: un click en «Feeder» o «Distribución» oculta (o vuelve a mostrar)
+  esos cables, y lo mismo con cada nivel de cubierta («Segundo nivel», «Primer nivel»…).
+  Lo oculto se ve tachado y con el ojo cerrado; el panel cuenta lo que queda en pantalla.
+- **Sentido de la señal**: de cerca (zoom 17 o más), flechitas blancas dentro de cada cable
+  marcan hacia dónde va la señal, de la cabecera hacia los usuarios. Se calcula
+  recorriendo la red desde la cabecera, no del sentido del dibujo; los 9 cables a los que no
+  se llega desde la cabecera no llevan flechas.
+- **Trace animado**: al pintar el recorrido, una raya corre sobre él durante 15 segundos,
+  hacia la OLT o hacia el usuario según el sentido elegido, y después queda quieta (correr
+  todo el rato costaba un 12 % de CPU). Se detiene con la pestaña oculta y no corre con
+  «reducir movimiento».
+- **Las cubiertas** también brillan al pasar el mouse, y el globo dice su nivel («Cubierta
+  CO06 · Primer nivel»). Su ficha dice cuántos cables llegan a ella o salen («Cables 4»).
+- **El minimapa** pinta el tendido con los colores de su tipo de red.
+- **El buscador** encuentra los cables también por su etiqueta NAP («1/8+11/16»).
+- **«Información» del cable**: «Cantidad de buffers» y las atenuaciones en 0 (así vienen
+  en los 182 cables) dicen «Sin dato (0 en la base)» en vez de un 0 que parecía un dato.
+  En la **tabla de atributos** quedan vacías (y como ningún cable tiene el dato, esas
+  columnas no salen), y el tipo de red se lee «Distribución» o «Feeder».
+- **Los códigos de la ficha se leen con los catálogos de la base**: «CORNING (CORN)»,
+  «Cubierta de nivel 2 (NAP) (CUB_N2)», «Desconocido (DESCON)». Sirve para el fabricante,
+  los tipos de elemento de origen y destino y el tipo de origen de red. El buscador de la
+  ficha los encuentra por el nombre («corning»), y el botón de copiar sigue copiando el
+  código. Los catálogos se leen una vez (`GET /api/catalogos`, guardados 10 minutos); si
+  fallan, la ficha avisa con la línea de detalle y muestra los códigos tal cual.
+
+**Gestión de hilos**:
+
+- La base renombró la función de los hilos (`fn_obtener_hilos_cable_json` →
+  `fn_get_json_hilos_cable`) y la ventana daba error. Ya usa la nueva; devuelve lo mismo.
+- **La sección feeder llena seis de sus columnas «pendiente»** con el recorrido del trace:
+  el **ODF** con su bandeja y su **puerto**, la **OLT** (Equipo) con su **tarjeta** y su
+  **puerto**, y el **equipo destino**. Por ejemplo, el hilo 13 del cable 2100555: ODF 1 ·
+  bandeja 144 · puerto 1 → OLT 1 · tarjeta 3 · puerto 11 → Divisor 2 de CO01. Un hilo de
+  distribución llega igual, subiendo desde la entrada del divisor de donde sale, como el
+  trace. Quedan «pendiente» Rack, Rack equipo y Transporta: la base no tiene racks ni
+  servicios. Lo que la función de hilos traiga de esas columnas manda sobre el trace.
+- El recorrido se pide una vez al elegir el cable y sirve a las dos pestañas (antes, la de
+  distribución lo pedía al abrirse). Mientras llega, esas celdas muestran su hueso; si
+  falla, una línea bajo la grilla dice por qué, con el detalle de la base, y deja
+  reintentar. El buscador también encuentra por el ODF, la OLT y el destino.
+- **Al elegir un hilo, la celda del número se veía rosada** con el resto de la fila azul.
+  El blanco del tema claro es `oklch(1 0 0)`, de tono rojo, y la mezcla en oklch pasaba
+  por el magenta; ahora se mezcla en sRGB, como se pinta la fila. Lo mismo al pasar el
+  mouse por la tabla del trace.
+
+**La base renombró la columna con el nombre de las cubiertas** (`etiqueta` →
+`salidas_div1`, mismos valores) y tres cosas se rompieron: el mapa nombraba todas las
+cubiertas «Cubierta 2095158», y la tabla del trace y la sección distribución de Hilos
+fallaban (`42703 column cubierta_empalme.etiqueta does not exist`). El nombre se lee ahora
+con `nombreDeCubierta`, que acepta las dos columnas, y esas consultas piden la fila entera
+en vez de nombrar columnas. La ficha de la cubierta nombra las columnas nuevas («Salidas
+del divisor 1», «Etiqueta del puerto de nivel 1», «Nivel», «Código de inventario»).
+La función del botón «Cable» (`fn_json_extremos_cable`, de la base) también leía
+`cub.etiqueta` y falla en todos los cables: no se arregla desde la aplicación;
+`docs/sql/arreglar-extremos-cable-etiqueta.sql` la corrige en el editor SQL de Supabase
+(probado en PGlite: corrige, se puede repetir y no guarda nada si algo más falla).
+
+**El mismo día la base renombró las columnas de `tarjeta_bandeja_eqp`** (`id_equipo` →
+`id_equipo_pert`, `tipo_equipo` → `tipo_equipo_pert`, como en `puerto_equipo`): la tabla
+del trace hacia arriba y el ODF y la OLT de Hilos dejaron de salir (42703). Se leen con
+`tarjetaDeFila`, que acepta los dos nombres, pidiendo la fila entera.
+
+**La leyenda**: ocultar «Otro / sin dato» oculta también las cubiertas con una función que
+la base escriba distinto («Segundo Nivel»), que se dibujan en ese gris.
+
+**Para que un cambio de la base se note antes**: `pnpm run datos` revisa que existan las
+funciones que llama la aplicación (con sus parámetros) **y que respondan** con un cable y
+una cubierta de verdad, **las columnas que pide por su nombre** (13 tablas), la columna
+con el nombre de las cubiertas, **las vistas de las capas** y que los tipos de puerto
+sean de los que entiende el trace. Y cuando una función no existe, la línea de detalle
+del aviso trae la pista de la base con el nombre nuevo («Perhaps you meant…
+fn_get_json_hilos_cable»).
+
+**Que nada se quede pegado**:
+
+- **Las capas del mapa** tienen un tope de 60 s: con la red caída a mitad de camino,
+  «Cargando…» podía quedarse minutos sin decir nada; ahora avisa y pide «Actualizar».
+  Y si una capa falla de paso (un 502 de la base, un corte de red) se reintenta sola una
+  vez: antes quedaba vacía hasta pulsar «Actualizar». Un 404 o un dato roto no se
+  reintentan.
+- **Imprimir y Copiar mapa** esperaban a que bajaran todas las teselas del mapa base: con
+  una colgada, no terminaban nunca. Ahora esperan 10 s y sacan la imagen con lo que hay,
+  avisando que pueden faltar partes del fondo.
+- **El inicio de sesión, la búsqueda de direcciones, la verificación de la sesión y el
+  nombre del lugar** también tienen tope (antes «Entrando…» o «Buscando…» podían quedar
+  girando).
+- **Probado con la red lenta y desordenada** (cada respuesta entre 0,3 y 1,5 s, fuera de
+  orden): clicks rápidos entre cables con «Cable», entre cubiertas con «Entradas y
+  salidas» y «Conectividad fina», cambiar de cable en Hilos mientras carga, cerrar el
+  trace mientras calcula, cambiar de herramienta con una consulta en camino. Siempre queda
+  lo último que se pulsó, nada se queda en «Consultando…» y no aparece ningún recorrido
+  fantasma. En producción, moverse entre los 144 hilos, cambiar de pestaña, buscar,
+  arrastrar el mapa o acercar no producen ningún tirón.
+
+**Hilos**: con un cable de 12 buffers, la barra de filtros ocupaba tres renglones
+(pestañas, buffers, buscador); ahora dos, y la tabla gana ese espacio.
+
+**`pnpm run auditar-trace`** lista las rutas que se cortan a mitad de camino y lo que dice
+la ventana de cada una. Hoy son 10 y todas de un mismo lugar: la entrada del divisor 1 de
+CO90 no tiene recorrido hacia arriba, y los hilos 2 y 4 de los cables 2110462 y 2110542 no
+tienen más conexiones (datos para el ingeniero de red).
+
+**Dependencias sin avisos de seguridad**: `pnpm audit --prod` daba 9 (6 altos), todos en
+paquetes internos de Next 15.5 que solo se usan al compilar (postcss, nanoid,
+browserslist, source-map-js, baseline-browser-mapping). Se fuerzan sus versiones
+corregidas en `pnpm-workspace.yaml`, sin tocar Next; todas corren en Node 18. El CSS
+compilado sale idéntico byte a byte. Ahora: «No known vulnerabilities found». En la
+carpeta de desarrollo hace falta un `pnpm install` para que se apliquen.
+
+**Probado para el servidor**: instalación congelada, compilación y arranque con Node
+18.18 (el del servidor); todas las rutas responden contra la base real, salvo la del
+botón «Cable» (ver arriba), y el tablero de producción carga sin errores. Los 76 botones
+de la cinta se pulsaron uno por uno sin un solo error de consola ni de red.
+
+**Configuración**: nuevo grupo **«Visualización»** con tres botones (Simbología 1, 2 y 3)
+para ver el mapa con otra simbología. Todavía sin función: dicen «próximamente».
+
 ## 1.12.1 — 19 de octubre de 2026
 
 Revisión de lo último antes de entregar la versión.

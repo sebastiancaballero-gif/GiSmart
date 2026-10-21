@@ -1,5 +1,12 @@
 import type { ElementoDelMapa } from "@/components/network-map"
-import { CABECERA_FIELD_LABELS, CAMPOS_REFERENCIA, FIBER_FIELD_LABELS, MUFA_FIELD_LABELS } from "@/lib/map/symbology"
+import {
+  CABECERA_FIELD_LABELS,
+  CAMPOS_REFERENCIA,
+  FIBER_FIELD_LABELS,
+  MUFA_FIELD_LABELS,
+  TIPO_RED_NOMBRES,
+  esCeroSinDato,
+} from "@/lib/map/symbology"
 import { normalizar } from "@/lib/map/busqueda"
 
 /** Las capas que tienen tabla: las zonas no traen atributos de la base. */
@@ -46,7 +53,11 @@ export function valorDeCelda(e: ElementoDelMapa, clave: string, nombres: Map<str
   if (clave === "__largo") return e.largoM
   const crudo = e.propiedades?.[clave]
   if (crudo === null || crudo === undefined || crudo === "") return null
+  // Un cero que es «no se cargó» (los buffers, las atenuaciones) queda vacío, como en la ficha.
+  if (e.propiedades && esCeroSinDato(clave, crudo, e.propiedades)) return null
   if (CAMPOS_REFERENCIA.has(clave) && typeof crudo === "string") return nombres.get(crudo) ?? crudo
+  // El tipo de red por su nombre («Distribución»), como en la leyenda y la ficha.
+  if (clave === "tipo_red_prin" && typeof crudo === "string") return TIPO_RED_NOMBRES[crudo.trim().toUpperCase()] ?? crudo
   if (typeof crudo === "number") return Number.isFinite(crudo) ? crudo : null
   if (typeof crudo === "boolean") return crudo ? "Sí" : "No"
   if (typeof crudo === "object") return JSON.stringify(crudo)

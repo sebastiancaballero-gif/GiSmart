@@ -1,6 +1,8 @@
 import type Feature from "ol/Feature"
 import type { Geometry } from "ol/geom"
 import LineString from "ol/geom/LineString"
+import MultiLineString from "ol/geom/MultiLineString"
+import MultiPoint from "ol/geom/MultiPoint"
 import Point from "ol/geom/Point"
 import type VectorSource from "ol/source/Vector"
 import { getLength } from "ol/sphere"
@@ -61,8 +63,14 @@ const CAMPOS_DE_AUDITORIA: Record<string, string> = {
 }
 
 export const MUFA_FIELD_LABELS: Record<string, string> = {
+  // El nombre: en `etiqueta` hasta el 20-oct-2026, desde entonces en
+  // `salidas_div1` (ver nombreDeCubierta). Se nombran los dos.
   etiqueta: "Etiqueta",
+  salidas_div1: "Salidas del divisor 1",
+  etiqueta_puerto_n1: "Etiqueta del puerto de nivel 1",
   funcion_cub: "Función",
+  nivel: "Nivel",
+  cod_inventario: "Código de inventario",
   tipo_carcasa: "Tipo de carcasa",
   tipo_empalme: "Tipo de empalme",
   tipo_est_const: "Estado de construcción",
@@ -162,6 +170,16 @@ export function categoriaDeMufa(feature: Feature<Geometry>): string {
   return (feature.get("funcion_cub") as string | null) || "Otro / sin dato"
 }
 
+/**
+ * El renglón de la leyenda de una cubierta: su nivel si tiene color propio; si
+ * no, «Otro / sin dato», el gris con que se dibuja. Así ocultar ese renglón
+ * oculta también una función que la base escriba distinto («Segundo Nivel»).
+ */
+export function nivelDeLeyenda(feature: Feature<Geometry>): string {
+  const funcion = feature.get("funcion_cub")
+  return typeof funcion === "string" && Object.hasOwn(FUNCION_CUB_COLORS, funcion) ? funcion : "Otro / sin dato"
+}
+
 export function categoriaDeCable(feature: Feature<Geometry>): string {
   const hilos = feature.get("cant_hilo") as number | null
   return hilos ? `${hilos} hilos` : "Sin dato de hilos"
@@ -169,33 +187,159 @@ export function categoriaDeCable(feature: Feature<Geometry>): string {
 
 // SIGETP separa la fibra troncal (azul) de la de distribución (magenta).
 //
-// Las claves son los valores del enum de la base (`geo_fiber.enum_tipo_red`).
-// Antes eran TRONCAL y DISTRIBUCION, que la base nunca usó: el día que se
-// diligenciara `tipo_red_prin`, ningún cable habría cambiado de color. El de
-// acceso no está en SIGETP; el cian es provisional hasta que lo defina el
-// ingeniero de red.
+// Las claves son los valores del enum de la base (`geo_fiber.enum_tipo_red`,
+// columna `tipo_red_prin`): hoy 20 cables FEEDER y 162 DISTRIBUTION. El feeder
+// queda en el azul de siempre y la distribución va en magenta, las dos con
+// línea continua: se probó la distribución discontinua y el usuario prefirió
+// dejarla continua. El magenta era el de las cubiertas de segundo nivel
+// (#c2185b), pero sobre el mapa se leía rojo: el usuario pidió un magenta de
+// verdad. Antes las claves eran FO-TRNC y FO-DIST, que la base ya no usa, y
+// todos los cables salían azules.
 export const TIPO_RED_COLORS: Record<string, string> = {
-  "FO-TRNC": "#1e3a8a",
-  "FO-DIST": "#c2185b",
-  ACCES: "#0891b2",
+  FEEDER: COLORS.fiber,
+  DISTRIBUTION: "#d600d6",
 }
 
 /** Nombre legible de cada tipo de red, para la leyenda y las fichas. */
 export const TIPO_RED_NOMBRES: Record<string, string> = {
-  "FO-TRNC": "Troncal",
-  "FO-DIST": "Distribución",
-  ACCES: "Acceso",
+  FEEDER: "Feeder",
+  DISTRIBUTION: "Distribución",
 }
 
+/**
+ * Ceros que en la base quieren decir «no se cargó»: un cable con hilos no tiene
+ * 0 buffers, y la atenuación de una fibra nunca es 0 dB/km. Los 182 cables
+ * traen así esos tres campos; la ficha y la tabla no los muestran como dato.
+ */
+export function esCeroSinDato(campo: string, valor: unknown, datos: Record<string, unknown>): boolean {
+  if (valor !== 0) return false
+  if (campo === "cant_buff") return typeof datos.cant_hilo === "number" && datos.cant_hilo > 0
+  return campo === "atenuacion_1490" || campo === "atenuacion_1550"
+}
+
+/** El tipo de red de un cable tal como lo usan las claves de arriba («DISTRIBUTION»); vacío si no tiene. */
+export function tipoDeRed(feature: Feature<Geometry>): string {
+  const valor = feature.get("tipo_red_prin")
+  return typeof valor === "string" ? valor.trim().toUpperCase() : ""
+}
+
+/** El color de un cable según su tipo de red. Sin tipo (o uno desconocido), el azul de la capa. */
 export function colorForTipoRed(tipoRed: string | undefined | null): string {
-  if (!tipoRed) return COLORS.fiber
-  return TIPO_RED_COLORS[tipoRed.toUpperCase()] ?? COLORS.fiber
+  const tipo = typeof tipoRed === "string" ? tipoRed.trim().toUpperCase() : ""
+  return TIPO_RED_COLORS[tipo] ?? COLORS.fiber
 }
 
 // Resoluciones (m/px) a partir de las cuales se ocultan las etiquetas: con 185
 // mufas y 182 cables en pantalla, rotularlos siempre satura el mapa al alejar.
+// Las de los cables salían ya desde 5 m/px (zoom 15) y se amontonaban sobre el
+// casco urbano; ahora salen junto con las de las cubiertas.
 export const MUFA_LABEL_MAX_RESOLUTION = 2.5
-export const FIBER_LABEL_MAX_RESOLUTION = 5
+export const FIBER_LABEL_MAX_RESOLUTION = 2.5
+
+/**
+ * Por encima de esta resolución (zoom 15,7 o más lejos), las cubiertas de
+ * segundo nivel (162 de 185) se dibujan como un punto: con su cruz tapaban los
+ * cables de distribución y el casco urbano se veía como una mancha.
+ */
+export const SEGUNDO_NIVEL_PUNTO_RESOLUTION = 3
+
+/**
+ * Desde esta resolución (zoom 17 o más cerca) los cables llevan flechas con el
+ * sentido de la señal, de la cabecera hacia los usuarios (ver
+ * lib/map/sentido-senal.ts y la propiedad `sentido_senal` del cable).
+ */
+export const FLECHAS_MAX_RESOLUTION = 1.5
+
+/**
+ * Propiedad del cable con el sentido de la señal (`1` como se dibujó, `-1` al
+ * revés, `0` sin saber). La calcula el mapa; no es un dato de la base, así que
+ * la ficha «Información» no la muestra.
+ */
+export const SENTIDO_SENAL = "sentido_senal"
+
+/** Cada cuántos píxeles de cable va una flecha (al menos una por cable). */
+const PIXELES_ENTRE_FLECHAS = 140
+
+/** Flechas blancas dentro del trazo; se guardan por grosor y ángulo (de 5 en 5 grados). */
+const cacheFlechas = new Map<string, RegularShape>()
+
+function flecha(ancho: number, angulo: number): RegularShape {
+  // RegularShape de 3 puntas con ángulo 0 apunta al norte, y la rotación va en
+  // sentido horario; el ángulo del tramo va en sentido antihorario desde el este.
+  const pasos = Math.round(((Math.PI / 2 - angulo) * 180) / Math.PI / 5)
+  const clave = `${ancho}|${pasos}`
+  let forma = cacheFlechas.get(clave)
+  if (!forma) {
+    forma = new RegularShape({
+      points: 3,
+      radius: ancho * 0.55 + 1,
+      rotation: (pasos * 5 * Math.PI) / 180,
+      rotateWithView: true,
+      fill: new Fill({ color: "#ffffff" }),
+      declutterMode: "none",
+    })
+    cacheFlechas.set(clave, forma)
+  }
+  return forma
+}
+
+/** Las flechas de un cable con sentido conocido, repartidas a lo largo de cada tramo. */
+function flechasDelCable(feature: Feature<Geometry>, resolution: number, ancho: number): Style[] {
+  const sentido = feature.get(SENTIDO_SENAL)
+  if (sentido !== 1 && sentido !== -1) return []
+  const geometria = feature.getGeometry()
+  const lineas = geometria instanceof LineString ? [geometria] : geometria instanceof MultiLineString ? geometria.getLineStrings() : []
+  const estilos: Style[] = []
+  for (const linea of lineas) {
+    const largoPx = linea.getLength() / resolution
+    // Un tramo de pocos píxeles no tiene lugar para la flecha.
+    if (largoPx < 28) continue
+    const cantidad = Math.max(1, Math.floor(largoPx / PIXELES_ENTRE_FLECHAS))
+    for (let i = 0; i < cantidad; i++) {
+      const fraccion = (i + 0.5) / cantidad
+      const antes = linea.getCoordinateAt(Math.max(0, fraccion - 0.002))
+      const despues = linea.getCoordinateAt(Math.min(1, fraccion + 0.002))
+      const angulo = Math.atan2(despues[1] - antes[1], despues[0] - antes[0]) + (sentido === -1 ? Math.PI : 0)
+      estilos.push(new Style({ geometry: new Point(linea.getCoordinateAt(fraccion)), image: flecha(ancho, angulo) }))
+    }
+  }
+  return estilos
+}
+
+/** «85 m» los tramos cortos (lo que se usa en campo), «1.23 km» los largos. */
+export function textoDeLongitud(metros: number): string {
+  return metros < 1000 ? `${Math.round(metros)} m` : `${(metros / 1000).toFixed(2)} km`
+}
+
+/**
+ * Si el mapa base se ve oscuro: tema oscuro con «Según el tema» (o sin fondo),
+ * o «Oscuro» en Avanzado › Mapa base. Lo pone el mapa (`ponerFondoOscuro`) y lo
+ * leen los estilos: con fondo oscuro, la camisa de los cables y el halo de los
+ * rótulos van oscuros. Blancos, sobre el mapa oscuro se veían como contornos
+ * brillantes.
+ */
+let fondoOscuro = false
+
+/** Cambia el modo y dice si cambió, para redibujar las capas solo entonces. */
+export function ponerFondoOscuro(oscuro: boolean): boolean {
+  if (fondoOscuro === oscuro) return false
+  fondoOscuro = oscuro
+  return true
+}
+
+/** Los colores que dependen del fondo: camisa de los cables, halo y texto de los rótulos. */
+function tinta() {
+  return fondoOscuro
+    ? { camisa: "rgba(15, 23, 42, 0.85)", halo: "#0f172a", texto: "#e2e8f0", textoSuave: "#cbd5e1", cabecera: "#6ee7b7" }
+    : { camisa: "rgba(255, 255, 255, 0.85)", halo: "#ffffff", texto: "#0f172a", textoSuave: "#475569", cabecera: "#064e3b" }
+}
+
+/** Un color `#rrggbb` con transparencia, para halos y brillos. */
+export function conAlfa(hex: string, alfa: number): string {
+  const n = Number.parseInt(hex.replace("#", "").slice(0, 6), 16)
+  if (!Number.isFinite(n)) return hex
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alfa})`
+}
 
 export const FIBER_HINT =
   "Click sobre una cubierta para iniciar el trazado y sobre otra para terminarlo. Esc cancela. No se guarda en la base todavía."
@@ -240,6 +384,9 @@ function jerarquiaDeMufa(funcionCub: string | undefined | null): { escala: numbe
   return { escala: 1, zIndex: 1 }
 }
 
+/** El de los rótulos de las cubiertas: más que el de cualquier símbolo de `jerarquiaDeMufa`. */
+const ZINDEX_ROTULO_CUBIERTA = 4
+
 /**
  * Caché de los símbolos.
  *
@@ -267,6 +414,24 @@ export function nodeStyle(feature: Feature<Geometry>, resolution: number) {
   const funcionCub = feature.get("funcion_cub") as string | undefined
   const color = colorForFuncionCub(funcionCub)
   const { escala, zIndex } = jerarquiaDeMufa(funcionCub)
+
+  // Alejado, las de segundo nivel quedan como un punto de su color, sin halo ni
+  // cruz: así se ve el tendido (feeder y distribución) en vez de una mancha de
+  // cruces. Las de primer nivel y las de empalme conservan su símbolo.
+  if (funcionCub === "Segundo nivel" && resolution > SEGUNDO_NIVEL_PUNTO_RESOLUTION) {
+    return simbolosCacheados(`mufa-punto|${color}`, () => [
+      new Style({
+        zIndex,
+        image: new CircleStyle({
+          radius: 3,
+          fill: new Fill({ color }),
+          stroke: new Stroke({ color: "#ffffff", width: 1 }),
+          declutterMode: "none",
+        }),
+      }),
+    ])
+  }
+
   const radius = radioSegunResolucion(MUFA_SYMBOL_RADIUS, resolution) * escala
   // La cruz interior solo se dibuja cuando hay espacio para que se distinga.
   const conCruz = resolution <= 12
@@ -323,12 +488,15 @@ export function nodeStyle(feature: Feature<Geometry>, resolution: number) {
   return [
     ...simbolos,
     new Style({
+      // Por encima de todos los símbolos de cubierta (zIndex 1 a 3): en CO01 la
+      // cubierta de segundo nivel de al lado tapaba el rótulo y se leía «C⊕01».
+      zIndex: ZINDEX_ROTULO_CUBIERTA,
       text: new TextStyle({
         text: label,
         offsetY: -(radius + 9),
         font: "600 11px Inter, sans-serif",
-        fill: new Fill({ color: "#0f172a" }),
-        stroke: new Stroke({ color: "#ffffff", width: 3 }),
+        fill: new Fill({ color: tinta().texto }),
+        stroke: new Stroke({ color: tinta().halo, width: 3 }),
       }),
     }),
   ]
@@ -371,8 +539,8 @@ export function cabeceraStyle(feature: Feature<Geometry>, resolution: number) {
         text: label,
         offsetY: -(radius + 10),
         font: "700 12px Inter, sans-serif",
-        fill: new Fill({ color: "#064e3b" }),
-        stroke: new Stroke({ color: "#ffffff", width: 3.5 }),
+        fill: new Fill({ color: tinta().cabecera }),
+        stroke: new Stroke({ color: tinta().halo, width: 3.5 }),
         // La cabecera manda sobre cualquier etiqueta de mufa que la estorbe.
         declutterMode: "obstacle",
       }),
@@ -391,13 +559,14 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
   const width = fiberWidth(feature.get("cant_hilo") as number | undefined)
   const color = colorForTipoRed(feature.get("tipo_red_prin") as string | undefined)
 
-  const trazos = simbolosCacheados(`cable|${color}|${width}`, () => [
-    // Contorno blanco por debajo del trazo (la "camisa" de la cartografía
-    // clásica): separa el cable de las calles del mapa base, que suelen ser
-    // del mismo grosor y tono, y hace legibles los cruces entre cables.
+  const { camisa, halo, textoSuave } = tinta()
+  const trazos = simbolosCacheados(`cable|${color}|${width}|${camisa}`, () => [
+    // Contorno por debajo del trazo (la "camisa" de la cartografía clásica),
+    // blanco u oscuro según el fondo: separa el cable de las calles del mapa
+    // base, que suelen ser del mismo grosor y tono, y hace legibles los cruces.
     new Style({
       stroke: new Stroke({
-        color: "rgba(255, 255, 255, 0.85)",
+        color: camisa,
         width: width + 3,
         lineCap: "round",
         lineJoin: "round",
@@ -412,7 +581,8 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
   // el arreglo: se devuelve el trazo cacheado directamente.
   if (resolution > FIBER_LABEL_MAX_RESOLUTION) return trazos
 
-  const styles = [...trazos]
+  // De cerca, flechas con el sentido de la señal (debajo de los rótulos).
+  const styles = resolution <= FLECHAS_MAX_RESOLUTION ? [...trazos, ...flechasDelCable(feature, resolution, width)] : [...trazos]
   const km = largoEnKm(feature.getGeometry())
 
   {
@@ -436,7 +606,7 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
             overflow: true,
             font: "700 11px Inter, sans-serif",
             fill: new Fill({ color }),
-            stroke: new Stroke({ color: "#ffffff", width: 3.5 }),
+            stroke: new Stroke({ color: halo, width: 3.5 }),
           }),
         }),
       )
@@ -444,7 +614,7 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
 
     // Los tramos cortos se miden en metros: "85 m" ocupa la mitad que
     // "0.09 km" y además es lo que se usa en campo para esas distancias.
-    const longitud = km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(2)} km`
+    const longitud = textoDeLongitud(km * 1000)
 
     styles.push(
       new Style({
@@ -454,8 +624,8 @@ export function fiberStyle(feature: Feature<Geometry>, resolution: number) {
           textBaseline: "top",
           overflow: true,
           font: "600 10px Inter, sans-serif",
-          fill: new Fill({ color: "#475569" }),
-          stroke: new Stroke({ color: "#ffffff", width: 3 }),
+          fill: new Fill({ color: textoSuave }),
+          stroke: new Stroke({ color: halo, width: 3 }),
         }),
       }),
     )
@@ -563,6 +733,24 @@ export function traceStyle() {
 }
 
 /**
+ * Propiedad de cada cable del recorrido pintado: hacia dónde corre la raya
+ * animada respecto del dibujo del cable (`1` hacia su final, `-1` hacia su
+ * comienzo, `0` sin animar porque no se sabe el sentido de su señal).
+ */
+export const FLUJO_TRACE = "flujo_trace"
+
+/**
+ * La raya que corre sobre el recorrido del trace, en el sentido en que se
+ * recorrió: hacia la OLT o hacia el usuario. Oscura, para leerse sobre el cian.
+ */
+export const ESTILO_FLUJO_TRACE = new Style({
+  stroke: new Stroke({ color: "rgba(15, 23, 42, 0.7)", width: 2, lineDash: [5, 13], lineCap: "round", lineJoin: "round" }),
+})
+
+/** Largo de raya más espacio de `ESTILO_FLUJO_TRACE`, en píxeles: lo que avanza en un ciclo. */
+export const PERIODO_FLUJO_TRACE = 18
+
+/**
  * El elemento ubicado desde la tabla del trace (el pin de una fila): queda
  * resaltado hasta que se ubica otro o se quita el recorrido.
  *
@@ -646,16 +834,92 @@ const conCentro = (estilo: Style) => {
 
 const ESTILO_MARCADOR_PUNTO = [anilloMarcador, puntoMarcador]
 
-const ESTILO_MARCADOR_LINEA = [
-  new Style({
-    stroke: new Stroke({ color: "rgba(220, 38, 38, 0.3)", width: 12, lineCap: "round", lineJoin: "round" }),
+/** Las dos puntas de un cable: dónde empieza y dónde termina. */
+function puntasDelElemento(geometria: Geometry | undefined): MultiPoint | undefined {
+  if (geometria instanceof LineString) return new MultiPoint([geometria.getFirstCoordinate(), geometria.getLastCoordinate()])
+  if (geometria instanceof MultiLineString) {
+    const lineas = geometria.getLineStrings()
+    if (lineas.length === 0) return undefined
+    return new MultiPoint([lineas[0].getFirstCoordinate(), lineas[lineas.length - 1].getLastCoordinate()])
+  }
+  return undefined
+}
+
+const puntaMarcador = new Style({
+  image: new CircleStyle({
+    radius: 5,
+    fill: new Fill({ color: "#ffffff" }),
+    stroke: new Stroke({ color: MARCA_ROJA, width: 2.5 }),
+    declutterMode: "none",
   }),
-  new Style({
-    stroke: new Stroke({ color: MARCA_ROJA, width: 3, lineDash: [10, 8], lineCap: "butt" }),
-  }),
-  conCentro(anilloMarcador),
-  conCentro(puntoMarcador),
-]
+  geometry: (f) => puntasDelElemento((f as Feature<Geometry>).getGeometry()),
+})
+
+/**
+ * Un cable marcado: contorno rojo alrededor y, adentro, su propio trazo (color
+ * de su tipo de red y grosor de sus hilos), más sus dos puntas y el punto en la
+ * mitad. Antes llevaba encima una raya roja discontinua y quedaba a rayas rojas
+ * y azules, sin que se viera de qué tipo era. La marca usa los datos del cable
+ * (`cant_hilo`, `tipo_red_prin`) que se le copian al crearla.
+ */
+const estilosMarcadorLinea = new Map<string, Style[]>()
+
+function marcadorDeLinea(feature: Feature<Geometry>): Style[] {
+  const ancho = fiberWidth(feature.get("cant_hilo") as number | undefined)
+  const color = colorForTipoRed(feature.get("tipo_red_prin") as string | undefined)
+  const clave = `${color}|${ancho}`
+  let estilo = estilosMarcadorLinea.get(clave)
+  if (!estilo) {
+    estilo = [
+      new Style({
+        stroke: new Stroke({ color: "rgba(220, 38, 38, 0.22)", width: ancho + 14, lineCap: "round", lineJoin: "round" }),
+      }),
+      new Style({ stroke: new Stroke({ color: MARCA_ROJA, width: ancho + 5, lineCap: "round", lineJoin: "round" }) }),
+      new Style({ stroke: new Stroke({ color, width: ancho, lineCap: "round", lineJoin: "round" }) }),
+      puntaMarcador,
+      conCentro(anilloMarcador),
+      conCentro(puntoMarcador),
+    ]
+    estilosMarcadorLinea.set(clave, estilo)
+  }
+  return estilo
+}
+
+/**
+ * Brillo del cable bajo el puntero, en su propio color. Va en una capa debajo
+ * del tendido, así asoma alrededor del trazo sin taparlo: se sabe cuál se va a
+ * elegir cuando hay varios juntos.
+ */
+const estilosBrillo = new Map<string, Style>()
+
+export function brilloDeCableStyle(feature: Feature<Geometry>): Style {
+  // Una cubierta o la cabecera (punto): un halo de su color alrededor del símbolo.
+  if (feature.getGeometry()?.getType() === "Point") {
+    const esCabecera = feature.get("es_cabecera") === true
+    const color = esCabecera ? CABECERA_COLOR : colorForFuncionCub(feature.get("funcion_cub") as string | undefined)
+    const radio = (esCabecera ? CABECERA_SYMBOL_RADIUS : MUFA_SYMBOL_RADIUS) + 7
+    const clave = `punto|${color}|${radio}`
+    let estilo = estilosBrillo.get(clave)
+    if (!estilo) {
+      estilo = new Style({
+        image: new CircleStyle({ radius: radio, fill: new Fill({ color: conAlfa(color, 0.3) }), declutterMode: "none" }),
+      })
+      estilosBrillo.set(clave, estilo)
+    }
+    return estilo
+  }
+  const ancho = fiberWidth(feature.get("cant_hilo") as number | undefined)
+  const color = colorForTipoRed(feature.get("tipo_red_prin") as string | undefined)
+  const clave = `${color}|${ancho}`
+  let estilo = estilosBrillo.get(clave)
+  if (!estilo) {
+    estilo = new Style({
+      stroke: new Stroke({ color: conAlfa(color, 0.4), width: ancho + 12, lineCap: "round", lineJoin: "round" }),
+    })
+    estilosBrillo.set(clave, estilo)
+  }
+  return estilo
+}
 
 const ESTILO_MARCADOR_AREA = [
   new Style({
@@ -667,7 +931,7 @@ const ESTILO_MARCADOR_AREA = [
 
 export function marcadorStyle(feature: Feature<Geometry>) {
   const tipo = feature.getGeometry()?.getType()
-  if (tipo === "LineString" || tipo === "MultiLineString") return ESTILO_MARCADOR_LINEA
+  if (tipo === "LineString" || tipo === "MultiLineString") return marcadorDeLinea(feature)
   if (tipo === "Polygon" || tipo === "MultiPolygon") return ESTILO_MARCADOR_AREA
   return ESTILO_MARCADOR_PUNTO
 }
@@ -802,8 +1066,8 @@ export function zoneStyle(feature: Feature<Geometry>) {
       ? new TextStyle({
           text: label,
           font: "600 12px Inter, sans-serif",
-          fill: new Fill({ color: "#0f172a" }),
-          stroke: new Stroke({ color: "#ffffff", width: 3 }),
+          fill: new Fill({ color: tinta().texto }),
+          stroke: new Stroke({ color: tinta().halo, width: 3 }),
         })
       : undefined,
   })

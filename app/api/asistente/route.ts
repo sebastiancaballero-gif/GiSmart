@@ -20,6 +20,7 @@ import { GET as leerTraceDeLaRuta } from "@/app/api/traces/[direccion]/[id]/rout
 import { GET as geocodificarEnLaRuta } from "@/app/api/geocode/route"
 import { GET as leerCubiertasDeLaRuta } from "@/app/api/mufas/route"
 import { GET as leerCablesDeLaRuta } from "@/app/api/fiber-cables/route"
+import { nombreDeCubierta } from "@/lib/map/nombre-cubierta"
 
 /**
  * El asistente de IA del módulo «Avanzado»: una pregunta en español sobre la
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
         const c = f.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates) ? (f.geometry.coordinates as number[]) : null
         if (!c || typeof c[0] !== "number" || typeof c[1] !== "number") return []
         const p = f.properties ?? {}
-        return [{ etiqueta: typeof p.etiqueta === "string" ? p.etiqueta : null, nivel: typeof p.funcion_cub === "string" ? p.funcion_cub : null, lon: c[0], lat: c[1] }]
+        return [{ etiqueta: nombreDeCubierta(p), nivel: typeof p.funcion_cub === "string" ? p.funcion_cub : null, lon: c[0], lat: c[1] }]
       })
     },
     // Los cables con el largo de su trazado: la misma capa (y la misma medida) que el mapa.

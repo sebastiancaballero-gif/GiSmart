@@ -171,7 +171,11 @@ export function DashboardHeader({
     try {
       // Con el centro del mapa, primero salen las direcciones de por ahí.
       const cercaDe = cerca ? `&lon=${cerca.lon}&lat=${cerca.lat}` : ""
-      const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(termino)}${cercaDe}`)
+      // Con tope: el servidor espera 8 s al servicio de direcciones, pero si la
+      // red se cae a mitad de camino «Buscando…» se quedaba girando.
+      const res = await fetchConSesion(`/api/geocode?q=${encodeURIComponent(termino)}${cercaDe}`, {
+        signal: AbortSignal.timeout(20_000),
+      })
       const data = await res.json().catch(() => null)
       if (consulta !== consultaRef.current) return
       // Antes un fallo del servicio se leía como «Sin resultados.».

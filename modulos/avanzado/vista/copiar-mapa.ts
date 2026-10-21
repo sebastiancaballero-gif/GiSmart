@@ -8,10 +8,16 @@ import { componerLamina } from "../imprimir/componer"
  * WhatsApp o en un correo con Ctrl+V. Si el navegador no deja copiar imágenes
  * (sin HTTPS, por ejemplo), se descarga como PNG.
  */
-export async function copiarMapa(api: MapaApi, { lugar, conFondo }: { lugar: string; conFondo: boolean }): Promise<"copiado" | "descargado"> {
+export async function copiarMapa(
+  api: MapaApi,
+  { lugar, conFondo }: { lugar: string; conFondo: boolean },
+): Promise<{ como: "copiado" | "descargado"; incompleta: boolean }> {
+  // Si el mapa base no terminó de bajar, la imagen sale igual (ver capturarMapa) y se avisa.
+  let incompleta = false
   const imagen = (async () => {
     const captura = await api.capturarMapa()
     if (!captura) throw new Error("No se pudo tomar la imagen del mapa.")
+    incompleta = captura.incompleta === true
     const lamina = componerLamina(
       captura,
       {
@@ -35,7 +41,7 @@ export async function copiarMapa(api: MapaApi, { lugar, conFondo }: { lugar: str
       // El portapapeles se pide enseguida, con la imagen todavía por armar: si
       // se pidiera después, el navegador ya no lo contaría como parte del click.
       await navigator.clipboard.write([new ClipboardItem({ "image/png": imagen })])
-      return "copiado"
+      return { como: "copiado", incompleta }
     } catch {
       // Sin permiso para el portapapeles: se descarga (abajo).
     }
@@ -46,5 +52,5 @@ export async function copiarMapa(api: MapaApi, { lugar, conFondo }: { lugar: str
   enlace.download = `mapa-${new Date().toISOString().slice(0, 10)}.png`
   enlace.click()
   window.setTimeout(() => URL.revokeObjectURL(enlace.href), 10_000)
-  return "descargado"
+  return { como: "descargado", incompleta }
 }

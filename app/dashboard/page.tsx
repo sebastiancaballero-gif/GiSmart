@@ -262,7 +262,9 @@ export default function DashboardPage() {
 
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetchConSesion(`/api/reverse-geocode?lon=${center.lon}&lat=${center.lat}`)
+        const res = await fetchConSesion(`/api/reverse-geocode?lon=${center.lon}&lat=${center.lat}`, {
+          signal: AbortSignal.timeout(20_000),
+        })
         if (cancelled) return
         const data = await res.json().catch(() => null)
         if (!res.ok) {

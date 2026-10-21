@@ -166,10 +166,14 @@ export async function responderConFuncion({
   try {
     const { data, error } = await cliente.rpc(funcion, { [argumento]: id })
     if (error) {
-      console.error(`[${funcion} ${id}] ${error.code} ${error.message}`)
+      // La pista de PostgREST dice, cuando la función no existe, cómo se llama
+      // ahora («Perhaps you meant to call … fn_get_json_hilos_cable»): la base
+      // ha renombrado funciones sin aviso y así se encuentra el cambio enseguida.
+      const pista = error.hint ? ` (${error.hint})` : ""
+      console.error(`[${funcion} ${id}] ${error.code} ${error.message}${pista}`)
       // `funcion`: cuál falló, para la línea de detalle del aviso (una ruta puede elegir entre varias).
       return NextResponse.json(
-        { message: mensajeDeFuncion(error.code, mensajes), funcion, ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}`) },
+        { message: mensajeDeFuncion(error.code, mensajes), funcion, ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}${pista}`) },
         { status: 502 },
       )
     }

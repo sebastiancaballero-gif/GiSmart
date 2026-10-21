@@ -23,6 +23,12 @@
  *      conectividad esté cargada.
  *   5. Conectividad. Pide a la función el JSON de cada mufa y cuenta en
  *      cuántas saldría «Ver conexiones» activo.
+ *   6. Funciones, columnas, vistas y tipos. Que sigan existiendo las funciones
+ *      de la base que llama la aplicación (con sus parámetros) y que respondan
+ *      con un cable o una cubierta de verdad, las columnas que
+ *      pide por su nombre, la columna con el nombre de las cubiertas y las
+ *      vistas de las capas, y que los tipos de puerto sean de las familias que
+ *      entiende el trace. La base los ha renombrado sin aviso más de una vez.
  *
  * Necesita `.env.local` con las claves de Supabase. No modifica nada.
  */
@@ -367,7 +373,7 @@ if (!mufas.length) {
           primerError ??= `${funcion} → ${error.code} ${error.message}`
         } else if (Array.isArray(data?.cables) && data.cables.length > 0) {
           resultado.activo++
-          if (ejemplos.length < 5) ejemplos.push(`${m.etiqueta ?? m.id} (${data.cables.length} cables)`)
+          if (ejemplos.length < 5) ejemplos.push(`${m.etiqueta ?? m.salidas_div1 ?? m.id} (${data.cables.length} cables)`)
         } else {
           resultado.gris++
         }
@@ -379,6 +385,160 @@ if (!mufas.length) {
   if (resultado.error) aviso(`${resultado.error} mufa(s) dieron error al pedir la conectividad: ${primerError}`)
   if (conexiones.length && resultado.activo === 0) {
     aviso("hay conexiones cargadas pero ninguna mufa devuelve cables: revisar la cadena del punto 4 o la función")
+  }
+}
+
+// --- 6. Funciones y tipos que usa la aplicación ------------------------------
+// La base ha cambiado nombres sin aviso (get_json_conectividad_cubierta pasó a
+// _n0/_n12, fn_obtener_hilos_cable_json a fn_get_json_hilos_cable, los tipos de
+// puerto DIV/TJT/BDJ a DIV_N1, TJT_OLT…), y cada cambio dejó una ventana con
+// error. Aquí se comprueba que sigan las funciones que se llaman, con sus
+// parámetros, y que los tipos de puerto sean de las familias que entiende el trace.
+console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
+{
+  // El último dato: con qué se prueba que responde (las de Conectividad fina ya
+  // se llamaron con todas las cubiertas en el punto 5).
+  const ESPERADAS = [
+    ["public", "get_json_conectividad_cubierta_n0", "p_cubierta_id", "Conectividad fina (cubiertas de empalme)", null],
+    ["public", "get_json_conectividad_cubierta_n12", "p_cubierta_id", "Conectividad fina (primer y segundo nivel)", null],
+    ["tab_fiber", "fn_get_json_hilos_cable", "p_id_cable", "Gestión de hilos", "cable"],
+    ["geo_fiber", "fn_json_conectividad_cubierta", "p_uuid_cubierta", "Entradas y salidas", "cubierta"],
+    ["geo_fiber", "fn_json_extremos_cable", "p_uuid_cable", "Botón «Cable»", "cable"],
+  ]
+  // Un cable y una cubierta de primer nivel de verdad, para llamar a las
+  // funciones una vez: que existan no basta, el 20-oct-2026 la del botón
+  // «Cable» existía y fallaba en todos los cables (cub.etiqueta).
+  const muestra = {
+    cable: cables.find((c) => typeof c.id === "string")?.id,
+    cubierta: (mufas.find((m) => /primer/i.test(m.funcion_cub ?? "")) ?? mufas[0])?.id,
+  }
+  const clave = leer("SUPABASE_SECRET_KEY")
+  // La descripción de la API de cada esquema (OpenAPI): sus funciones, tablas,
+  // vistas y columnas. Solo nombres, ningún dato.
+  const docs = new Map()
+  const docDe = async (esquema) => {
+    if (!docs.has(esquema)) {
+      const res = await fetch(`${leer("SUPABASE_URL")}/rest/v1/`, {
+        headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": esquema },
+      })
+      docs.set(esquema, res.ok ? await res.json() : null)
+    }
+    return docs.get(esquema)
+  }
+  for (const [esquema, funcion, parametro, para, probarCon] of ESPERADAS) {
+    const rutas = (await docDe(esquema))?.paths
+    if (!rutas) {
+      aviso(`no se pudo leer la lista de funciones de ${esquema}`)
+      continue
+    }
+    const ruta = rutas[`/rpc/${funcion}`]
+    const parametros = ruta?.post?.parameters?.find((p) => p.in === "body")?.schema?.properties ?? {}
+    if (!ruta) {
+      const parecidas = Object.keys(rutas)
+        .filter((r) => r.startsWith("/rpc/"))
+        .map((r) => r.slice(5))
+        .filter((r) => funcion.split("_").filter((p) => p.length > 3).some((p) => r.includes(p)))
+      aviso(`falta ${esquema}.${funcion} (${para})${parecidas.length ? `; hay: ${parecidas.join(", ")}` : ""}`)
+    } else if (!(parametro in parametros)) {
+      aviso(`${esquema}.${funcion} (${para}) ya no recibe «${parametro}»: recibe ${Object.keys(parametros).join(", ") || "nada"}`)
+    } else {
+      // Una llamada de prueba (solo lee): la función puede existir y fallar.
+      const id = probarCon ? muestra[probarCon] : null
+      if (id) {
+        const res = await fetch(`${leer("SUPABASE_URL")}/rest/v1/rpc/${funcion}`, {
+          method: "POST",
+          headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Content-Profile": esquema, "Content-Type": "application/json" },
+          body: JSON.stringify({ [parametro]: id }),
+        })
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}))
+          aviso(`${esquema}.${funcion} (${para}) existe pero falla: ${e.code ?? `HTTP ${res.status}`} ${e.message ?? ""}${e.hint ? ` (${e.hint})` : ""}`)
+          continue
+        }
+      }
+      console.log(`   ok  ${esquema}.${funcion}(${parametro})  ·  ${para}${id ? " · responde" : ""}`)
+    }
+  }
+
+  // Las columnas que la aplicación pide por su nombre: si la base renombra una,
+  // esa consulta falla entera (42703). Así se rompieron la tabla del trace y la
+  // sección distribución cuando `etiqueta` pasó a `salidas_div1`.
+  const COLUMNAS_USADAS = [
+    ["public", "usuario_app", "nombre_usuario, nombre_completo, clave, activo", "Inicio de sesión"],
+    ["geo_fiber", "cubierta_empalme", "id, nivel, funcion_cub", "Conectividad fina, trace"],
+    ["geo_fiber", "cable_fibra", "id, codigo, longitud_medida, longitud_calc", "Trace"],
+    ["tab_fiber", "hilo_cable", "id, id_cable, numero_hilo, numero_buffer, color_hilo, color_buffer", "Trace, Gestión de hilos"],
+    ["tab_fiber", "element_connection", "id_origen, id_destino, direccion, total_pasos, atenuacion_total_db, path_secuencia, geom_path, fecha_calculo", "Trace, sección distribución"],
+    ["tab_fiber", "puerto_equipo", "id, numero_puerto, nombre, tipo_equipo_pert, id_equipo_pert, dir_principal_senhal", "Trace"],
+    ["tab_fiber", "divisor_optico", "id, num_divisor, cod_divisor, modelo_divisor, id_cubierta_ubica", "Trace, sección distribución"],
+    ["tab_fiber", "tarjeta_bandeja_eqp", "id, num_slot", "Trace, Gestión de hilos"],
+    ["tab_fiber", "equipo_red", "id, codigo, id_cabecera", "Trace"],
+    ["geo_infra", "cabecera_central", "id, nombre", "Trace"],
+    ["geo_fiber", "cat_tipos_elem", "tipo_elem, descripcion", "Fichas (catálogos)"],
+    ["geo_fiber", "cat_cods_fabricante", "cod_fab, nombre", "Fichas (catálogos)"],
+    ["geo_fiber", "cat_tipo_tecnologia_hilo", "tipo_tec, descripcion", "Fichas (catálogos)"],
+  ]
+  let columnasBien = 0
+  for (const [esquema, tabla, columnas, para] of COLUMNAS_USADAS) {
+    const definiciones = (await docDe(esquema))?.definitions
+    if (!definiciones) {
+      aviso(`no se pudo leer la descripción de ${esquema}`)
+      continue
+    }
+    const propias = definiciones[tabla]?.properties
+    if (!propias) {
+      aviso(`falta la tabla ${esquema}.${tabla} (${para})`)
+      continue
+    }
+    const faltan = columnas.split(",").map((c) => c.trim()).filter((c) => !(c in propias))
+    if (faltan.length) aviso(`${esquema}.${tabla} (${para}) ya no tiene: ${faltan.join(", ")}`)
+    else columnasBien++
+  }
+  console.log(`   columnas pedidas por su nombre: ${columnasBien} de ${COLUMNAS_USADAS.length} tablas completas`)
+
+  // Lo que la base renombró y la aplicación lee con cualquiera de los dos
+  // nombres (se pide la fila entera): basta con que esté uno. Las mismas listas
+  // que nombreDeCubierta (lib/map/nombre-cubierta.ts) y tarjetaDeFila
+  // (lib/map/tarjeta-bandeja.ts).
+  const UNA_DE = [
+    ["geo_fiber", "cubierta_empalme", ["etiqueta", "salidas_div1"], "el nombre de las cubiertas", "el mapa las llama «Cubierta <ID>»"],
+    ["tab_fiber", "tarjeta_bandeja_eqp", ["id_equipo_pert", "id_equipo"], "el equipo de cada tarjeta o bandeja", "el trace y Hilos no llegan a la OLT ni al ODF"],
+    ["tab_fiber", "tarjeta_bandeja_eqp", ["tipo_equipo_pert", "tipo_equipo"], "si cada tarjeta es de la OLT o del ODF", "el trace no dice si es OLT u ODF"],
+  ]
+  for (const [esquema, tabla, nombres, que, efecto] of UNA_DE) {
+    const propias = (await docDe(esquema))?.definitions?.[tabla]?.properties ?? {}
+    const columna = nombres.find((c) => c in propias)
+    if (columna) console.log(`   ${que}: columna ${columna}`)
+    else aviso(`${esquema}.${tabla} no tiene ${nombres.join(" ni ")} (${que}): ${efecto}`)
+  }
+
+  // Las vistas GeoJSON de las capas. Si faltan (se borran junto con su tabla),
+  // la capa carga igual por el respaldo desde la tabla, pero conviene recrearlas.
+  for (const [esquema, vista] of [
+    ["geo_fiber", "cubierta_empalme_geojson"],
+    ["geo_fiber", "cable_fibra_geojson"],
+    ["geo_infra", "cabecera_central_geojson"],
+  ]) {
+    const rutas = (await docDe(esquema))?.paths
+    if (rutas && !rutas[`/${vista}`]) aviso(`falta la vista ${esquema}.${vista}: esa capa se lee por el respaldo desde la tabla`)
+  }
+
+  // Los tipos de puerto: el trace los entiende por familia (DIV…, TJT…, BDJ…).
+  const tipos = new Map()
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await tab.from("puerto_equipo").select("tipo_equipo_pert").order("id").range(desde, desde + 999)
+    if (error) {
+      aviso(`no se pudieron leer los tipos de puerto: ${error.code} ${error.message}`)
+      break
+    }
+    for (const p of data ?? []) tipos.set(p.tipo_equipo_pert, (tipos.get(p.tipo_equipo_pert) ?? 0) + 1)
+    if (!data || data.length < 1000) break
+  }
+  const familia = (t) => ["DIV", "TJT", "BDJ"].find((f) => t === f || String(t).startsWith(`${f}_`))
+  const desconocidos = [...tipos].filter(([t]) => !familia(t))
+  console.log(`   tipos de puerto: ${[...tipos].map(([t, n]) => `${t} ${n}`).join(", ")}`)
+  if (desconocidos.length) {
+    aviso(`tipos de puerto que el trace no reconoce: ${desconocidos.map(([t, n]) => `${t} (${n})`).join(", ")}`)
   }
 }
 

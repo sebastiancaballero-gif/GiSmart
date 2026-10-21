@@ -59,15 +59,17 @@ import type { DireccionTrace } from "@/lib/map/trace"
  *
  * Sin datos no se muestra una tabla vacía: sin cable, cargando, con error o
  * con un cable sin hilos, la grilla cede el lugar a un aviso con lo que hay que
- * hacer. Las columnas que la función todavía no devuelve (origen, equipo,
- * servicio) se marcan «pendiente» en vez de llenarse de rayas.
+ * hacer. Las columnas que nadie llena todavía (rack, rack del equipo,
+ * transporta) se marcan «pendiente» en vez de llenarse de rayas.
  *
  * Dos pestañas, como en el SIG anterior: «Sección feeder» (antes «Sección
- * troncal»), con los hilos de `tab_fiber.fn_obtener_hilos_cable_json`, y
+ * troncal»), con los hilos de `tab_fiber.fn_get_json_hilos_cable` y, del
+ * recorrido del trace, el ODF, la OLT y el equipo destino de cada uno; y
  * «Sección distribución», con la cubierta de primer nivel, el divisor y la
- * salida de donde sale cada hilo y el equipo al que llega (de la caché del
- * trace, ver `lib/map/distribucion-cable.ts`). La simulación de corte está
- * puesta pero sin funcionar: falta su función.
+ * salida de donde sale cada hilo y el equipo al que llega. El recorrido sale
+ * de la caché del trace (ver `lib/map/distribucion-cable.ts`) y se pide una
+ * vez para las dos pestañas. La simulación de corte está puesta pero sin
+ * funcionar: falta su función.
  */
 
 /**
@@ -127,9 +129,15 @@ const tonoDeEstado = (estado: string | null) =>
 type Columna = {
   titulo: string
   ancho: string
-  valor: (h: HiloDeCable, cable: CableElegido) => React.ReactNode
+  /** `d`: el recorrido del hilo según el trace, cuando ya llegó. */
+  valor: (h: HiloDeCable, cable: CableElegido, d: DistribucionDeHilo | undefined) => React.ReactNode
   /** Si el hilo trae este dato. Una columna sin dato en ningún hilo se marca «pendiente». */
   tiene: (h: HiloDeCable, cable: CableElegido) => boolean
+  /**
+   * Si la función no lo trae, se llena con el recorrido del trace: nunca queda
+   * «pendiente», y mientras el recorrido llega la celda muestra su hueso.
+   */
+  delTrace?: boolean
 }
 
 const texto = (campo: keyof HiloDeCable, titulo: string, ancho: string): Columna => ({
@@ -138,6 +146,24 @@ const texto = (campo: keyof HiloDeCable, titulo: string, ancho: string): Columna
   valor: (h) => (h[campo] as string | null) ?? <Vacio />,
   tiene: (h) => h[campo] !== null,
 })
+
+/** Una columna que la función todavía no trae y que se llena con el recorrido del trace (lo de la función manda). */
+const delTrace = (
+  campo: keyof HiloDeCable,
+  titulo: string,
+  ancho: string,
+  deTrace: (d: DistribucionDeHilo) => React.ReactNode,
+): Columna => ({
+  titulo,
+  ancho,
+  delTrace: true,
+  valor: (h, _, d) => (h[campo] as string | null) ?? (d ? deTrace(d) : null) ?? <Vacio />,
+  tiene: (h) => h[campo] !== null,
+})
+
+/** El destino hacia abajo: «Sin conectar» en gris, para que no se lea como un equipo. */
+const destino = (d: DistribucionDeHilo | undefined) =>
+  !d?.destino ? null : d.destino === SIN_CONECTAR ? <span className="italic text-muted-foreground">{d.destino}</span> : d.destino
 
 /** Columnas de la grilla, en el orden del SIG anterior y agrupadas como se leen. */
 const GRUPOS: { titulo: string; columnas: Columna[] }[] = [
@@ -178,22 +204,34 @@ const GRUPOS: { titulo: string; columnas: Columna[] }[] = [
         tiene: (h, c) => (h.nodoOrigen ?? c.origen) !== null,
       },
       texto("rack", "Rack", "min-w-20"),
-      texto("odf", "ODF", "min-w-16"),
-      texto("puerto", "Puerto", "min-w-16"),
+      // El ODF donde llega el hilo hacia la fuente, con su bandeja: lo que hay
+      // que buscar en la central.
+      delTrace("odf", "ODF", "min-w-36", (d) =>
+        d.odf ? (
+          <>
+            {d.odf}
+            {d.bandejaOdf !== null && <span className="text-muted-foreground"> · bandeja {d.bandejaOdf}</span>}
+          </>
+        ) : null,
+      ),
+      delTrace("puerto", "Puerto", "min-w-16", (d) => d.puertoOdf),
     ],
   },
   {
     titulo: "Equipo activo",
     columnas: [
       texto("rackEquipo", "Rack equipo", "min-w-28"),
-      texto("equipo", "Equipo", "min-w-24"),
-      texto("tarjeta", "Tarjeta", "min-w-20"),
-      texto("puertoEquipo", "Puerto", "min-w-20"),
+      delTrace("equipo", "Equipo", "min-w-24", (d) => d.olt),
+      delTrace("tarjeta", "Tarjeta", "min-w-20", (d) => (d.tarjetaOlt !== null ? String(d.tarjetaOlt) : null)),
+      delTrace("puertoEquipo", "Puerto", "min-w-20", (d) => d.puertoOlt),
     ],
   },
   {
     titulo: "Servicio",
-    columnas: [texto("transporta", "Transporta", "min-w-28"), texto("equipoDestino", "Equipo destino", "min-w-36")],
+    columnas: [
+      texto("transporta", "Transporta", "min-w-28"),
+      delTrace("equipoDestino", "Equipo destino", "min-w-36", destino),
+    ],
   },
 ]
 const TOTAL_COLUMNAS = 2 + GRUPOS.reduce((total, g) => total + g.columnas.length, 0)
@@ -226,12 +264,7 @@ const COLUMNAS_DISTRIBUCION: {
   { titulo: "Divisor", ancho: "min-w-20", valor: (_, d) => d?.divisor ?? <Vacio /> },
   { titulo: "Pto divisor", ancho: "min-w-24", valor: (_, d) => d?.puertoDivisor ?? <Vacio /> },
   { titulo: "Salida", ancho: "min-w-20", valor: (_, d) => d?.salida ?? <Vacio /> },
-  {
-    titulo: "Equipo destino",
-    ancho: "min-w-40",
-    valor: (_, d) =>
-      !d?.destino ? <Vacio /> : d.destino === SIN_CONECTAR ? <span className="italic text-muted-foreground">{d.destino}</span> : d.destino,
-  },
+  { titulo: "Equipo destino", ancho: "min-w-40", valor: (_, d) => destino(d) ?? <Vacio /> },
 ]
 
 /**
@@ -332,8 +365,9 @@ function VentanaHilos({
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
   const [intento, setIntento] = useState(0)
   const [pestana, setPestana] = useState<Pestana>("feeder")
-  // La sección distribución se pide al abrir su pestaña y queda guardada con
-  // su cable (y su intento): volver a la pestaña no la pide otra vez.
+  // El recorrido de los hilos (la sección distribución, y el ODF, la OLT y el
+  // destino de la sección feeder) se pide al elegir el cable y queda guardado
+  // con su cable (y su intento): cambiar de pestaña no lo pide otra vez.
   const [distribucion, setDistribucion] = useState<{ id: string; intento: number; r: ResultadoDistribucion } | null>(null)
   const [intentoDistribucion, setIntentoDistribucion] = useState(0)
 
@@ -352,7 +386,7 @@ function VentanaHilos({
   }, [open, idCable, intento])
 
   useEffect(() => {
-    if (!open || !idCable || pestana !== "distribucion" || distribucionCargada) return
+    if (!open || !idCable || distribucionCargada) return
     let vigente = true
     void obtenerDistribucionDeCable(idCable).then((r) => {
       if (vigente) setDistribucion({ id: idCable, intento: intentoDistribucion, r })
@@ -360,7 +394,7 @@ function VentanaHilos({
     return () => {
       vigente = false
     }
-  }, [open, idCable, pestana, intentoDistribucion, distribucionCargada])
+  }, [open, idCable, intentoDistribucion, distribucionCargada])
 
   // Al volver a abrir (por ejemplo después de ver el recorrido de un hilo), la
   // grilla baja hasta el hilo que seguía seleccionado.
@@ -419,13 +453,14 @@ function VentanaHilos({
     return { tecnologia: contar("tecnologia"), estado: contar("estado") }
   }, [hilos])
 
-  // Columnas que ningún hilo trae todavía: se marcan «pendiente».
+  // Columnas que ningún hilo trae todavía: se marcan «pendiente». Las que se
+  // llenan con el recorrido del trace no: ahí un vacío es «no llega a ningún lado».
   const pendientes = useMemo(() => {
     const sinDato = new Set<string>()
     if (!cable || hilos.length === 0) return sinDato
     for (const g of GRUPOS) {
       for (const c of g.columnas) {
-        if (!hilos.some((h) => c.tiene(h, cable))) sinDato.add(clave(g.titulo, c.titulo))
+        if (!c.delTrace && !hilos.some((h) => c.tiene(h, cable))) sinDato.add(clave(g.titulo, c.titulo))
       }
     }
     return sinDato
@@ -442,14 +477,16 @@ function VentanaHilos({
   const enDistribucion = pestana === "distribucion"
 
   // La búsqueda mira lo que muestra la pestaña: en distribución también la
-  // cubierta y el equipo destino («CO06», «NAP 13/14»). El identificador, en las dos.
+  // cubierta y el equipo destino («CO06», «NAP 13/14»); en feeder, el ODF, la
+  // OLT y el destino. El identificador, en las dos.
   const visibles = useMemo(() => {
     const buscado = filtroActual.texto.trim().toLowerCase()
     return hilos.filter((h) => {
       if (filtroActual.buffer !== null && h.buffer !== filtroActual.buffer) return false
       if (!buscado) return true
-      const d = enDistribucion && h.uuid ? distribucionPorHilo.get(h.uuid.toLowerCase()) : undefined
-      return [h.numero, h.uuid, h.identificador, h.colorHilo, h.estado, h.tecnologia, d?.cubierta, d?.destino].some((v) =>
+      const d = h.uuid ? distribucionPorHilo.get(h.uuid.toLowerCase()) : undefined
+      const delRecorrido = enDistribucion ? [d?.cubierta, d?.destino] : [d?.odf, d?.olt, d?.destino]
+      return [h.numero, h.uuid, h.identificador, h.colorHilo, h.estado, h.tecnologia, ...delRecorrido].some((v) =>
         String(v ?? "").toLowerCase().includes(buscado),
       )
     })
@@ -467,6 +504,11 @@ function VentanaHilos({
           ? "error"
           : "datos"
   const conDivisor = hilos.filter((h) => h.uuid && distribucionPorHilo.get(h.uuid.toLowerCase())?.cubierta).length
+  const conOlt = hilos.filter((h) => h.uuid && distribucionPorHilo.get(h.uuid.toLowerCase())?.olt).length
+  // En la sección feeder, el recorrido llega después que los hilos: mientras
+  // tanto sus columnas muestran huesos; si falla, el aviso va bajo la grilla.
+  const recorridoCargando = vista === "datos" && !distribucionActual
+  const errorDelRecorrido = vista === "datos" && distribucionActual?.estado === "error" ? distribucionActual : null
 
   function cambiarFiltro(cambio: Partial<{ buffer: number | null; texto: string }>) {
     if (idCable) setFiltro({ ...filtroActual, cable: idCable, ...cambio })
@@ -648,7 +690,7 @@ function VentanaHilos({
               tabla guarda su alto y la ventana se desplaza. */}
           <div className="flex shrink-0 flex-col">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <div role="tablist" aria-label="Secciones del cable" className="flex items-end gap-1">
+              <div role="tablist" aria-label="Secciones del cable" className="flex shrink-0 items-end gap-1">
                 {PESTANAS.map((p) => {
                   const activa = pestana === p.id
                   // Feeder: todos los hilos; distribución: los que salen de un divisor (ya leída).
@@ -676,7 +718,10 @@ function VentanaHilos({
                 })}
               </div>
               {vista === "datos" && (
-                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                // Ocupa lo que dejan las pestañas y se acomoda a la derecha: con
+                // los 12 buffers de un cable de 144 hilos eran tres renglones
+                // (pestañas, buffers, buscador) y ahora son dos.
+                <div className="mb-1.5 flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
                   <button
                     type="button"
                     onClick={() => cambiarFiltro({ buffer: null })}
@@ -769,7 +814,7 @@ function VentanaHilos({
                   tono="error"
                   titulo="No se pudieron traer los hilos"
                   texto={actual.mensaje}
-                  detalle={`tab_fiber.fn_obtener_hilos_cable_json${actual.detalle ? ` → ${actual.detalle}` : ""}`}
+                  detalle={`tab_fiber.fn_get_json_hilos_cable${actual.detalle ? ` → ${actual.detalle}` : ""}`}
                 >
                   <Boton icono={RefreshCw} onClick={reintentar}>
                     Reintentar
@@ -798,7 +843,7 @@ function VentanaHilos({
                   tono="error"
                   titulo="No se pudo armar la sección distribución"
                   texto={distribucionActual.mensaje}
-                  detalle={`caché del trace (tab_fiber.element_connection)${distribucionActual.detalle ? ` → ${distribucionActual.detalle}` : ""}`}
+                  detalle={`caché del trace${distribucionActual.detalle ? ` → ${distribucionActual.detalle}` : " (tab_fiber.element_connection)"}`}
                 >
                   <Boton icono={RefreshCw} onClick={reintentarDistribucion}>
                     Reintentar
@@ -937,11 +982,16 @@ function VentanaHilos({
                         const fondo = elegido ? "bg-primary/12" : i % 2 === 1 ? "bg-foreground/[0.035]" : "bg-card"
                         // Las celdas fijas necesitan un fondo opaco: el de la
                         // fila mezclado con el de la tarjeta, y el mismo al
-                        // pasar el ratón.
+                        // pasar el ratón. En sRGB y con el mismo porcentaje, que
+                        // es como se pinta la fila (su color con transparencia
+                        // sobre la tarjeta). En oklch la mezcla daba rosado: el
+                        // blanco de la tarjeta es `oklch(1 0 0)`, de tono 0
+                        // (rojo), y el azul pasaba por el magenta para llegar.
                         const fondoFijo = elegido
-                          ? "bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))]"
-                          : `${i % 2 === 1 ? "bg-[color-mix(in_oklch,var(--foreground)_3.5%,var(--card))]" : "bg-card"} group-hover:bg-[color-mix(in_oklch,var(--accent)_70%,var(--card))]`
+                          ? "bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))]"
+                          : `${i % 2 === 1 ? "bg-[color-mix(in_srgb,var(--foreground)_3.5%,var(--card))]" : "bg-card"} group-hover:bg-[color-mix(in_srgb,var(--accent)_70%,var(--card))]`
                         const buffer = buffers.find((b) => b.buffer === h.buffer)
+                        const recorrido = h.uuid ? distribucionPorHilo.get(h.uuid.toLowerCase()) : undefined
                         return (
                           <Fragment key={h.id}>
                             {empiezaBuffer && (
@@ -982,8 +1032,13 @@ function VentanaHilos({
                                     }`}
                                   >
                                     {/* Columna que ningún hilo trae: celda limpia,
-                                        sin una fila entera de rayas. */}
-                                    {pendientes.has(clave(g.titulo, c.titulo)) ? null : c.valor(h, cable)}
+                                        sin una fila entera de rayas. La que sale
+                                        del trace, mientras llega, con su hueso. */}
+                                    {pendientes.has(clave(g.titulo, c.titulo)) ? null : c.delTrace && recorridoCargando && !c.tiene(h, cable) ? (
+                                      <Hueso ancho={j % 2 === 0 ? "w-12" : "w-8"} />
+                                    ) : (
+                                      c.valor(h, cable, recorrido)
+                                    )}
                                   </td>
                                 )),
                               )}
@@ -995,16 +1050,43 @@ function VentanaHilos({
                 </table>
               )}
             </div>
-            {vista === "datos" && (enDistribucion ? vistaDistribucion === "datos" : filtrando || hayPendientes) && (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Info className="size-3 shrink-0" aria-hidden="true" />
-                {filtrando ? `Mostrando ${visibles.length} de ${hilos.length} hilos. ` : ""}
-                {enDistribucion
-                  ? `${conDivisor} de ${hilos.length} hilos salen de un divisor. Cubierta, divisor y salida: de dónde sale el hilo; equipo destino: dónde termina hacia abajo (según el trace).`
-                  : hayPendientes
-                    ? "Las columnas «pendiente» se llenan cuando la función de hilos devuelva esos datos."
-                    : ""}
-              </p>
+            {vista === "datos" &&
+              (enDistribucion ? vistaDistribucion === "datos" : filtrando || hayPendientes || distribucionActual?.estado === "ok") && (
+                <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <Info className="mt-px size-3 shrink-0" aria-hidden="true" />
+                  <span>
+                    {filtrando ? `Mostrando ${visibles.length} de ${hilos.length} hilos. ` : ""}
+                    {enDistribucion
+                      ? `${conDivisor} de ${hilos.length} hilos salen de un divisor. Cubierta, divisor y salida: de dónde sale el hilo; equipo destino: dónde termina hacia abajo (según el trace).`
+                      : `${
+                          distribucionActual?.estado === "ok"
+                            ? `${conOlt} de ${hilos.length} hilos llegan a la OLT. ODF, equipo activo y equipo destino salen del recorrido del trace. `
+                            : ""
+                        }${hayPendientes ? "Las columnas «pendiente» se llenan cuando la función de hilos devuelva esos datos." : ""}`}
+                  </span>
+                </p>
+              )}
+            {/* En la sección feeder, si el recorrido no se pudo leer: sus columnas
+                quedan vacías y aquí se dice por qué (en distribución, el aviso
+                ocupa la grilla). */}
+            {!enDistribucion && errorDelRecorrido && (
+              <div role="alert" className="mt-1.5 flex items-start gap-1.5 text-[11px] text-destructive">
+                <CircleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">
+                  {errorDelRecorrido.mensaje} ODF, equipo activo y equipo destino quedan vacíos.{" "}
+                  <button
+                    type="button"
+                    onClick={reintentarDistribucion}
+                    className="rounded font-semibold underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    Reintentar
+                  </button>
+                  <span className="mt-0.5 block break-all font-mono text-[10px] opacity-80">
+                    {/* El detalle nombra la tabla que falló (no siempre es la caché). */}
+                    caché del trace{errorDelRecorrido.detalle ? ` → ${errorDelRecorrido.detalle}` : " (tab_fiber.element_connection)"}
+                  </span>
+                </span>
+              </div>
             )}
           </div>
 

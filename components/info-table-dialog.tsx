@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Check, Copy, Info, Search } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { CAMPOS_REFERENCIA, NOMBRE_VISIBLE, TIPO_RED_NOMBRES } from "@/lib/map/symbology"
+import { CAMPOS_REFERENCIA, NOMBRE_VISIBLE, SENTIDO_SENAL, TIPO_RED_NOMBRES, esCeroSinDato } from "@/lib/map/symbology"
 import { normalizar } from "@/lib/map/busqueda"
+import { CATALOGO_DEL_CAMPO, leerCatalogos, nombreDelCodigo, type Catalogos } from "@/lib/map/catalogos"
 import { copiarTexto } from "@/lib/portapapeles"
 
 type Props = {
@@ -27,7 +28,7 @@ type Props = {
  * Propiedades internas del mapa, no columnas de la base: no tienen sentido en
  * una ficha de datos.
  */
-const CAMPOS_INTERNOS = new Set(["geometry", NOMBRE_VISIBLE])
+const CAMPOS_INTERNOS = new Set(["geometry", NOMBRE_VISIBLE, SENTIDO_SENAL])
 
 /** Con más campos que estos aparece el buscador de la ficha. */
 const CAMPOS_PARA_BUSCAR = 8
@@ -70,19 +71,32 @@ function textoParaCopiar(key: string, value: unknown): string {
   return formatValue(key, value)
 }
 
-/** Valor de una fila, con las traducciones que hacen legible la ficha. */
 /** Un UUID de la base: se muestra como identificador, en letra de ancho fijo. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** Valor de una fila, con las traducciones que hacen legible la ficha. */
 function Valor({
   campo,
   valor,
   nombreDeElemento,
+  catalogos = null,
+  sinDato = false,
 }: {
   campo: string
   valor: unknown
   nombreDeElemento?: (id: string) => string | null
+  /** Los catálogos de la base: `CORN` se lee «CORNING (CORN)». */
+  catalogos?: Catalogos | null
+  /** Un cero que significa «no se cargó» (ver `ceroSinDato`). */
+  sinDato?: boolean
 }) {
+  if (sinDato) {
+    return (
+      <span className="italic text-muted-foreground" title="La base tiene 0 en este campo: no se cargó el dato.">
+        Sin dato (0 en la base)
+      </span>
+    )
+  }
   if (CAMPOS_REFERENCIA.has(campo) && typeof valor === "string") {
     const nombre = nombreDeElemento?.(valor)
     if (nombre) {
@@ -98,6 +112,8 @@ function Valor({
   if (campo === "tipo_red_prin" && typeof valor === "string" && TIPO_RED_NOMBRES[valor]) {
     return <>{`${TIPO_RED_NOMBRES[valor]} (${valor})`}</>
   }
+  const delCatalogo = nombreDelCodigo(catalogos, campo, valor)
+  if (delCatalogo && delCatalogo !== valor) return <>{`${delCatalogo} (${String(valor)})`}</>
   // En letra de ancho fijo y algo más chico: en la de texto se leía como una
   // frase partida en dos renglones, y es un código que se copia tal cual.
   if (typeof valor === "string" && UUID.test(valor)) {
@@ -117,6 +133,27 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
   const [filtro, setFiltro] = useState("")
   const [verVacios, setVerVacios] = useState(false)
   const [copiado, setCopiado] = useState<{ campo: string; ok: boolean } | null>(null)
+  const [catalogos, setCatalogos] = useState<Catalogos | null>(null)
+  const [errorCatalogos, setErrorCatalogos] = useState<{ mensaje: string; detalle?: string } | null>(null)
+
+  // Los catálogos se piden una vez por sesión (ver `leerCatalogos`); mientras
+  // llegan, o si fallan, la ficha muestra los códigos tal cual.
+  useEffect(() => {
+    if (!open) return
+    let vigente = true
+    void leerCatalogos().then((r) => {
+      if (!vigente) return
+      if (r.estado === "ok") {
+        setCatalogos(r.catalogos)
+        setErrorCatalogos(null)
+      } else {
+        setErrorCatalogos({ mensaje: r.mensaje, ...(r.detalle ? { detalle: r.detalle } : {}) })
+      }
+    })
+    return () => {
+      vigente = false
+    }
+  }, [open])
 
   // Primero los campos conocidos, en el orden curado; después cualquier columna
   // nueva de la base, para que un cambio de esquema se vea sin tocar el código.
@@ -132,8 +169,14 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
   const visibles = campos.filter((key) => {
     if (!verVacios && vacio(data[key])) return false
     if (!q) return true
-    return normalizar(etiqueta(key)).includes(q) || normalizar(textoParaCopiar(key, data[key])).includes(q)
+    return (
+      normalizar(etiqueta(key)).includes(q) ||
+      normalizar(textoParaCopiar(key, data[key])).includes(q) ||
+      normalizar(nombreDelCodigo(catalogos, key, data[key]) ?? "").includes(q)
+    )
   })
+  // El aviso de los catálogos solo importa si la ficha tiene algún código que traducir.
+  const hayCodigos = campos.some((key) => key in CATALOGO_DEL_CAMPO && !vacio(data[key]))
 
   async function copiar(key: string, boton: HTMLElement) {
     const ok = await copiarTexto(textoParaCopiar(key, data[key]), boton.closest("[role=dialog]") ?? document.body)
@@ -194,7 +237,13 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
                           partir, como la etiqueta NAP "1/3+5/6+9/11+13+15+17/20",
                           que si no se salen de la celda y descuadran la tabla. */}
                       <td className="px-3 py-2 break-words text-foreground">
-                        <Valor campo={key} valor={data[key]} nombreDeElemento={nombreDeElemento} />
+                        <Valor
+                          campo={key}
+                          valor={data[key]}
+                          nombreDeElemento={nombreDeElemento}
+                          catalogos={catalogos}
+                          sinDato={esCeroSinDato(key, data[key], data)}
+                        />
                       </td>
                       <td className="w-8 py-1.5 pr-1.5 align-top">
                         {!vacio(data[key]) && (
@@ -237,6 +286,14 @@ export function InfoTableDialog({ open, onOpenChange, title, description, fieldL
             >
               {verVacios ? "Ocultarlos" : "Mostrarlos"}
             </button>
+          </p>
+        )}
+        {errorCatalogos && hayCodigos && (
+          <p role="status" className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
+            {errorCatalogos.mensaje} Los códigos se ven sin traducir.
+            {errorCatalogos.detalle && (
+              <span className="block font-mono text-[10px] opacity-80">GET /api/catalogos → {errorCatalogos.detalle}</span>
+            )}
           </p>
         )}
         {/* Anuncia el resultado de copiar a los lectores de pantalla. */}

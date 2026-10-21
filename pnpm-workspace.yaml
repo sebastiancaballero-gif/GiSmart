@@ -8,3 +8,10 @@ ignoredBuiltDependencies:
 # reglas más estrictas que el código ya cumple (ver eslint.config.mjs).
 overrides:
   eslint-plugin-react-hooks: 7.1.1
+  # Dependencias internas de Next 15.5 con avisos de seguridad (pnpm audit):
+  # se fuerzan las versiones corregidas, todas compatibles con Node 18.
+  postcss@<8.5.23: ^8.5.23
+  nanoid@<3.3.18: ^3.3.18
+  browserslist@<4.28.7: ^4.28.7
+  source-map-js@<1.2.2: ^1.2.2
+  baseline-browser-mapping@<2.11.0: ^2.11.0

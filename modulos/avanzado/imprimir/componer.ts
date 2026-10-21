@@ -1,4 +1,4 @@
-import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR } from "@/lib/map/symbology"
+import { FUNCION_CUB_COLORS, FUNCION_CUB_DEFAULT_COLOR, TIPO_RED_NOMBRES, colorForTipoRed } from "@/lib/map/symbology"
 import { LAYER_COLORS } from "@/lib/network-colors"
 
 /** Lo que se le pone al mapa para imprimirlo o guardarlo. */
@@ -158,17 +158,18 @@ export function componerLamina(
           ctx.stroke()
         },
       })),
-      {
-        texto: "Fibra óptica",
-        dibujar: (cx, cy) => {
+      // Un renglón por tipo de red, con el color del mapa.
+      ...Object.entries(TIPO_RED_NOMBRES).map(([tipo, nombre]) => ({
+        texto: `Fibra ${nombre.toLowerCase()}`,
+        dibujar: (cx: number, cy: number) => {
           ctx.beginPath()
           ctx.moveTo(cx - u(8), cy)
           ctx.lineTo(cx + u(8), cy)
           ctx.lineWidth = u(3)
-          ctx.strokeStyle = LAYER_COLORS.fiber
+          ctx.strokeStyle = colorForTipoRed(tipo)
           ctx.stroke()
         },
-      },
+      })),
     ]
     const w = u(150)
     const h = u(26) + filas.length * u(18)

@@ -27,7 +27,14 @@ import {
 import { textoDeCoordenada } from "@/lib/map/busqueda"
 import { copiarTexto } from "@/lib/portapapeles"
 import { LAYER_COLORS } from "@/lib/network-colors"
-import { TYPE_LABELS, colorForFuncionCub, type FeatureType } from "@/lib/map/symbology"
+import {
+  TIPO_RED_NOMBRES,
+  TYPE_LABELS,
+  colorForFuncionCub,
+  colorForTipoRed,
+  textoDeLongitud,
+  type FeatureType,
+} from "@/lib/map/symbology"
 import { CAPA_DE_TIPO, NOMBRE_DE_CAPA } from "@/lib/map/capa-activa"
 import type { EstadoConectividad } from "@/lib/map/conectividad"
 import type { SelectedFeature } from "@/components/mapa/herramientas"
@@ -61,6 +68,12 @@ type PanelSeleccionProps = {
   onQuitar: () => void
   /** Si había varios elementos bajo el click: «‹ 1 de 3 ›» para pasar de uno a otro. */
   varios?: VariosEnElPunto
+  /** Las cubiertas (o la cabecera) que une un cable: su nombre y su UUID. */
+  tramo?: { origen: string | null; destino: string | null; idOrigen?: string | null; idDestino?: string | null }
+  /** Lleva el mapa al elemento de ese UUID y lo elige (las puntas del tramo de un cable). */
+  onIrA?: (id: string) => void
+  /** Cuántos cables llegan a una cubierta o salen de ella. */
+  cables?: number
 }
 
 /**
@@ -84,6 +97,9 @@ export function PanelSeleccion({
   onInformacion,
   onQuitar,
   varios,
+  tramo,
+  cables,
+  onIrA,
 }: PanelSeleccionProps) {
   const { feature, type } = seleccionado
 
@@ -128,13 +144,20 @@ export function PanelSeleccion({
   if (type === "node") {
     const nivel = feature.get("funcion_cub") as string | undefined
     if (nivel) datos.push({ etiqueta: "Nivel", valor: nivel, color: colorForFuncionCub(nivel) })
+    if (typeof cables === "number") datos.push({ etiqueta: "Cables", valor: String(cables) })
   }
   if (type === "fiber") {
-    const largoKm = getLength(feature.getGeometry() as LineString) / 1000
-    datos.push({ etiqueta: "Longitud", valor: `${largoKm.toFixed(2)} km` })
+    // En metros si es corto («85 m», como en el mapa) y no «0.09 km».
+    datos.push({ etiqueta: "Longitud", valor: textoDeLongitud(getLength(feature.getGeometry() as LineString)) })
     const hilos = feature.get("cant_hilo")
     if (typeof hilos === "number" && hilos > 0) datos.push({ etiqueta: "Hilos", valor: String(hilos) })
   }
+  const hayTramo = type === "fiber" && !!tramo && !!(tramo.origen || tramo.destino)
+
+  // Un cable se presenta por su tipo de red, con su color («Distribución» en
+  // magenta); sin tipo, como fibra, en el azul de la capa.
+  const tipoRed = type === "fiber" ? String(feature.get("tipo_red_prin") ?? "").trim().toUpperCase() : ""
+  const nombreDeTipo = TIPO_RED_NOMBRES[tipoRed] ?? TYPE_LABELS[type]
 
   // Coordenadas de una cubierta o una cabecera: quien va a campo las copia al
   // GPS o abre la ruta en el celular. Un cable o una zona no tienen un punto.
@@ -153,7 +176,7 @@ export function PanelSeleccion({
   }
 
   const Icon = TYPE_ICONS[type]
-  const color = LAYER_COLORS[type]
+  const color = type === "fiber" ? colorForTipoRed(tipoRed) : LAYER_COLORS[type]
 
   // En pantallas angostas el panel va abajo y a todo el ancho, como una hoja:
   // arriba a la derecha tapaba la barra de herramientas del mapa. Ahí sube
@@ -173,7 +196,7 @@ export function PanelSeleccion({
             style={{ color, backgroundColor: `color-mix(in oklch, ${color} 14%, transparent)` }}
           >
             <Icon className="size-3" aria-hidden="true" />
-            {TYPE_LABELS[type]}
+            {nombreDeTipo}
           </span>
           {varios && <PaginadorDeFicha varios={varios} />}
           <button
@@ -223,6 +246,16 @@ export function PanelSeleccion({
               </div>
             ))}
           </dl>
+        )}
+
+        {/* Las dos puntas del cable: un click lleva a esa cubierta y abre su ficha. */}
+        {hayTramo && tramo && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1.5 text-[11px]">
+            <span className="text-muted-foreground">Tramo</span>
+            <PuntaDelTramo nombre={tramo.origen} id={tramo.idOrigen} onIrA={onIrA} />
+            <span className="text-muted-foreground" aria-hidden="true">–</span>
+            <PuntaDelTramo nombre={tramo.destino} id={tramo.idDestino} onIrA={onIrA} />
+          </div>
         )}
 
         {coordenada && (
@@ -358,5 +391,21 @@ export function PanelSeleccion({
       )}
       </div>
     </div>
+  )
+}
+
+/** Una punta del tramo de un cable: su nombre, que lleva a ella si se sabe dónde está. */
+function PuntaDelTramo({ nombre, id, onIrA }: { nombre: string | null; id?: string | null; onIrA?: (id: string) => void }) {
+  if (!nombre) return <span className="italic text-muted-foreground">sin dato</span>
+  if (!id || !onIrA) return <span className="font-semibold text-foreground">{nombre}</span>
+  return (
+    <button
+      type="button"
+      onClick={() => onIrA(id)}
+      title={`Ir a ${nombre}`}
+      className="rounded-md bg-muted px-1.5 py-0.5 font-semibold text-foreground outline-none transition hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      {nombre}
+    </button>
   )
 }

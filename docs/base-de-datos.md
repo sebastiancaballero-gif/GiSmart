@@ -67,6 +67,29 @@ el tipo de la columna.
 El `id` pasó de entero a **UUID**; el entero anterior quedó en `id_legacy`. Ese UUID es
 el que recibe la función de conectividad.
 
+El 20 de octubre de 2026 se volvió a recrear: **`etiqueta` pasó a llamarse
+`salidas_div1`**, con los mismos valores («CO13», «17/18», «9-oct»), y llegaron
+`etiqueta_puerto_n1` (vacía por ahora), `nivel` y `cod_inventario`. Ese día el mapa
+nombró todas las cubiertas «Cubierta <id_legacy>», y la tabla del trace y la sección
+distribución de Hilos fallaron con `42703 column cubierta_empalme.etiqueta does not
+exist`. Desde entonces el nombre se lee con `nombreDeCubierta`
+(`lib/map/nombre-cubierta.ts`), que acepta las dos columnas, y esas rutas piden la fila
+entera (`select *`) en vez de nombrar columnas. `pnpm run datos` avisa si la tabla se
+queda sin ninguna de las dos, si falta alguna columna que la aplicación pide por su
+nombre y si una función de la base existe pero falla.
+
+Ese mismo día `tab_fiber.tarjeta_bandeja_eqp` pasó a llamar **`id_equipo_pert`** y
+**`tipo_equipo_pert`** a sus columnas `id_equipo` y `tipo_equipo` (como en
+`puerto_equipo`), y la tabla del trace hacia arriba y el ODF y la OLT de Gestión de
+hilos fallaron. Se leen con `tarjetaDeFila` (`lib/map/tarjeta-bandeja.ts`), que acepta
+los dos nombres.
+
+La función del botón «Cable», `geo_fiber.fn_json_extremos_cable`, también leía
+`cub.etiqueta` y falla en todos los cables. Es de Carlos y la aplicación no puede
+cambiarla: `docs/sql/arreglar-extremos-cable-etiqueta.sql` la corrige (respaldo,
+diagnóstico, y el cambio probado con todos los cables, que no se guarda si alguno
+sigue fallando).
+
 ### Conectividad de una mufa: quién hace qué
 
 Acordado con Aurelio el 15 de septiembre de 2026:
@@ -308,9 +331,10 @@ perdieron los registros y la vista. Los datos hay que volver a cargarlos; la
 vista está más arriba en este documento.
 
 Por eso el mapa colorea las mufas por `funcion_cub` (es el campo que sí discrimina) y
-dibuja los cables con grosor según `cant_hilo`. La separación visual troncal/distribución
-ya está implementada en `colorForTipoRed()` y se activará sola en cuanto se diligencie
-`tipo_red_prin`.
+dibuja los cables con grosor según `cant_hilo`. Desde el 19 de octubre de 2026
+`tipo_red_prin` viene lleno (20 FEEDER, 162 DISTRIBUTION) y los cables se separan por
+tipo de red: feeder en azul y distribución en magenta (`colorForTipoRed()` en
+`lib/map/symbology.ts`).
 
 Los campos `id_elem_from` / `tip_elem_from` / `id_elem_to` / `tip_elem_to` de
 `cable_fibra` indican qué elementos une cada cable. Ya se muestran en la ficha del cable,

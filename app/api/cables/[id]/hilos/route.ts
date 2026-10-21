@@ -3,7 +3,7 @@ import { normalizarHilos } from "@/lib/map/hilos-cable"
 import { responderConFuncion } from "@/lib/supabase-servidor"
 
 /**
- * Hilos de un cable, según la función `tab_fiber.fn_obtener_hilos_cable_json`
+ * Hilos de un cable, según la función `tab_fiber.fn_get_json_hilos_cable`
  * de Carlos, con el UUID del cable (su argumento se llama `p_id_cable`). Para
  * «Gestión de hilos» (ribbon: Red de fibra → Hilos).
  *
@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     params,
     idInvalido: "El identificador del cable no es válido.",
     esquema: "tab_fiber",
-    funcion: "fn_obtener_hilos_cable_json",
+    funcion: "fn_get_json_hilos_cable",
     argumento: "p_id_cable",
     mensajes: {
       nombre: "hilos del cable",

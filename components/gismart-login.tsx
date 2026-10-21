@@ -121,6 +121,8 @@ export function GiSmartLogin() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ usuario: data.usuario.trim(), contrasena: data.contrasena, recordar: data.recordar }),
+        // Sin tope, con la red caída a mitad de camino «Entrando…» se quedaba girando.
+        signal: AbortSignal.timeout(20_000),
       })
 
       if (!res.ok) {
@@ -145,9 +147,13 @@ export function GiSmartLogin() {
       setNombreBienvenida(typeof user?.nombre === "string" ? user.nombre : null)
       setConnected(true)
       setTimeout(() => router.push("/dashboard"), 700)
-    } catch {
+    } catch (e) {
       setConnecting(false)
-      setServerError("Error de red. Verifica tu conexión e inténtalo de nuevo.")
+      setServerError(
+        e instanceof DOMException && e.name === "TimeoutError"
+          ? "El servidor no respondió en 20 segundos. Verifica tu conexión e inténtalo de nuevo."
+          : "Error de red. Verifica tu conexión e inténtalo de nuevo.",
+      )
     }
   }
 

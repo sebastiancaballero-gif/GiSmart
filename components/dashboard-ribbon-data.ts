@@ -6,6 +6,7 @@ import {
   CircuitBoard, Cable, Wifi, Server, Route, BarChart3, ClipboardList,
   MapPin, Activity, Box, Layers, HardDrive, CableCar, Grid3x3, Map,
   Ruler, Crosshair, Eraser, FileUp, FileDown, Cpu, ArrowLeftRight,
+  Palette, Paintbrush, SwatchBook,
 } from "lucide-react"
 import type { VentanaDePlanta } from "@/components/planta"
 import { PESTANA_AVANZADO, type HerramientaAvanzada } from "@/modulos/avanzado/cinta"
@@ -109,6 +110,15 @@ export const RIBBON_TABS: RibbonTab[] = [
       {
         label: "Edición",
         items: [{ icon: Magnet, label: "Snap" }],
+      },
+      {
+        // Para ver el mapa con otra simbología; todavía sin definir (sin `accion`: «próximamente»).
+        label: "Visualización",
+        items: [
+          { icon: Palette, label: "Simbología 1" },
+          { icon: Paintbrush, label: "Simbología 2" },
+          { icon: SwatchBook, label: "Simbología 3" },
+        ],
       },
     ],
   },

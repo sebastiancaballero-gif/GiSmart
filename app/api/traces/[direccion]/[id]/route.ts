@@ -16,6 +16,8 @@ import {
   type TablaDelTrace,
 } from "@/lib/map/trace"
 import { UUID, clienteSupabase, detalleSoloEnDesarrollo, faltaConfiguracion } from "@/lib/supabase-servidor"
+import { nombreDeCubierta } from "@/lib/map/nombre-cubierta"
+import { tarjetaDeFila, type TarjetaOBandeja } from "@/lib/map/tarjeta-bandeja"
 
 /** Lo que se le dice a quien usa el mapa cuando la tabla de caché no se puede leer. */
 function mensajeDeCache(codigo: string | undefined, mensaje = ""): string {
@@ -77,15 +79,19 @@ type FilaDeDivisor = {
   modelo_divisor: string | null
   id_cubierta_ubica: string | null
 }
-type FilaDeCubierta = { id: string; etiqueta: string | null; funcion_cub: string | null }
-type FilaDeTarjeta = { id: string; num_slot: number | null; tipo_equipo: string | null; id_equipo: string | null }
+/** La fila entera: el nombre puede venir en una columna u otra (ver `nombreDeCubierta`). */
+type FilaDeCubierta = { id: string; funcion_cub: string | null } & Record<string, unknown>
+type FilaDeTarjeta = TarjetaOBandeja
 type FilaDeEquipo = { id: string; codigo: string | null; id_cabecera: string | null }
 type FilaDeCabecera = { id: string; nombre: string | null }
 
 const COLUMNAS = {
   divisor: "id, num_divisor, cod_divisor, modelo_divisor, id_cubierta_ubica",
-  cubierta: "id, etiqueta, funcion_cub",
-  tarjeta: "id, num_slot, tipo_equipo, id_equipo",
+  // Todas las columnas: el nombre pasó de `etiqueta` a `salidas_div1` y pedirlo
+  // por su nombre rompía la tabla del trace (42703) en cada cambio así.
+  cubierta: "*",
+  // Entera, por lo mismo: id_equipo y tipo_equipo pasaron a *_pert (ver tarjetaDeFila).
+  tarjeta: "*",
   equipo: "id, codigo, id_cabecera",
   cabecera: "id, nombre",
 }
@@ -144,7 +150,7 @@ const positivo = (v: unknown) => {
 
 /**
  * Lo que casi no cambia y se repite en cada recorrido: los
- * divisores con su puerto de entrada, las cubiertas (etiqueta y nivel), las
+ * divisores con su puerto de entrada, las cubiertas (nombre y nivel), las
  * tarjetas y bandejas, los equipos (OLT, ODF) y las cabeceras. Se lee entero
  * una vez y vale dos minutos; así cada trace hace 3 o 4 viajes a la base en
  * vez de 10 a 13 (cada viaje cuesta unos 150 ms).
@@ -182,7 +188,7 @@ async function cargarCatalogo(): Promise<Catalogo> {
     ).then((puertos) => puertos.filter((p) => familiaDePuerto(p.tipo_equipo_pert) === "DIV")),
     todas<FilaDeDivisor>("tab_fiber", "divisor_optico", COLUMNAS.divisor),
     todas<FilaDeCubierta>("geo_fiber", "cubierta_empalme", COLUMNAS.cubierta),
-    todas<FilaDeTarjeta>("tab_fiber", "tarjeta_bandeja_eqp", COLUMNAS.tarjeta),
+    todas<Record<string, unknown>>("tab_fiber", "tarjeta_bandeja_eqp", COLUMNAS.tarjeta).then((filas) => filas.map(tarjetaDeFila)),
     todas<FilaDeEquipo>("tab_fiber", "equipo_red", COLUMNAS.equipo),
     todas<FilaDeCabecera>("geo_infra", "cabecera_central", COLUMNAS.cabecera),
   ])
@@ -223,9 +229,18 @@ function leerCatalogo(): Promise<Catalogo> {
 }
 
 /** Agrega al mapa las filas de los `ids` que todavía no tiene, leídas de la base. */
-async function completar<T extends { id: string }>(mapa: Map<string, T>, esquema: string, tabla: string, columnas: string, ids: string[]) {
-  for (const fila of await filasPorId<T>(esquema, tabla, columnas, sinRepetir(ids).filter((id) => !mapa.has(id)))) {
-    mapa.set(fila.id, fila)
+async function completar<T extends { id: string }>(
+  mapa: Map<string, T>,
+  esquema: string,
+  tabla: string,
+  columnas: string,
+  ids: string[],
+  /** Cómo se lee la fila, si sus columnas pueden llamarse de dos maneras (ver `tarjetaDeFila`). */
+  convertir: (fila: Record<string, unknown>) => T = (fila) => fila as T,
+) {
+  for (const fila of await filasPorId<Record<string, unknown>>(esquema, tabla, columnas, sinRepetir(ids).filter((id) => !mapa.has(id)))) {
+    const leida = convertir(fila)
+    mapa.set(leida.id, leida)
   }
 }
 
@@ -344,10 +359,10 @@ async function motivoSinRecorrido(id: string, haciaArriba: boolean, catalogo: Ca
       }
       if (puerto.tipo_equipo_pert === "DIV" && puerto.id_equipo_pert) {
         const divisor = catalogo.divisores.get(puerto.id_equipo_pert)
-        const cubierta = divisor?.id_cubierta_ubica ? catalogo.cubiertas.get(divisor.id_cubierta_ubica) : undefined
+        const cubierta = nombreDeCubierta(divisor?.id_cubierta_ubica ? catalogo.cubiertas.get(divisor.id_cubierta_ubica) : undefined)
         // «del divisor 2 (1x8PC) de CO19» o, si no está en el catálogo, «de un divisor».
         const delDivisor = divisor
-          ? `del divisor ${divisor.num_divisor ?? "sin número"}${divisor.modelo_divisor ? ` (${divisor.modelo_divisor})` : ""}${cubierta?.etiqueta ? ` de ${cubierta.etiqueta}` : ""}`
+          ? `del divisor ${divisor.num_divisor ?? "sin número"}${divisor.modelo_divisor ? ` (${divisor.modelo_divisor})` : ""}${cubierta ? ` de ${cubierta}` : ""}`
           : "de un divisor"
         if (haciaArriba && puerto.dir_principal_senhal === "S") {
           const entrada = catalogo.entradaDeDivisor.get(puerto.id_equipo_pert)
@@ -396,7 +411,14 @@ async function datosDeElementos(hilos: FilaDeHilo[], puertos: FilaDePuerto[], ca
       "geo_fiber", "cable_fibra", "id, codigo, longitud_medida, longitud_calc", sinRepetir(hilos.map((h) => h.id_cable)),
     ),
     completar(catalogo.divisores, "tab_fiber", "divisor_optico", COLUMNAS.divisor, puertos.filter(deDivisor).flatMap((q) => q.id_equipo_pert ?? [])),
-    completar(catalogo.tarjetas, "tab_fiber", "tarjeta_bandeja_eqp", COLUMNAS.tarjeta, puertos.filter((q) => !deDivisor(q)).flatMap((q) => q.id_equipo_pert ?? [])),
+    completar(
+      catalogo.tarjetas,
+      "tab_fiber",
+      "tarjeta_bandeja_eqp",
+      COLUMNAS.tarjeta,
+      puertos.filter((q) => !deDivisor(q)).flatMap((q) => q.id_equipo_pert ?? []),
+      tarjetaDeFila,
+    ),
   ])
   const divisores = sinRepetir(puertos.filter(deDivisor).map((q) => q.id_equipo_pert)).flatMap((d) => catalogo.divisores.get(d) ?? [])
   const tarjetas = sinRepetir(puertos.filter((q) => !deDivisor(q)).map((q) => q.id_equipo_pert)).flatMap((t) => catalogo.tarjetas.get(t) ?? [])
@@ -436,7 +458,7 @@ async function datosDeElementos(hilos: FilaDeHilo[], puertos: FilaDePuerto[], ca
       idCubierta: d.id_cubierta_ubica,
       modelo: d.modelo_divisor,
     })),
-    cubiertas: de(cubiertas, (c) => c.id, (c) => ({ etiqueta: c.etiqueta, funcion: c.funcion_cub })),
+    cubiertas: de(cubiertas, (c) => c.id, (c) => ({ etiqueta: nombreDeCubierta(c), funcion: c.funcion_cub })),
     cabeceras: de(cabeceras, (c) => c.id, (c) => ({ nombre: c.nombre })),
   }
 }
