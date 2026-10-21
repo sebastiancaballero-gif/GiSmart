@@ -1,6 +1,7 @@
 import { dia } from "@joint/core"
 
 import type { BandejaCampoParseada, SlotCampoParseado } from "./mufa-field-data"
+import { TEMA_CLARO, contornoHilo, sombraTarjeta, type TemaLienzo } from "./tema-lienzo"
 
 /**
  * Forma JointJS de una bandeja de empalme: contenedor intermedio entre los
@@ -13,7 +14,7 @@ import type { BandejaCampoParseada, SlotCampoParseado } from "./mufa-field-data"
 
 export const GEOMETRIA_BANDEJA = {
   ancho: 168,
-  altoEncabezado: 40,
+  altoEncabezado: 44,
   margenInferior: 12,
   altoSlot: 22,
   margenPuerto: 10,
@@ -51,6 +52,7 @@ function puertoSlot(
   slot: SlotCampoParseado,
   indice: number,
   lado: "in" | "out",
+  tema: TemaLienzo,
 ): dia.Element.Port {
   const g = GEOMETRIA_BANDEJA
   const x = lado === "in" ? g.margenPuerto : g.ancho - g.margenPuerto
@@ -64,8 +66,8 @@ function puertoSlot(
       slotPunto: {
         r: g.radioPuerto,
         fill: slot.origen.color.hex,
-        stroke: "#334155",
-        strokeWidth: 1,
+        stroke: contornoHilo(slot.origen.color.hex, tema) ?? tema.superficie,
+        strokeWidth: 1.5,
         // Solo lectura: el magnet existe para anclar el enlace, no para crear
         // conexiones nuevas desde la interfaz.
         magnet: "passive",
@@ -102,47 +104,50 @@ function markupBandeja(bandeja: BandejaCampoParseada): dia.MarkupJSON {
   ]
 }
 
-function atributosBandeja(bandeja: BandejaCampoParseada): dia.Cell.Selectors {
+function atributosBandeja(bandeja: BandejaCampoParseada, tema: TemaLienzo): dia.Cell.Selectors {
   const g = GEOMETRIA_BANDEJA
   const filas = Math.max(bandeja.capacidad, bandeja.slots.length, 1)
   const porSlot = new Map(bandeja.slots.map((slot) => [slot.slot, slot]))
+  const acento = tema.acentoBandeja
 
   const attrs: dia.Cell.Selectors = {
     body: {
       width: "calc(w)",
       height: "calc(h)",
-      rx: 8,
-      ry: 8,
-      fill: "#fff7ed",
-      stroke: "#ea580c",
-      strokeWidth: 1.5,
+      rx: tema.radioEsquina,
+      ry: tema.radioEsquina,
+      fill: tema.superficie,
+      stroke: acento,
+      strokeWidth: 1,
+      strokeOpacity: tema.neon ? 0.55 : 0.45,
+      filter: sombraTarjeta(tema, acento),
     },
     lineaEncabezado: {
       x1: 0,
-      y1: g.altoEncabezado - 6,
+      y1: g.altoEncabezado - 4,
       x2: "calc(w)",
-      y2: g.altoEncabezado - 6,
-      stroke: "#ea580c",
+      y2: g.altoEncabezado - 4,
+      stroke: tema.neon ? acento : tema.borde,
+      strokeOpacity: tema.neon ? 0.25 : 1,
       strokeWidth: 1,
-      strokeOpacity: 0.35,
     },
     etiquetaBandeja: {
-      x: 12,
-      y: 14,
+      x: 14,
+      y: 16,
       textVerticalAnchor: "middle",
-      fontSize: 11,
-      fontFamily: "Inter, sans-serif",
-      fontWeight: 600,
-      fill: "#9a3412",
+      fontSize: 12,
+      fontFamily: tema.fuenteMono,
+      fontWeight: 700,
+      fill: acento,
       text: `Bandeja ${bandeja.numero}`,
     },
     detalleBandeja: {
-      x: 12,
-      y: 28,
+      x: 14,
+      y: 31,
       textVerticalAnchor: "middle",
-      fontSize: 8.5,
-      fontFamily: "Inter, sans-serif",
-      fill: "#c2410c",
+      fontSize: 9,
+      fontFamily: tema.fuenteMono,
+      fill: tema.textoSuave,
       text: `${bandeja.slotsUsados}/${bandeja.capacidad} fusiones`,
     },
   }
@@ -150,28 +155,34 @@ function atributosBandeja(bandeja: BandejaCampoParseada): dia.Cell.Selectors {
   for (let i = 1; i <= filas; i++) {
     const y = g.altoEncabezado + (i - 1) * g.altoSlot
     const slot = porSlot.get(i)
-    const ocupado = Boolean(slot)
+    const contorno = slot ? contornoHilo(slot.origen.color.hex, tema) : null
 
+    // Ocupado: fila tintada con el acento. Libre: solo un contorno punteado,
+    // para que la capacidad restante se vea sin competir con lo ocupado.
     attrs[selectorFila(i)] = {
       x: 6,
       y: y + 2,
       width: "calc(w-12)",
       height: g.altoSlot - 4,
-      rx: 4,
-      ry: 4,
-      fill: ocupado ? "#ffedd5" : "#fffbeb",
-      stroke: ocupado ? "#fdba74" : "#fde68a",
-      strokeWidth: 1,
+      rx: tema.neon ? 2 : 6,
+      ry: tema.neon ? 2 : 6,
+      fill: slot ? acento : "none",
+      fillOpacity: slot ? (tema.oscuro ? 0.16 : 0.08) : 0,
+      stroke: slot ? "none" : tema.borde,
+      strokeWidth: slot ? 0 : 1,
+      strokeDasharray: slot ? "none" : "3 3",
     }
     attrs[selectorNumero(i)] = {
       x: g.ancho / 2,
       y: y + g.altoSlot / 2,
       textAnchor: "middle",
       textVerticalAnchor: "middle",
-      fontSize: 8,
-      fontFamily: "Inter, sans-serif",
-      fill: ocupado ? "#9a3412" : "#a8a29e",
-      text: ocupado ? `S${i} · ${slot!.tipoEmpalme}` : `S${i} · libre`,
+      fontSize: 8.5,
+      fontFamily: tema.fuenteMono,
+      fontWeight: slot ? 500 : 400,
+      fill: slot ? tema.texto : tema.textoSuave,
+      fillOpacity: slot ? 1 : 0.7,
+      text: slot ? `S${i} · ${slot.tipoEmpalme}` : `S${i} · libre`,
       pointerEvents: "none",
     }
     attrs[selectorPuente(i)] = {
@@ -179,8 +190,9 @@ function atributosBandeja(bandeja: BandejaCampoParseada): dia.Cell.Selectors {
       y1: y + g.altoSlot / 2,
       x2: g.ancho - 28,
       y2: y + g.altoSlot / 2,
-      stroke: ocupado ? slot!.origen.color.hex : "transparent",
-      strokeWidth: ocupado ? 2 : 0,
+      stroke: slot ? (contorno ?? slot.origen.color.hex) : "transparent",
+      strokeWidth: slot ? 2 : 0,
+      strokeOpacity: slot ? 0.35 : 0,
       strokeLinecap: "round",
       pointerEvents: "none",
     }
@@ -212,13 +224,14 @@ export const Bandeja = dia.Element.define(TIPO_BANDEJA, {
 export function crearBandeja(
   bandeja: BandejaCampoParseada,
   en: { x: number; y: number },
+  tema: TemaLienzo = TEMA_CLARO,
 ): dia.Element {
   const elemento = new Bandeja({
     id: bandeja.id,
     position: en,
     size: { width: GEOMETRIA_BANDEJA.ancho, height: altoBandeja(bandeja) },
     markup: markupBandeja(bandeja),
-    attrs: atributosBandeja(bandeja),
+    attrs: atributosBandeja(bandeja, tema),
     z: Z_BANDEJA,
   })
 
@@ -227,7 +240,10 @@ export function crearBandeja(
   // Los puertos se alinean con el índice visual del slot (1-based → 0-based).
   const puertos = bandeja.slots.flatMap((slot) => {
     const indice = Math.max(0, slot.slot - 1)
-    return [puertoSlot(bandeja, slot, indice, "in"), puertoSlot(bandeja, slot, indice, "out")]
+    return [
+      puertoSlot(bandeja, slot, indice, "in", tema),
+      puertoSlot(bandeja, slot, indice, "out", tema),
+    ]
   })
   elemento.addPorts(puertos)
 
