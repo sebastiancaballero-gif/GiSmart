@@ -1,0 +1,146 @@
+GISmart - paquete para produccion
+Version: 1.13.0 - commit 243b476 (21 de octubre de 2026)
+==================================================
+
+Reemplaza al paquete "1.13.0-sin-commit" del 20 de octubre: trae lo mismo
+mas el cambio de Dario en el esquema de conectividad.
+
+
+QUE CAMBIA EN ESTA VERSION
+- Arreglo urgente: el 20 de octubre la base renombro columnas
+  (cubierta_empalme.etiqueta -> salidas_div1 y, en tarjeta_bandeja_eqp,
+  id_equipo / tipo_equipo -> id_equipo_pert / tipo_equipo_pert). Con la
+  version anterior el mapa nombra todas las cubiertas "Cubierta 2095158"
+  (en vez de CO01, 13/14...), la tabla del trace hacia arriba falla y la
+  seccion distribucion de Hilos da error. Esta version lee los dos nombres.
+- Esquema de conectividad (Dario): las cubiertas sin bandejas se dibujan
+  como "Fusion directa", y el boton "Descargar PDF" baja el reporte de
+  empalmes de la cubierta. Las cubiertas con bandejas siguen como antes: si
+  la base registra menos bandejas de las necesarias se dibujan las que hacen
+  falta y se avisa.
+- Cables por tipo de red: feeder azul y distribucion magenta. La leyenda
+  oculta o muestra cada tipo y cada nivel de cubierta. Flechas del sentido
+  de la senal de cerca, cable elegido con contorno, brillo al pasar el
+  mouse, modo oscuro, trace animado.
+- Red de fibra -> Hilos, seccion feeder: ODF (con bandeja y puerto), OLT
+  (tarjeta y puerto) y equipo destino de cada hilo, sacados del trace.
+- Ficha "Informacion": los codigos con su nombre de los catalogos de la
+  base (CORNING (CORN), Cubierta de nivel 2 (NAP) (CUB_N2)...).
+- Que nada se quede pegado: tope de espera en las capas (60 s) con un
+  reintento automatico si la base falla de paso; Imprimir y Copiar mapa ya
+  no se quedan esperando si una tesela del mapa base no baja; topes en el
+  inicio de sesion y en la busqueda de direcciones.
+- Dependencias: nueva jspdf (para el PDF de empalmes) y se corrigieron 9
+  avisos de seguridad (pnpm audit) en paquetes internos de Next. Cambia
+  pnpm-lock.yaml (ver paso 5).
+Probado completo con Node 18.18.0 en modo produccion (instalacion congelada,
+pnpm run build y next start): login, capas, conectividad (con fusion
+directa y con bandejas, y el PDF), entradas y salidas, hilos (las dos
+secciones), trace, catalogos, busqueda y todos los botones de la cinta.
+
+QUE TRAE ESTE PAQUETE
+- El codigo de la aplicacion en ese commit.
+- La carpeta .next ya compilada con Node 18.18.0 (pnpm run build).
+- docs/sql/arreglar-extremos-cable-etiqueta.sql (ver BASE DE DATOS).
+
+QUE NO TRAE (a proposito)
+- .env.local: el servidor conserva el suyo, con sus claves. No se toca.
+- node_modules: se instala en el servidor con pnpm 10.
+
+
+ANTES DE EMPEZAR (en el servidor, en PowerShell)
+------------------------------------------------
+1. Ver la version de Node:
+       node -v
+   Tiene que decir v18.18.0 o mas nueva (v18.19, v20.x, v22.x sirven).
+
+2. Ver que pnpm sea la 10:
+       pnpm -v
+   Si no esta o es otra: npm install -g pnpm@10
+
+
+INSTALAR ESTA VERSION (copiando el paquete)
+-------------------------------------------
+1. Detener el servicio:
+       nssm stop GISmart
+
+2. Respaldar la carpeta actual (por si hay que volver atras):
+       Copy-Item C:\apps\GISmart C:\apps\GISmart-respaldo -Recurse
+
+3. Borrar SOLO estas carpetas del servidor (se reemplazan completas):
+       app, components, hooks, lib, modulos, public, scripts, docs, .next
+   (hooks es nueva en esta version; si no existe, no hay nada que borrar).
+   Si el servidor tiene una version anterior a la 1.11.1, borrar tambien
+   node_modules (en la 1.11.1 cambiaron Next, Supabase y pnpm).
+   NO borrar: .env.local, logs.
+
+4. Descomprimir el .zip y copiar su contenido dentro de C:\apps\GISmart
+   (que los archivos queden en C:\apps\GISmart\app, C:\apps\GISmart\.next, ...).
+
+5. Instalar dependencias (en esta version hay una nueva, jspdf, y cambian
+   algunas internas de Next, asi que este paso SI hay que hacerlo):
+       cd C:\apps\GISmart
+       pnpm install --frozen-lockfile
+   Un aviso de "Ignored build scripts: core-js" es normal: no hace falta.
+
+6. Solo si el .env.local del servidor tiene variables NEXT_PUBLIC_TESELAS_...
+   (proveedor del mapa base), volver a compilar, porque esas variables quedan
+   fijas al compilar y este paquete se compilo sin ellas:
+       pnpm run build
+   Si no las tiene, la carpeta .next del paquete sirve tal cual.
+
+7. Arrancar el servicio:
+       nssm start GISmart
+
+Actualizar con "git pull" todavia no sirve: estos cambios no estan subidos
+a GitHub. Usar el paquete.
+
+
+BASE DE DATOS
+-------------
+- El boton "Cable" (Consultas -> Cable) falla en todos los cables hasta que
+  se corrija la funcion de la base geo_fiber.fn_json_extremos_cable: todavia
+  lee la columna cub.etiqueta, que ya no existe. La aplicacion no la puede
+  cambiar. Se corrige con docs/sql/arreglar-extremos-cable-etiqueta.sql en el
+  editor SQL de Supabase, un paso a la vez:
+    Paso 0: respaldo (guardar lo que devuelve).
+    Paso 1: diagnostico (solo lee): deberia mostrar cub.etiqueta.
+    Paso 2: corrige y prueba con todos los cables. Si algo mas falla, no
+            guarda nada y dice que columna sigue faltando.
+    Paso 3: prueba con el cable 2100555.
+  Se puede correr antes o despues de instalar el paquete: es independiente.
+  Avisarle a Carlos: es su funcion, y una version suya nueva no deberia
+  volver a usar "etiqueta".
+- Nada mas que correr: lo demas que renombro la base ya lo lee esta version.
+
+VARIABLES DE ENTORNO
+- Ninguna nueva.
+- Opcional, para el Asistente IA (pestana Avanzado): GEMINI_API_KEY= con la
+  clave de Google AI Studio. Sin ella, el asistente avisa que falta
+  configurarlo y todo lo demas funciona igual.
+
+
+COMO VERIFICAR
+--------------
+- http://localhost:3000 responde en el servidor y el dominio por HTTPS.
+- En el login, abajo, dice la version 1.13.0 (y 243b476 al pasar el mouse).
+- El mapa carga cubiertas y cables (185 cubiertas, 182 cables, 18,73 km), con
+  sus nombres (CO01, 13/14, 9-oct...), los cables feeder en azul y los de
+  distribucion en magenta.
+- Conectividad: pestana Consultas -> "Conectividad fina":
+    click en la cubierta 1555766 (de empalme): "Fusion directa - sin
+    bandejas", 44 empalmes; "Descargar PDF" baja el reporte.
+    click en CO09: 25 empalmes en 3 bandejas, con el aviso de bandejas.
+- Hilos: buscar el cable 2100555 (Ctrl+K), Red de fibra -> Hilos. Abajo de la
+  tabla dice "44 de 144 hilos llegan a la OLT". El hilo 13: ODF 1 - bandeja
+  144 - puerto 1, OLT 1 - tarjeta 3 - puerto 11, equipo destino "Divisor 2
+  de CO01".
+- Trace: en esa misma ventana elegir el hilo 13 y pulsar "Hacia la fuente":
+  llega a la OLT - HUB LA UNION, con la tabla (ODF 1, OLT 1).
+- Despues de correr el script SQL: Consultas -> "Cable" y click en un cable:
+  se pinta de rojo y marca sus dos cubiertas.
+- Un aviso en el log de que "Node.js 18 and below are deprecated" en
+  Supabase es normal con Node 18: es solo un aviso.
+
+Si algo falla: nssm stop GISmart, restaurar C:\apps\GISmart-respaldo y
+nssm start GISmart.

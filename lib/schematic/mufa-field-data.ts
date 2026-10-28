@@ -19,6 +19,13 @@ import { fiberColor, fiberColorByName, getColorITU, type FiberColor } from "./fi
  * son directas entre el cable de entrada y el de salida, y `Conectividades`
  * llega en la raíz del JSON, sin arreglo de bandejas.
  *
+ * Una cubierta de primer o segundo nivel puede traer divisores en vez de
+ * bandejas. `can_div_inst` dice cuántos hay instalados y `Splitters` los
+ * describe. Cada fusión que toca un puerto (`puerto_id` + `splitter_id`, sin
+ * `hilo_id`) se dibuja como un tramo hasta ese puerto: la entrada del divisor
+ * a la izquierda y las salidas a la derecha. Si `can_div_inst` no viene o es
+ * 0, esas conexiones se apartan con un aviso, como antes.
+ *
  * Este módulo no importa JointJS: valida, normaliza y deja el modelo listo
  * para el renderizado en `mufa-field-graph.ts`.
  */
@@ -54,15 +61,34 @@ export type CableCampoJSON = {
 }
 
 export type ExtremoEmpalmeJSON = {
-  cable_id: IdCampo
-  hilo_id: IdCampo
+  /** Ausentes cuando la punta es un puerto de divisor. */
+  cable_id?: IdCampo
+  hilo_id?: IdCampo
   /**
    * Una punta en un puerto de divisor (funciones por nivel de la base): trae
-   * el puerto y el divisor en vez del hilo. El esquema todavía no dibuja
-   * divisores, así que esas conexiones se apartan con un aviso.
+   * el puerto y el divisor en vez del hilo. Solo se dibuja cuando la cubierta
+   * declara divisores instalados (`can_div_inst` > 0); si no, se aparta.
    */
-  puerto_id?: string
-  splitter_id?: string
+  puerto_id?: IdCampo
+  splitter_id?: IdCampo
+}
+
+export type PuertoDivisorJSON = {
+  puerto_id: IdCampo
+  numero?: number
+  nombre?: string
+  /** `E`/`entrada` a la izquierda, `S`/`salida` a la derecha. */
+  direccion?: string
+  dir_principal_senhal?: string
+}
+
+export type DivisorCampoJSON = {
+  splitter_id: IdCampo
+  num_divisor?: number
+  cod_divisor?: string
+  modelo_divisor?: string
+  puertos?: PuertoDivisorJSON[]
+  Puertos?: PuertoDivisorJSON[]
 }
 
 /**
@@ -102,6 +128,11 @@ export type MufaCampoJSON = {
   capacidad_band?: number
   /** `0` (o sin dato) significa que no hay bandejas: las fusiones son directas. */
   can_band_inst: number | null
+  /**
+   * Divisores instalados. Con un valor mayor que 0 el centro del esquema son
+   * los divisores y no las bandejas.
+   */
+  can_div_inst?: number | null
   cables: CableCampoJSON[]
   /** Formato anterior (clave en minúscula). */
   bandejas?: BandejaCampoJSON[]
@@ -113,8 +144,8 @@ export type MufaCampoJSON = {
    * `_n12`) y en las cubiertas sin bandejas.
    */
   Conectividades?: ConectividadCampoJSON[]
-  /** Divisores de la cubierta (`_n12`). El esquema todavía no los dibuja. */
-  Splitters?: unknown[]
+  /** Divisores de la cubierta (`_n12`). Se dibujan si `can_div_inst` > 0. */
+  Splitters?: DivisorCampoJSON[]
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +228,41 @@ export type EmpalmeDirecto = EmpalmeCampoBase & {
   numero: number
 }
 
-export type EmpalmeCampoParseado = EmpalmeEnBandeja | EmpalmeDirecto
+/**
+ * Un tramo entre un hilo y un puerto de divisor. `lado` dice en qué costado
+ * del divisor está el puerto: `entrada` (izquierda) o `salida` (derecha).
+ */
+export type EmpalmeEnDivisor = {
+  via: "divisor"
+  divisorId: string
+  numeroDivisor: number
+  /** Id del puerto dentro del elemento JointJS del divisor. */
+  puertoId: string
+  numeroPuerto: number
+  lado: "entrada" | "salida"
+  tipoEmpalme: string
+  atenuacion: number
+  hilo: HiloCampoParseado
+}
+
+export type EmpalmeCampoParseado = EmpalmeEnBandeja | EmpalmeDirecto | EmpalmeEnDivisor
+
+export type PuertoDivisorParseado = {
+  puertoId: string
+  portId: string
+  numero: number
+  lado: "entrada" | "salida"
+}
+
+export type DivisorCampoParseado = {
+  id: string
+  splitterId: IdCampo
+  numero: number
+  codigo: string | null
+  modelo: string | null
+  entradas: PuertoDivisorParseado[]
+  salidas: PuertoDivisorParseado[]
+}
 
 export type MufaCampoParseada = {
   id: string
@@ -209,10 +274,14 @@ export type MufaCampoParseada = {
   bandejasInstaladas: number
   /** Sin bandejas instaladas: las fusiones van directo de cable a cable. */
   conexionDirecta: boolean
+  /** El centro del esquema son divisores (`can_div_inst` > 0), no bandejas. */
+  conexionPorDivisor: boolean
+  divisoresInstalados: number
   cables: CableCampoParseado[]
   entradas: CableCampoParseado[]
   salidas: CableCampoParseado[]
   bandejas: BandejaCampoParseada[]
+  divisores: DivisorCampoParseado[]
   empalmes: EmpalmeCampoParseado[]
   avisos: string[]
 }
@@ -226,6 +295,10 @@ export function portIdHilo(hiloId: IdCampo): string {
 
 export function portIdSlot(bandejaId: string, slot: number, lado: "in" | "out"): string {
   return `${bandejaId}::slot-${slot}::${lado}`
+}
+
+export function portIdDivisor(divisorId: string, lado: "in" | "out", puertoId: IdCampo): string {
+  return `${divisorId}::${lado}::${puertoId}`
 }
 
 export class ErrorDatosMufaCampo extends Error {
@@ -595,8 +668,9 @@ function conectarDirecto(
   conexiones: ConectividadCampoJSON[],
   hilosPorId: IndiceHilos,
   avisos: string[],
+  ocupadosIniciales?: ReadonlySet<string>,
 ): EmpalmeDirecto[] {
-  const ocupados = new Set<string>()
+  const ocupados = new Set<string>(ocupadosIniciales)
   const empalmes: EmpalmeDirecto[] = []
 
   conexiones.forEach((conexion, posicion) => {
@@ -629,9 +703,211 @@ function requiereReparto(fuente: BandejaCampoJSON[], instaladas: number): boolea
   )
 }
 
+/** «1x8PC» → 8 salidas. `null` si el modelo no trae la relación. */
+function salidasDelModelo(modelo: string | null | undefined): number | null {
+  const coincidencia = modelo ? /1\s*[x×]\s*(\d+)/i.exec(modelo) : null
+  return coincidencia ? Number(coincidencia[1]) : null
+}
+
+function ladoDeclarado(puerto: PuertoDivisorJSON): "entrada" | "salida" | null {
+  const texto = `${puerto.direccion ?? ""} ${puerto.dir_principal_senhal ?? ""} ${puerto.nombre ?? ""}`
+    .trim()
+    .toLowerCase()
+  if (/(^|[^a-z])(e|in|entrada|input)([^a-z]|$)/.test(texto) || /^e\d*$/.test(texto)) return "entrada"
+  if (/(^|[^a-z])(s|out|salida|output)([^a-z]|$)/.test(texto) || /^s\d+$/.test(texto)) return "salida"
+  return null
+}
+
+function numeroDeclarado(puerto: PuertoDivisorJSON): number | null {
+  if (typeof puerto.numero === "number" && puerto.numero > 0) return puerto.numero
+  const texto = puerto.nombre ?? ""
+  const coincidencia = /(\d+)\s*$/.exec(texto.trim())
+  return coincidencia ? Number(coincidencia[1]) : null
+}
+
+type BorradorDivisor = {
+  id: string
+  splitterId: IdCampo
+  numero: number
+  codigo: string | null
+  modelo: string | null
+  entradas: Map<string, PuertoDivisorParseado>
+  salidas: Map<string, PuertoDivisorParseado>
+}
+
+function siguienteNumero(puertos: Map<string, PuertoDivisorParseado>): number {
+  const usados = new Set([...puertos.values()].map((puerto) => puerto.numero))
+  let numero = 1
+  while (usados.has(numero)) numero += 1
+  return numero
+}
+
+function asegurarPuerto(
+  divisor: BorradorDivisor,
+  puertoCrudo: IdCampo,
+  lado: "entrada" | "salida",
+  numero: number | null,
+): PuertoDivisorParseado {
+  const clave = String(puertoCrudo)
+  const ya = divisor.entradas.get(clave) ?? divisor.salidas.get(clave)
+  if (ya) return ya
+  const mapa = lado === "entrada" ? divisor.entradas : divisor.salidas
+  const asignado = numero ?? siguienteNumero(mapa)
+  const puerto: PuertoDivisorParseado = {
+    puertoId: clave,
+    portId: portIdDivisor(divisor.id, lado === "entrada" ? "in" : "out", clave),
+    numero: asignado,
+    lado,
+  }
+  mapa.set(clave, puerto)
+  return puerto
+}
+
+function completarPuertos(divisor: BorradorDivisor): void {
+  const salidasModelo = salidasDelModelo(divisor.modelo)
+  const salidas = salidasModelo ?? (divisor.salidas.size > 0 ? divisor.salidas.size : 8)
+  while (divisor.salidas.size < salidas) {
+    const numero = siguienteNumero(divisor.salidas)
+    asegurarPuerto(divisor, `libre-s-${numero}`, "salida", numero)
+  }
+  if (divisor.entradas.size === 0) asegurarPuerto(divisor, "libre-e-1", "entrada", 1)
+}
+
 /**
- * Normaliza el JSON de campo al modelo que consume el lienzo. Sólo se
- * renderizan las bandejas instaladas (`can_band_inst`).
+ * Arma los divisores instalados y los tramos hilo ↔ puerto. Las fusiones que
+ * no tocan un divisor se devuelven aparte para dibujarlas de cable a cable.
+ */
+function ensamblarDivisores(
+  json: MufaCampoJSON,
+  conexiones: ConectividadCampoJSON[],
+  hilosPorId: IndiceHilos,
+  avisos: string[],
+): {
+  divisores: DivisorCampoParseado[]
+  empalmes: EmpalmeEnDivisor[]
+  entreHilos: ConectividadCampoJSON[]
+  ocupados: Set<string>
+} {
+  const instalados = Math.max(0, json.can_div_inst ?? 0)
+  const fuente = json.Splitters ?? []
+  const porId = new Map<string, BorradorDivisor>()
+
+  fuente.slice(0, instalados).forEach((divisor, indice) => {
+    const id = `divisor-${divisor.splitter_id}`
+    const borrador: BorradorDivisor = {
+      id,
+      splitterId: divisor.splitter_id,
+      numero: divisor.num_divisor ?? indice + 1,
+      codigo: divisor.cod_divisor ?? null,
+      modelo: divisor.modelo_divisor ?? null,
+      entradas: new Map(),
+      salidas: new Map(),
+    }
+    for (const puerto of divisor.puertos ?? divisor.Puertos ?? []) {
+      const lado = ladoDeclarado(puerto)
+      if (!lado) continue
+      asegurarPuerto(borrador, puerto.puerto_id, lado, numeroDeclarado(puerto))
+    }
+    porId.set(String(divisor.splitter_id), borrador)
+  })
+
+  if (fuente.length > instalados) {
+    avisos.push(
+      `Se omitieron ${fuente.length - instalados} divisor(es) por encima de can_div_inst (${instalados}).`,
+    )
+  }
+  while (porId.size < instalados) {
+    const numero = porId.size + 1
+    const id = `divisor-instalado-${numero}`
+    porId.set(id, {
+      id,
+      splitterId: id,
+      numero,
+      codigo: null,
+      modelo: null,
+      entradas: new Map(),
+      salidas: new Map(),
+    })
+    avisos.push(`El divisor ${numero} está instalado, pero el JSON no lo describe: se dibuja 1x8 vacío.`)
+  }
+
+  const ocupados = new Set<string>()
+  const empalmes: EmpalmeEnDivisor[] = []
+  const entreHilos: ConectividadCampoJSON[] = []
+
+  conexiones.forEach((conexion, posicion) => {
+    const etiqueta = etiquetarConexion(conexion, posicion)
+    const origenDivisor = esPuertoDeDivisor(conexion.origen)
+    const destinoDivisor = esPuertoDeDivisor(conexion.destino)
+    if (!origenDivisor && !destinoDivisor) {
+      entreHilos.push(conexion)
+      return
+    }
+    if (origenDivisor && destinoDivisor) {
+      avisos.push(`${etiqueta} ignorada: une dos puertos de divisor y el esquema no dibuja ese salto.`)
+      return
+    }
+
+    const extremoPuerto = origenDivisor ? conexion.origen : conexion.destino
+    const extremoHilo = origenDivisor ? conexion.destino : conexion.origen
+    const divisor = porId.get(String(extremoPuerto.splitter_id))
+    if (!divisor) {
+      avisos.push(`${etiqueta} ignorada: el divisor ${extremoPuerto.splitter_id} no está entre los instalados.`)
+      return
+    }
+    const hilo = hilosPorId.get(String(extremoHilo.hilo_id))
+    if (!hilo) {
+      avisos.push(`${etiqueta} ignorada: el hilo ${extremoHilo.hilo_id} no existe.`)
+      return
+    }
+    if (ocupados.has(String(hilo.hiloId))) {
+      avisos.push(`${etiqueta} ignorada: el hilo ${hilo.cableCodigo}·H${hilo.numero} ya está empalmado.`)
+      return
+    }
+    ocupados.add(String(hilo.hiloId))
+
+    // El hilo llega al divisor por la izquierda; sale hacia el cable por la derecha.
+    const ladoInferido: "entrada" | "salida" = origenDivisor ? "salida" : "entrada"
+    const puerto = asegurarPuerto(
+      divisor,
+      extremoPuerto.puerto_id ?? `${ladoInferido}-${empalmes.length + 1}`,
+      ladoInferido,
+      null,
+    )
+    empalmes.push({
+      via: "divisor",
+      divisorId: divisor.id,
+      numeroDivisor: divisor.numero,
+      puertoId: puerto.portId,
+      numeroPuerto: puerto.numero,
+      lado: puerto.lado,
+      tipoEmpalme: conexion["Tipo empalme"],
+      atenuacion: conexion.atenuacion,
+      hilo,
+    })
+  })
+
+  for (const divisor of porId.values()) completarPuertos(divisor)
+
+  const divisores = [...porId.values()]
+    .sort((a, b) => a.numero - b.numero)
+    .map((divisor) => ({
+      id: divisor.id,
+      splitterId: divisor.splitterId,
+      numero: divisor.numero,
+      codigo: divisor.codigo,
+      modelo: divisor.modelo,
+      entradas: [...divisor.entradas.values()].sort((a, b) => a.numero - b.numero),
+      salidas: [...divisor.salidas.values()].sort((a, b) => a.numero - b.numero),
+    }))
+
+  return { divisores, empalmes, entreHilos, ocupados }
+}
+
+/**
+ * Normaliza el JSON de campo al modelo que consume el lienzo. Con
+ * `can_div_inst` > 0 se dibujan los divisores; si no, las bandejas instaladas
+ * (`can_band_inst`) o las fusiones directas.
  */
 export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
   if (!json.cables?.length) throw new ErrorDatosMufaCampo("no hay cables declarados")
@@ -658,6 +934,32 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
   }
 
   const hilosPorId = indexarHilos(cables, avisos)
+  const divisoresInstalados = Math.max(0, json.can_div_inst ?? 0)
+  if (divisoresInstalados > 0) {
+    const enBandejas = (json.bandejas ?? json.Bandejas ?? []).flatMap(conexionesDeBandeja)
+    if (enBandejas.length > 0) {
+      avisos.push(
+        "La cubierta declara divisores instalados: las fusiones que venían dentro de bandejas se leen igual, pero las bandejas no se dibujan.",
+      )
+    }
+    const { divisores, empalmes, entreHilos, ocupados } = ensamblarDivisores(
+      json,
+      [...(json.Conectividades ?? []), ...enBandejas],
+      hilosPorId,
+      avisos,
+    )
+    return {
+      ...resumen(json, cables, entradas, salidas, avisos),
+      bandejasInstaladas: 0,
+      conexionDirecta: false,
+      conexionPorDivisor: true,
+      divisoresInstalados,
+      bandejas: [],
+      divisores,
+      empalmes: [...empalmes, ...conectarDirecto(entreHilos, hilosPorId, avisos, ocupados)],
+    }
+  }
+
   const instaladas = Math.max(0, json.can_band_inst ?? 0)
   // Las conexiones con un puerto de divisor se apartan con un solo aviso,
   // vengan en bandejas o en la raíz (las funciones por nivel `_n0` y `_n12`
@@ -675,7 +977,10 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
       ...resumen(json, cables, entradas, salidas, avisos),
       bandejasInstaladas: 0,
       conexionDirecta: true,
+      conexionPorDivisor: false,
+      divisoresInstalados: 0,
       bandejas: [],
+      divisores: [],
       empalmes: conectarDirecto([...enRaiz, ...enBandejas], hilosPorId, avisos),
     }
   }
@@ -696,7 +1001,10 @@ export function parseMufaData(json: MufaCampoJSON): MufaCampoParseada {
     ...resumen(json, cables, entradas, salidas, avisos),
     bandejasInstaladas: instaladas,
     conexionDirecta: false,
+    conexionPorDivisor: false,
+    divisoresInstalados: 0,
     bandejas,
+    divisores: [],
     empalmes: bandejas.flatMap(armarEmpalmes),
   }
 }
