@@ -10,6 +10,56 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.14.0 — 27 de octubre de 2026
+
+**Gestión de hilos con la traza de la base** (Red de fibra → Hilos):
+
+- Las columnas de cada hilo, desde el puerto de inicio, son los campos de la función nueva
+  `tab_fiber.fn_get_json_hilos(p_id_hilo, p_tipo_traza)`: `'FEEDER'` en la sección feeder
+  y `'DISTRIBUCION'` en la sección distribución. Antes se armaban en la aplicación desde
+  la caché del trace.
+- La función falla en la base con los dos tipos (`FEEDER`: «column tf.num_puerto_ini does
+  not exist», debería leer `attr.num_puerto_ini`; `DISTRIBUCION`: «missing FROM-clause
+  entry for table "t"»). Por eso la aplicación lee directo las tablas que ella lee: las
+  trazas (`traza_feeder`, `traza_distribucion`, con sus hilos en `path_hilos`) y sus
+  atributos (`attr_traza_feeder`, `attr_traza_distribucion`). Son 4–7 consultas por
+  cable (0,3–1,2 s).
+- Lo que esas tablas traen sin dato se completa con las de la red:
+  - **la cubierta** («Cub ---» en las 135 trazas): la del divisor de la traza, con su
+    nombre («Cub CO13», «Cub CO06»);
+  - **la salida de inicio** (vacía en las 91 de distribución): la salida de la cubierta
+    que le toca al puerto del divisor («Salida 11» en D2 P3 de CO06). En 89 de las 91
+    coincide con la NAP destino; las otras 2 son datos a revisar (salidas 7 y 8 de una
+    cubierta llegan a la NAP «5-jun»);
+  - **el rack**: «Rack Rack 1» → «Rack 1».
+- **Sección feeder:** puerto inicio, tipo equipo, equipo, rack, posición U, cubierta fin,
+  divisor fin e ID del puerto fin, agrupadas en «Inicio de la traza» y «Fin de la traza».
+- **Sección distribución:** identificador y número del hilo, y puerto inicio, salida
+  inicio, divisor inicio, cubierta inicio, divisor fin, NAP destino y salidas destino.
+- El orden es el de las tablas de atributos (la función devuelve `jsonb`, que no guarda
+  el orden de los campos).
+- Un hilo que está en dos trazas (pasa en algunos feeder, una desde el ODF y otra desde la
+  OLT) muestra un valor por renglón. El buscador también busca en los datos de la traza
+  («TJT 5», «Nap 3-abr»).
+- **Filtro «Cantidad de hilos / Conectados»** en las dos pestañas, con la cuenta de
+  cada uno: «Conectados» deja solo los hilos que tienen traza en esa pestaña (43 de
+  144 en el feeder de 2100555; 14 de 48 en la distribución de 2102603). Se combina con el
+  filtro por buffer y el buscador. Si ningún hilo tiene traza, lo dice y ofrece volver a
+  verlos todos.
+- Se quitaron las columnas que la lista de hilos nunca trajo (nodo origen, rack, rack
+  equipo, transporta) y la ruta `GET /api/cables/{id}/distribucion`; la nueva es
+  `GET /api/cables/{id}/trazas?tipo=FEEDER|DISTRIBUCION`.
+- `pnpm run datos` revisa las tablas de la traza y sigue probando la función.
+
+**Los nombres de las cubiertas vuelven al mapa.** El 27 de octubre la base volvió a
+cambiar la tabla: ya no hay `salidas_div1`; el nombre de las NAP está en `cod_operativo`
+y el de las de primer nivel en `cod_inventario` (la otra columna dice «---»). El mapa,
+el trace y Hilos las llamaban «Cubierta 2096411»; ahora otra vez «CO13», «13/14».
+
+Por revisar en la base (no lo cambia la aplicación): la posición U de la traza feeder
+dice 30, pero `equipo_red` pone la OLT y el ODF los dos en la U1; y las 44 trazas
+feeder terminan en el mismo divisor (D1 de CO13).
+
 ## 1.13.1 — 21 de octubre de 2026
 
 - **«Conectividad fina» usa siempre `get_json_conectividad_cubierta_n0`**, sea cual sea el

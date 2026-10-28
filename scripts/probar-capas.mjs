@@ -236,6 +236,10 @@ console.log("\n7) LO QUE LA BASE RENOMBRÓ EL 20-OCT-2026: SE LEE CON LOS DOS NO
   comprobar("si vinieran las dos, manda etiqueta", nombreDeCubierta({ etiqueta: "CO01", salidas_div1: "otra" }) === "CO01")
   comprobar("vacía o en blanco: sigue con la otra", nombreDeCubierta({ etiqueta: "  ", salidas_div1: " 9/10 " }) === "9/10")
   comprobar("sin ninguna: null (el mapa la llama «Cubierta <ID>»)", nombreDeCubierta({ id_legacy: 2094732 }) === null && nombreDeCubierta(null) === null)
+  // Desde el 27-oct-2026: las NAP en cod_operativo, las de primer nivel en cod_inventario; la otra dice «---».
+  comprobar("NAP: cod_operativo", nombreDeCubierta({ cod_operativo: "13/14", cod_inventario: "---" }) === "13/14")
+  comprobar("primer nivel: cod_inventario (cod_operativo «---» no es un nombre)", nombreDeCubierta({ cod_operativo: "---", cod_inventario: "CO13" }) === "CO13")
+  comprobar("las dos en «---»: null", nombreDeCubierta({ cod_operativo: "---", cod_inventario: "---" }) === null)
 
   // El mapa: la capa de cubiertas con la columna nueva, por el respaldo desde la tabla.
   const { loadRealMufas } = await import("../lib/map/loaders.ts")

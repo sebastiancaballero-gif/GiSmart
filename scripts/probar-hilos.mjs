@@ -59,17 +59,6 @@ comprobar("filas sin número ni UUID se descartan", normalizarHilos([{ color_hil
   comprobar("un hilo sin UUID se muestra igual, con una clave propia", sinId.length === 2 && sinId[0].id !== sinId[1].id)
 }
 {
-  // Lo que Carlos va a agregar a la función.
-  const [h] = normalizarHilos([
-    { id: "a", numero_hilo: 16, nodo_origen: "HUB LA UNION", rack: "Rack 1", odf: 3, puerto: 4, equipo_destino: "Div: 1 CO02" },
-  ])
-  comprobar(
-    "rack, ODF, puerto y destino se leen en cuanto la función los traiga",
-    h.nodoOrigen === "HUB LA UNION" && h.rack === "Rack 1" && h.odf === "3" && h.puerto === "4" && h.equipoDestino === "Div: 1 CO02",
-    JSON.stringify(h),
-  )
-}
-{
   // Lo que devolvía la función el 28/09: nombres distintos a los de la tabla.
   const [h] = normalizarHilos([{ id: "a", color: "Azul", estado: "Activo", num_buffer: 1, "Tecnología": "DARK", numero_hilo: 1 }])
   comprobar(
@@ -103,193 +92,125 @@ const pedir = (id, token) =>
 comprobar("sin sesión: 401", (await pedir("01a0c524-b611-7fc7-b56e-c93273914aa3")).status === 401)
 comprobar("id que no es UUID: 400", (await pedir("no-es-un-uuid", emitirToken("Prueba", "operador"))).status === 400)
 
-console.log("\n5) RECORRIDO DE LOS HILOS: SECCIÓN DISTRIBUCIÓN Y FEEDER (de la caché del trace)\n")
+console.log("\n5) TRAZA DE LOS HILOS: SECCIÓN FEEDER Y DISTRIBUCIÓN (tablas traza_* y attr_traza_*)\n")
 {
-  const {
-    armarDistribucion,
-    salidaDeLaCubierta,
-    salidasDelModelo,
-    clasificarRespuestaDistribucion,
-    idsParaDistribucion,
-    entradasPorLeer,
-    SIN_CONECTAR,
-  } = await import("../lib/map/distribucion-cable.ts")
-  const { GET: GET_DISTRIBUCION } = await import("../app/api/cables/[id]/distribucion/route.ts")
+  const { filasDeTraza, columnasDeTraza, armarTrazas, salidaDeLaCubierta, salidasDelModelo, clasificarRespuestaTrazas, esTipoTraza, CAMPOS_TRAZA } =
+    await import("../lib/map/traza-hilos.ts")
+  const { GET: GET_TRAZAS } = await import("../app/api/cables/[id]/trazas/route.ts")
 
-  comprobar("salidas del modelo: 1x8PC → 8", salidasDelModelo("1x8PC") === 8 && salidasDelModelo("1 x 16") === 16 && salidasDelModelo("raro") === null)
-  const d1 = { id: "d1", num_divisor: 1, modelo_divisor: "1x8PC", id_cubierta_ubica: "co05" }
-  const d2 = { id: "d2", num_divisor: 2, modelo_divisor: "1x8PC", id_cubierta_ubica: "co05" }
-  comprobar("salida de la cubierta: puerto 1 del divisor 2 → 9, como el SIG anterior", salidaDeLaCubierta(d2, 1, [d2, d1]) === 9)
-  comprobar("salida del divisor 1: el mismo puerto", salidaDeLaCubierta(d1, 7, [d1, d2]) === 7)
-  comprobar("con números de divisor repetidos no se inventa la salida", salidaDeLaCubierta(d2, 1, [d2, { ...d1, num_divisor: 2 }]) === null)
-
-  const cache = [
-    // Hilo a: sale del puerto S3 del divisor 2 de CO05 y llega a la NAP 13/14.
-    {
-      id_origen: "a",
-      direccion: "UPSTREAM",
-      fecha_calculo: "2026-10-01",
-      path_secuencia: [
-        { paso: 2, tipo_contenedor: "DIVISOR", id_contenedor: "d2", tip_destino: "PUERTO", puerto_destino: "s3" },
-        { paso: 1, tipo_contenedor: "CUB", id_contenedor: "n2", tip_destino: "HILO" },
-      ],
-    },
-    {
-      id_origen: "a",
-      direccion: "DOWNSTREAM",
-      fecha_calculo: "2026-10-01",
-      path_secuencia: [{ paso: 1, tipo_contenedor: "CUB", id_contenedor: "nap", tip_destino: "PUERTO", puerto_destino: "e-nap" }],
-    },
-    // Hilo b (feeder): no cruza divisores hacia la fuente; llega a la entrada del divisor 1 de CO05.
-    { id_origen: "b", direccion: "UPSTREAM", fecha_calculo: "2026-10-01", path_secuencia: [{ paso: 1, tipo_contenedor: "OLT" }] },
-    {
-      id_origen: "b",
-      direccion: "DOWNSTREAM",
-      fecha_calculo: "2026-10-01",
-      path_secuencia: [{ paso: 1, tipo_contenedor: "CUB", id_contenedor: "co05", tip_destino: "PUERTO", puerto_destino: "e1" }],
-    },
-  ]
-  const ids = idsParaDistribucion(cache)
-  comprobar("pide solo los puertos de los pasos que importan", [...ids.puertos].sort().join(",") === "e-nap,e1,s3", ids.puertos.join(","))
-  const filas = armarDistribucion({
-    hilos: ["a", "b", "c"],
-    cache,
-    puertos: new Map([
-      ["s3", { id: "s3", numero_puerto: 3, id_equipo_pert: "d2", tipo_equipo_pert: "DIV_N1" }],
-      ["e-nap", { id: "e-nap", numero_puerto: 1, id_equipo_pert: "dnap", tipo_equipo_pert: "DIV_N2" }],
-      ["e1", { id: "e1", numero_puerto: 1, id_equipo_pert: "d1", tipo_equipo_pert: "DIV_N1" }],
-    ]),
-    divisores: new Map([d1, d2, { id: "dnap", num_divisor: 1, modelo_divisor: "1x8PC", id_cubierta_ubica: "nap" }].map((d) => [d.id, d])),
-    cubiertas: new Map([
-      ["co05", { id: "co05", etiqueta: "CO05", funcion_cub: "Primer nivel" }],
-      ["nap", { id: "nap", etiqueta: "13/14", funcion_cub: "Segundo nivel" }],
-    ]),
-    divisoresDeLaCubierta: new Map([["co05", [d1, d2]]]),
-  })
-  const [a, b, c] = filas
-  comprobar(
-    "hilo de distribución: cubierta, divisor, puerto y salida",
-    a.cubierta === "CO05" && a.divisor === 2 && a.puertoDivisor === 3 && a.salida === 11,
-    JSON.stringify(a),
-  )
-  comprobar("llega a una cubierta de segundo nivel: «NAP 13/14»", a.destino === "NAP 13/14", String(a.destino))
-  comprobar(
-    "hilo del feeder: sin divisor de origen, llega al divisor de primer nivel",
-    b.cubierta === null && b.destino === "Divisor 1 de CO05",
-    String(b.destino),
-  )
-  comprobar("hilo sin recorrido: «Sin conectar»", c.cubierta === null && c.destino === SIN_CONECTAR)
-
-  // Sección feeder: el ODF y la OLT, hacia la fuente. El hilo a termina en la
-  // salida del divisor 2; se sigue desde su entrada (e2), que llega al ODF y a
-  // la OLT. El hilo f (feeder) llega directo. El g termina en un divisor cuya
-  // entrada vuelve a él: no puede quedar dando vueltas.
-  const subidaDesdeE2 = {
-    id_origen: "e2",
-    direccion: "UPSTREAM",
-    fecha_calculo: "2026-10-01",
-    path_secuencia: [
-      { paso: 1, tipo_contenedor: "CUB", id_contenedor: "co05", tip_destino: "HILO" },
-      { paso: 2, tipo_contenedor: "ODF", id_contenedor: "bdj1", tip_destino: "PUERTO", puerto_destino: "p-odf" },
-      { paso: 3, tipo_contenedor: "OLT", id_contenedor: "tjt4", tip_destino: "PUERTO", puerto_origen: "p-odf", puerto_destino: "p-olt" },
-    ],
-  }
+  // Lo que hay en tab_fiber.attr_traza_feeder (26/10): así lo devolvería la función.
   const feeder = {
-    id_origen: "f",
-    direccion: "UPSTREAM",
-    fecha_calculo: "2026-10-01",
-    path_secuencia: [
-      { paso: 1, tipo_contenedor: "ODF", id_contenedor: "bdj1", tip_destino: "PUERTO", puerto_destino: "p-odf2" },
-      { paso: 2, tipo_contenedor: "OLT", id_contenedor: "tjt4", tip_destino: "PUERTO", puerto_origen: "p-odf2", puerto_destino: "p-olt2" },
-    ],
+    id_puerto_ini: "01a0f9bf-be86-7ef5-b39f-af31373a07af",
+    num_puerto_ini: "Puerto 16",
+    tipo_equipo: "TJT 3",
+    equipo_ubica: "OLT 1",
+    rack_ubica: "Rack Rack 1",
+    posicion_u: "30",
+    cubierta_fin: "Cub ---",
+    divisor_fin: "Div D-1",
+    id_puerto_fin: "01a0f9bf-bdc5-7c2b-83b1-dad46e6f14e7",
   }
-  const ciclo = (origen) => ({
-    id_origen: origen,
-    direccion: "UPSTREAM",
-    fecha_calculo: "2026-10-01",
-    path_secuencia: [{ paso: 1, tipo_contenedor: "DIVISOR", id_contenedor: "d3", tip_destino: "PUERTO", puerto_destino: "s-d3" }],
-  })
-  const entradas = new Map([
-    ["d2", "e2"],
-    ["d3", "e3"],
-  ])
-  comprobar(
-    "pide la caché desde la entrada del divisor donde termina el hilo",
-    entradasPorLeer(["a", "b", "c", "f"], [...cache, feeder], entradas).join(",") === "e2",
-  )
-  comprobar("con esa caché ya leída, no pide más", entradasPorLeer(["a", "f"], [...cache, feeder, subidaDesdeE2], entradas).length === 0)
-  const idsArriba = idsParaDistribucion([subidaDesdeE2, feeder])
-  comprobar(
-    "pide los puertos del ODF y de la OLT",
-    ["p-odf", "p-olt", "p-odf2", "p-olt2"].every((p) => idsArriba.puertos.includes(p)),
-    idsArriba.puertos.join(","),
-  )
-  const conOrigen = armarDistribucion({
-    hilos: ["a", "f", "g", "c"],
-    cache: [...cache, subidaDesdeE2, feeder, ciclo("g"), ciclo("e3")],
-    puertos: new Map(
-      [
-        { id: "s3", numero_puerto: 3, id_equipo_pert: "d2", tipo_equipo_pert: "DIV_N1" },
-        { id: "p-odf", numero_puerto: 11, nombre: null, id_equipo_pert: "bdj1", tipo_equipo_pert: "BDJ_ODF" },
-        { id: "p-olt", numero_puerto: 5, id_equipo_pert: "tjt4", tipo_equipo_pert: "TJT_OLT" },
-        { id: "p-odf2", numero_puerto: 1, nombre: "B1-1", id_equipo_pert: "bdj1", tipo_equipo_pert: "BDJ_ODF" },
-        { id: "p-olt2", numero_puerto: 11, id_equipo_pert: "tjt3", tipo_equipo_pert: "TJT_OLT" },
-      ].map((p) => [p.id, p]),
-    ),
-    divisores: new Map([d1, d2].map((d) => [d.id, d])),
-    cubiertas: new Map([["co05", { id: "co05", etiqueta: "CO05", funcion_cub: "Primer nivel" }]]),
-    divisoresDeLaCubierta: new Map([["co05", [d1, d2]]]),
-    entradas,
-    tarjetas: new Map(
-      [
-        { id: "bdj1", num_slot: 144, tipo_equipo: "ODF", id_equipo: "odf1" },
-        { id: "tjt4", num_slot: 4, tipo_equipo: "OLT", id_equipo: "olt1" },
-        { id: "tjt3", num_slot: 3, tipo_equipo: "OLT", id_equipo: "olt1" },
-      ].map((t) => [t.id, t]),
-    ),
-    equipos: new Map(
-      [
-        { id: "odf1", codigo: "1", tipo_equipo: "ODF" },
-        { id: "olt1", codigo: "OLT-01", tipo_equipo: "OLT" },
-      ].map((e) => [e.id, e]),
-    ),
-  })
-  const [a2, f2, g2, c2] = conOrigen
-  comprobar(
-    "hilo de distribución: cruza el divisor y llega al ODF (bandeja y puerto)",
-    a2.odf === "ODF 1" && a2.bandejaOdf === 144 && a2.puertoOdf === "11",
-    JSON.stringify(a2),
-  )
-  comprobar(
-    "… y a la OLT, con su tarjeta y su puerto (sin repetir «OLT» si el código ya lo dice)",
-    a2.olt === "OLT-01" && a2.tarjetaOlt === 4 && a2.puertoOlt === "5",
-  )
-  comprobar("sigue sabiendo de qué divisor sale", a2.cubierta === "CO05" && a2.divisor === 2 && a2.salida === 11)
-  comprobar(
-    "hilo del feeder: llega directo; el puerto por su nombre si lo tiene",
-    f2.odf === "ODF 1" && f2.puertoOdf === "B1-1" && f2.tarjetaOlt === 3 && f2.puertoOlt === "11",
-    JSON.stringify(f2),
-  )
-  comprobar("divisores que se vuelven a sí mismos: termina, sin ODF ni OLT", g2.odf === null && g2.olt === null)
-  comprobar("sin recorrido: sin ODF ni OLT", c2.odf === null && c2.olt === null)
-  const leidaConOrigen = clasificarRespuestaDistribucion(200, JSON.parse(JSON.stringify({ hilos: conOrigen })))
-  comprobar(
-    "servidor → navegador: el ODF y la OLT llegan enteros",
-    leidaConOrigen.estado === "ok" && JSON.stringify(leidaConOrigen.hilos[0]) === JSON.stringify(a2),
-  )
+  const [fila] = filasDeTraza(feeder)
+  comprobar("un objeto es una fila, con sus campos", fila?.num_puerto_ini === "Puerto 16" && fila?.equipo_ubica === "OLT 1", JSON.stringify(fila))
+  comprobar("una lista (hilo en dos trazas) son dos filas", filasDeTraza([feeder, { ...feeder, num_puerto_ini: "Puerto 2" }]).length === 2)
+  comprobar("también dentro de { data: [...] }", filasDeTraza({ data: [feeder] }).length === 1)
+  comprobar("sin traza (null, lista vacía, objeto vacío): ninguna fila", [null, [], {}, "x", 3].every((d) => filasDeTraza(d).length === 0))
+  comprobar("números y sí/no se leen como texto", JSON.stringify(filasDeTraza({ posicion_u: 30, activo: true })[0]) === '{"posicion_u":"30","activo":"Sí"}')
 
-  const leida = clasificarRespuestaDistribucion(200, JSON.parse(JSON.stringify({ hilos: filas })))
-  comprobar("servidor → navegador: la fila llega entera", leida.estado === "ok" && JSON.stringify(leida.hilos[0]) === JSON.stringify(a))
-  const error = clasificarRespuestaDistribucion(502, { message: "falla", detalle: "tab_fiber.element_connection → 42501: permiso" })
-  comprobar("error con su mensaje y su detalle", error.estado === "error" && error.mensaje === "falla" && error.detalle?.includes("42501"))
+  // El orden: el de las tablas de atributos, desde num_puerto_ini (jsonb no guarda el orden).
+  const ordenFeeder = columnasDeTraza("FEEDER", []).map((c) => c.campo).join(",")
+  comprobar(
+    "feeder: columnas en el orden de attr_traza_feeder, desde num_puerto_ini",
+    ordenFeeder === "num_puerto_ini,tipo_equipo,equipo_ubica,rack_ubica,posicion_u,cubierta_fin,divisor_fin,id_puerto_fin",
+    ordenFeeder,
+  )
+  const ordenDistribucion = columnasDeTraza("DISTRIBUCION", []).map((c) => c.campo).join(",")
+  comprobar(
+    "distribución: columnas en el orden de attr_traza_distribucion, desde num_puerto_ini",
+    ordenDistribucion === "num_puerto_ini,num_salida_ini,divisor_ini,cubierta_ini,divisor_fin,nap_destino,salidas_dest",
+    ordenDistribucion,
+  )
+  const conExtra = columnasDeTraza("FEEDER", [{ id: "h", filas: filasDeTraza({ ...feeder, zeta: "z", alfa: "a" }) }])
+  comprobar(
+    "un campo que los atributos agreguen va al final; id_puerto_ini no se muestra",
+    conExtra.slice(-2).map((c) => `${c.campo}:${c.titulo}`).join(",") === "alfa:Alfa,zeta:Zeta" && !conExtra.some((c) => c.campo === "id_puerto_ini"),
+    conExtra.map((c) => c.campo).join(","),
+  )
+  comprobar("cada tipo tiene sus columnas", CAMPOS_TRAZA.FEEDER.length === 8 && CAMPOS_TRAZA.DISTRIBUCION.length === 7)
+  comprobar("tipos válidos: FEEDER y DISTRIBUCION", esTipoTraza("FEEDER") && esTipoTraza("DISTRIBUCION") && !esTipoTraza("feeder") && !esTipoTraza(null))
 
-  const pedirDistribucion = (id, token) =>
-    GET_DISTRIBUCION(
-      new Request(`http://local/api/cables/${id}/distribucion`, { headers: token ? { authorization: `Bearer ${token}` } : {} }),
-      { params: Promise.resolve({ id }) },
-    )
-  comprobar("la ruta sin sesión: 401", (await pedirDistribucion("01a0c524-b611-7fc7-b56e-c93273914aa3")).status === 401)
-  comprobar("la ruta con un id que no es UUID: 400", (await pedirDistribucion("no-es-un-uuid", emitirToken("Prueba", "operador"))).status === 400)
+  // La salida de la cubierta: las de los divisores anteriores más el puerto.
+  const d1 = { id: "d1", num_divisor: 1, modelo_divisor: "1x8PC", id_cubierta_ubica: "co06" }
+  const d2 = { id: "d2", num_divisor: 2, modelo_divisor: "1x8PC", id_cubierta_ubica: "co06" }
+  comprobar("salidas del modelo: 1x8PC → 8", salidasDelModelo("1x8PC") === 8 && salidasDelModelo("1 x 16") === 16 && salidasDelModelo("raro") === null)
+  comprobar("D1 P3 → salida 3; D2 P3 → salida 11 (dos 1x8)", salidaDeLaCubierta(d1, 3, [d1, d2]) === 3 && salidaDeLaCubierta(d2, 3, [d1, d2]) === 11)
+  comprobar("números de divisor repetidos: no se sabe", salidaDeLaCubierta(d2, 3, [d1, { ...d2, id: "x", num_divisor: 1 }, d2]) === null)
+
+  // El armado, con lo que hay en la base (2102603: CO06 D2 P3 → NAP 11/12).
+  const distribucion = armarTrazas({
+    tipo: "DISTRIBUCION",
+    hilos: ["H1", "h2", "h3"],
+    trazas: [{ id: "t1", id_puerto_inicio: "P3", id_divisor_inicio: "D2", path_hilos: ["otro", "h1"] }],
+    atributos: new Map([
+      ["p3", { id_puerto_ini: "p3", num_puerto_ini: "Puerto 3", num_salida_ini: null, divisor_ini: "Div D-2", cubierta_ini: "Cub ---", nap_destino: "Nap 11-dic" }],
+    ]),
+    divisores: new Map([["d2", d2]]),
+    hermanos: new Map([["co06", [d1, d2]]]),
+    puertos: new Map([["p3", 3]]),
+    nombres: new Map([["co06", "CO06"]]),
+  })
+  const [conTraza] = distribucion[0].filas
+  comprobar(
+    "distribución: la cubierta «Cub ---» se completa con su nombre y la salida con la de la cubierta",
+    conTraza?.cubierta_ini === "Cub CO06" && conTraza?.num_salida_ini === "Salida 11" && conTraza?.nap_destino === "Nap 11-dic",
+    JSON.stringify(conTraza),
+  )
+  comprobar("los hilos se buscan sin mayúsculas, y los que no están en ninguna traza quedan sin filas", distribucion.length === 3 && distribucion[1].filas.length === 0)
+  const feederArmado = armarTrazas({
+    tipo: "FEEDER",
+    hilos: ["h1", "h9"],
+    trazas: [
+      { id: "t1", id_puerto_inicio: feeder.id_puerto_ini, id_divisor_fin: "d1", path_hilos: ["h1"] },
+      { id: "t2", id_puerto_inicio: "otro-puerto", id_divisor_fin: "sin-cubierta", path_hilos: ["h1"] },
+    ],
+    atributos: new Map([[feeder.id_puerto_ini, feeder]]),
+    divisores: new Map([["d1", d1], ["sin-cubierta", { ...d1, id: "sin-cubierta", id_cubierta_ubica: null }]]),
+    hermanos: new Map(),
+    puertos: new Map(),
+    nombres: new Map([["co06", "CO06"]]),
+  })
+  const [primera, segunda] = feederArmado[0].filas
+  comprobar(
+    "feeder: «Rack Rack 1» → «Rack 1» y «Cub ---» → el nombre de la cubierta del divisor fin",
+    primera?.rack_ubica === "Rack 1" && primera?.cubierta_fin === "Cub CO06" && primera?.tipo_equipo === "TJT 3",
+    JSON.stringify(primera),
+  )
+  comprobar("un hilo en dos trazas tiene dos filas; sin cubierta conocida, queda vacía (no «Cub ---»)", feederArmado[0].filas.length === 2 && segunda?.cubierta_fin === null)
+  comprobar("lo que ya trae dato no se toca", armarTrazas({
+    tipo: "FEEDER",
+    hilos: ["h1"],
+    trazas: [{ id: "t1", id_puerto_inicio: "p", id_divisor_fin: "d1", path_hilos: ["h1"] }],
+    atributos: new Map([["p", { cubierta_fin: "Cub CO01" }]]),
+    divisores: new Map([["d1", d1]]),
+    hermanos: new Map(),
+    puertos: new Map(),
+    nombres: new Map([["co06", "CO06"]]),
+  })[0].filas[0].cubierta_fin === "Cub CO01")
+
+  const leida = clasificarRespuestaTrazas(200, JSON.parse(JSON.stringify({ tipo: "FEEDER", hilos: [{ id: "h1", filas: [fila] }] })), "FEEDER")
+  comprobar("servidor → navegador: la traza llega entera", leida.estado === "ok" && leida.hilos[0].filas[0].tipo_equipo === "TJT 3")
+  const error = clasificarRespuestaTrazas(502, { message: "falla", detalle: "tab_fiber.traza_feeder → 42501: permiso" }, "FEEDER")
+  comprobar("error con su mensaje y su detalle", error.estado === "error" && error.mensaje === "falla" && error.detalle?.includes("traza_feeder"))
+  comprobar("error sin cuerpo: dice el código HTTP", clasificarRespuestaTrazas(500, null, "FEEDER").mensaje.includes("HTTP 500"))
+
+  const pedirTrazas = (id, tipo, token) =>
+    GET_TRAZAS(new Request(`http://local/api/cables/${id}/trazas?tipo=${tipo}`, { headers: token ? { authorization: `Bearer ${token}` } : {} }), {
+      params: Promise.resolve({ id }),
+    })
+  const token = emitirToken("Prueba", "operador")
+  comprobar("la ruta sin sesión: 401", (await pedirTrazas("01a0c524-b611-7fc7-b56e-c93273914aa3", "FEEDER")).status === 401)
+  comprobar("la ruta con un id que no es UUID: 400", (await pedirTrazas("no-es-un-uuid", "FEEDER", token)).status === 400)
+  comprobar("la ruta con otro tipo: 400", (await pedirTrazas("01a0c524-b611-7fc7-b56e-c93273914aa3", "TRONCAL", token)).status === 400)
 }
 
 console.log(`\n${pruebas - fallos} de ${pruebas} comprobaciones pasaron.${fallos ? ` ${fallos} fallaron.` : ""}\n`)

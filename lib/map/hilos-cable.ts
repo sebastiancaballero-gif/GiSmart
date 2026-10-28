@@ -5,12 +5,10 @@ import { fiberColor, fiberColorByName } from "@/lib/schematic/fiber-colors"
  * Hilos de un cable, para «Gestión de hilos» (ribbon: Red de fibra → Hilos).
  *
  * Salen de la función `tab_fiber.fn_get_json_hilos_cable(p_id_cable)` de
- * Carlos, a la que se le pasa el UUID del cable. Hoy trae el número, el buffer,
- * los colores, la tecnología y el estado de cada hilo; él la va a ampliar con
- * lo que mostraba la pantalla del SIG anterior (rack, ODF, puerto, equipo,
- * tarjeta, transporte, destino). La lectura ya acepta esos campos con los
- * nombres más probables, así que aparecen en la grilla en cuanto la función
- * los devuelva.
+ * Carlos, a la que se le pasa el UUID del cable: el número, el buffer, los
+ * colores, la tecnología y el estado de cada hilo. Lo demás de la grilla (la
+ * traza de cada hilo) sale de otra función, una consulta por hilo: ver
+ * `lib/map/traza-hilos.ts`.
  */
 export type HiloDeCable = {
   /** Clave de la fila en la pantalla: el UUID o, si no llega, una propia. */
@@ -25,17 +23,6 @@ export type HiloDeCable = {
   colorBuffer: string | null
   tecnologia: string | null
   estado: string | null
-  // Lo que la función va a agregar. Mientras no venga, queda vacío.
-  nodoOrigen: string | null
-  rack: string | null
-  odf: string | null
-  puerto: string | null
-  rackEquipo: string | null
-  equipo: string | null
-  tarjeta: string | null
-  puertoEquipo: string | null
-  transporta: string | null
-  equipoDestino: string | null
 }
 
 export type ResultadoHilos =
@@ -91,16 +78,6 @@ export function normalizarHilos(datos: unknown): HiloDeCable[] {
       colorBuffer: campo("color_buffer", "colorBuffer"),
       tecnologia: campo("tipo_tecnologia", "tecnologia", "tecno", "tipo_tec"),
       estado: campo("estado_tec", "estado", "est_op", "estado_operativo"),
-      nodoOrigen: campo("nodo_origen", "nodoOrigen"),
-      rack: campo("rack"),
-      odf: campo("odf"),
-      puerto: campo("puerto", "puerto_odf"),
-      rackEquipo: campo("rack_equipo", "rackEquipo"),
-      equipo: campo("equipo"),
-      tarjeta: campo("tarjeta"),
-      puertoEquipo: campo("puerto_equipo", "puertoEquipo"),
-      transporta: campo("transporta", "transporte"),
-      equipoDestino: campo("equipo_destino", "equipoDestino", "destino"),
     }
     // Sin UUID se identifica por su posición; una fila sin número ni UUID no
     // es un hilo que se pueda mostrar.

@@ -401,17 +401,28 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
     ["public", "get_json_conectividad_cubierta_n0", "p_cubierta_id", "Conectividad fina (cubiertas de empalme)", null],
     ["public", "get_json_conectividad_cubierta_n12", "p_cubierta_id", "Conectividad fina (primer y segundo nivel)", null],
     ["tab_fiber", "fn_get_json_hilos_cable", "p_id_cable", "Gestión de hilos", "cable"],
+    // La traza de cada hilo, una por pestaña (el segundo parámetro es el tipo).
+    // La aplicación no la usa mientras falle: lee las mismas tablas (ver COLUMNAS_USADAS).
+    ["tab_fiber", "fn_get_json_hilos", "p_id_hilo", "traza feeder de un hilo (Hilos lee las tablas)", "hilo", { p_tipo_traza: "FEEDER" }],
+    ["tab_fiber", "fn_get_json_hilos", "p_id_hilo", "traza de distribución de un hilo (Hilos lee las tablas)", "hilo", { p_tipo_traza: "DISTRIBUCION" }],
     ["geo_fiber", "fn_json_conectividad_cubierta", "p_uuid_cubierta", "Entradas y salidas", "cubierta"],
     ["geo_fiber", "fn_json_extremos_cable", "p_uuid_cable", "Botón «Cable»", "cable"],
   ]
   // Un cable y una cubierta de primer nivel de verdad, para llamar a las
   // funciones una vez: que existan no basta, el 20-oct-2026 la del botón
   // «Cable» existía y fallaba en todos los cables (cub.etiqueta).
+  const clave = leer("SUPABASE_SECRET_KEY")
+  // Un hilo de una traza feeder: con uno sin traza la función podría no llegar a la consulta que falla.
+  const trazaFeeder = await fetch(`${leer("SUPABASE_URL")}/rest/v1/traza_feeder?select=path_hilos&limit=1`, {
+    headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Accept-Profile": "tab_fiber" },
+  })
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => [])
   const muestra = {
     cable: cables.find((c) => typeof c.id === "string")?.id,
     cubierta: (mufas.find((m) => /primer/i.test(m.funcion_cub ?? "")) ?? mufas[0])?.id,
+    hilo: trazaFeeder[0]?.path_hilos?.[0],
   }
-  const clave = leer("SUPABASE_SECRET_KEY")
   // La descripción de la API de cada esquema (OpenAPI): sus funciones, tablas,
   // vistas y columnas. Solo nombres, ningún dato.
   const docs = new Map()
@@ -424,7 +435,7 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
     }
     return docs.get(esquema)
   }
-  for (const [esquema, funcion, parametro, para, probarCon] of ESPERADAS) {
+  for (const [esquema, funcion, parametro, para, probarCon, otros = {}] of ESPERADAS) {
     const rutas = (await docDe(esquema))?.paths
     if (!rutas) {
       aviso(`no se pudo leer la lista de funciones de ${esquema}`)
@@ -447,7 +458,7 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
         const res = await fetch(`${leer("SUPABASE_URL")}/rest/v1/rpc/${funcion}`, {
           method: "POST",
           headers: { apikey: clave, Authorization: `Bearer ${clave}`, "Content-Profile": esquema, "Content-Type": "application/json" },
-          body: JSON.stringify({ [parametro]: id }),
+          body: JSON.stringify({ [parametro]: id, ...otros }),
         })
         if (!res.ok) {
           const e = await res.json().catch(() => ({}))
@@ -467,9 +478,13 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
     ["geo_fiber", "cubierta_empalme", "id, nivel, funcion_cub", "Conectividad fina, trace"],
     ["geo_fiber", "cable_fibra", "id, codigo, longitud_medida, longitud_calc", "Trace"],
     ["tab_fiber", "hilo_cable", "id, id_cable, numero_hilo, numero_buffer, color_hilo, color_buffer", "Trace, Gestión de hilos"],
-    ["tab_fiber", "element_connection", "id_origen, id_destino, direccion, total_pasos, atenuacion_total_db, path_secuencia, geom_path, fecha_calculo", "Trace, sección distribución"],
-    ["tab_fiber", "puerto_equipo", "id, numero_puerto, nombre, tipo_equipo_pert, id_equipo_pert, dir_principal_senhal", "Trace"],
-    ["tab_fiber", "divisor_optico", "id, num_divisor, cod_divisor, modelo_divisor, id_cubierta_ubica", "Trace, sección distribución"],
+    ["tab_fiber", "element_connection", "id_origen, id_destino, direccion, total_pasos, atenuacion_total_db, path_secuencia, geom_path, fecha_calculo", "Trace"],
+    ["tab_fiber", "puerto_equipo", "id, numero_puerto, nombre, tipo_equipo_pert, id_equipo_pert, dir_principal_senhal", "Trace, Gestión de hilos"],
+    ["tab_fiber", "divisor_optico", "id, num_divisor, cod_divisor, modelo_divisor, id_cubierta_ubica", "Trace, Gestión de hilos"],
+    ["tab_fiber", "traza_feeder", "id, id_puerto_inicio, id_divisor_fin, path_hilos", "Gestión de hilos, sección feeder"],
+    ["tab_fiber", "attr_traza_feeder", "id_puerto_ini, num_puerto_ini", "Gestión de hilos, sección feeder"],
+    ["tab_fiber", "traza_distribucion", "id, id_puerto_inicio, id_divisor_inicio, path_hilos", "Gestión de hilos, sección distribución"],
+    ["tab_fiber", "attr_traza_distribucion", "id_puerto_ini, num_puerto_ini", "Gestión de hilos, sección distribución"],
     ["tab_fiber", "tarjeta_bandeja_eqp", "id, num_slot", "Trace, Gestión de hilos"],
     ["tab_fiber", "equipo_red", "id, codigo, id_cabecera", "Trace"],
     ["geo_infra", "cabecera_central", "id, nombre", "Trace"],
@@ -500,7 +515,7 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
   // que nombreDeCubierta (lib/map/nombre-cubierta.ts) y tarjetaDeFila
   // (lib/map/tarjeta-bandeja.ts).
   const UNA_DE = [
-    ["geo_fiber", "cubierta_empalme", ["etiqueta", "salidas_div1"], "el nombre de las cubiertas", "el mapa las llama «Cubierta <ID>»"],
+    ["geo_fiber", "cubierta_empalme", ["etiqueta", "salidas_div1", "cod_operativo", "cod_inventario"], "el nombre de las cubiertas", "el mapa las llama «Cubierta <ID>»"],
     ["tab_fiber", "tarjeta_bandeja_eqp", ["id_equipo_pert", "id_equipo"], "el equipo de cada tarjeta o bandeja", "el trace y Hilos no llegan a la OLT ni al ODF"],
     ["tab_fiber", "tarjeta_bandeja_eqp", ["tipo_equipo_pert", "tipo_equipo"], "si cada tarjeta es de la OLT o del ODF", "el trace no dice si es OLT u ODF"],
   ]

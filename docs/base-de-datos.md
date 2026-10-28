@@ -51,6 +51,10 @@ fila con su UUID. Se probó a emparejarlos por el orden de creación y solo coin
 | `cabecera_central` | `geo_infra` | Cabeceras centrales (origen de la red). |
 | `get_json_conectividad_cubierta_n0(uuid)` | `public` | Conectividad interna de una cubierta de empalme (`nivel` 0), generada al momento. Lee de `tab_fiber`. |
 | `get_json_conectividad_cubierta_n12(uuid)` | `public` | La misma, para las cubiertas de primer y segundo nivel (`nivel` 1 y 2); trae además `Splitters`. Desde el 19 de octubre de 2026 reemplazan a `get_json_conectividad_cubierta`, que ya no existe. |
+| `fn_get_json_hilos_cable(p_id_cable uuid)` | `tab_fiber` | Los hilos de un cable (número, buffer, colores, tecnología, estado) para «Gestión de hilos». |
+| `fn_get_json_hilos(p_id_hilo uuid, p_tipo_traza varchar)` | `tab_fiber` | La traza de un hilo, con `p_tipo_traza` `'FEEDER'` o `'DISTRIBUCION'`: los campos de las columnas de «Gestión de hilos» desde `num_puerto_ini`. Lee de `traza_feeder` / `traza_distribucion` y de sus atributos `attr_traza_feeder` / `attr_traza_distribucion` (creadas el 26 de octubre de 2026). Devuelve `jsonb`, que no guarda el orden de los campos: el orden de las columnas está en `lib/map/traza-hilos.ts`. Al 27 de octubre falla con los dos tipos (`tf.num_puerto_ini` en FEEDER, alias `t` sin declarar en DISTRIBUCION): la aplicación lee esas tablas directamente. |
+| `traza_feeder` / `traza_distribucion` | `tab_fiber` | Una traza por puerto de inicio, con los hilos por los que pasa en `path_hilos` (uuid[]); feeder termina en `id_divisor_fin`, distribución empieza en `id_divisor_inicio` y termina en `id_cubierta_fin` (la NAP). |
+| `attr_traza_feeder` / `attr_traza_distribucion` | `tab_fiber` | Los atributos ya escritos de cada traza («Puerto 16», «TJT 3», «Div D-1»), por `id_puerto_ini` = `id_puerto_inicio` de la traza. Llegan sin dato: la cubierta («Cub ---», porque su nombre ya no está en `cod_operativo` para las de primer nivel) y `num_salida_ini` (vacía en las 91); el rack dice «Rack Rack 1». |
 
 ### `usuario_app`, recreada en septiembre de 2026
 
