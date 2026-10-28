@@ -8,16 +8,18 @@ import {
   type TrazaPunto,
 } from "./terminal-shape"
 import { Bandeja, GEOMETRIA_BANDEJA, altoBandeja, crearBandeja } from "./tray-shape"
+import { Divisor, GEOMETRIA_DIVISOR, altoDivisor, crearDivisor } from "./splitter-shape"
 import type {
   CableCampoParseado,
   EmpalmeCampoParseado,
   EmpalmeDirecto,
   EmpalmeEnBandeja,
+  EmpalmeEnDivisor,
   HiloCampoParseado,
   MufaCampoParseada,
 } from "./mufa-field-data"
 import { vocabulario, type TerminacionParseada } from "./network-data"
-import { TEMA_CYBER, contornoHilo, type TemaLienzo } from "./tema-lienzo"
+import { TEMA_CLARO, contornoHilo, type TemaLienzo } from "./tema-lienzo"
 
 /**
  * Orquestación del grafo de una MUFA de campo: cables a los lados, bandejas
@@ -249,7 +251,7 @@ export function aplicarEnrutamiento(graph: dia.Graph, modo: ModoEnrutamiento): v
 
 export const cellNamespaceCampo = {
   ...shapes,
-  gismart: { Terminacion, Bandeja, EmpalmeCampo },
+  gismart: { Terminacion, Bandeja, Divisor, EmpalmeCampo },
 }
 
 const DISPOSICION = {
@@ -276,19 +278,23 @@ function separacionTramo(carriles: number): number {
  * empalme pasa una vez por cada hueco, así que todos los huecos alojan tantos
  * carriles como empalmes haya.
  */
+function anchoCentro(mufa: MufaCampoParseada): number {
+  return mufa.conexionPorDivisor ? GEOMETRIA_DIVISOR.ancho : GEOMETRIA_BANDEJA.ancho
+}
+
 function columnas(mufa: MufaCampoParseada) {
   const separacion = separacionTramo(mufa.empalmes.length)
   const xEntrada = DISPOSICION.origenX
   const finEntrada = xEntrada + GEOMETRIA_TERMINACION.ancho
 
   if (mufa.conexionDirecta) {
-    return { xEntrada, xBandeja: null, xSalida: finEntrada + separacion }
+    return { xEntrada, xCentro: null, xSalida: finEntrada + separacion }
   }
-  const xBandeja = finEntrada + separacion
+  const xCentro = finEntrada + separacion
   return {
     xEntrada,
-    xBandeja,
-    xSalida: xBandeja + GEOMETRIA_BANDEJA.ancho + separacion,
+    xCentro,
+    xSalida: xCentro + anchoCentro(mufa) + separacion,
   }
 }
 
@@ -298,15 +304,16 @@ function columnas(mufa: MufaCampoParseada) {
  * para todas las fusiones del tramo.
  */
 function huecosDeTramo(mufa: MufaCampoParseada) {
-  const { xEntrada, xBandeja, xSalida } = columnas(mufa)
+  const { xEntrada, xCentro, xSalida } = columnas(mufa)
   const puertoEntrada = xEntrada + GEOMETRIA_TERMINACION.ancho - GEOMETRIA_TERMINACION.margenPuerto
   const puertoSalida = xSalida + GEOMETRIA_TERMINACION.margenPuerto
+  const margenCentro = mufa.conexionPorDivisor ? GEOMETRIA_DIVISOR.margenPuerto : GEOMETRIA_BANDEJA.margenPuerto
 
-  if (xBandeja === null) return { directo: puertoSalida - puertoEntrada, haciaBandeja: 0, desdeBandeja: 0 }
+  if (xCentro === null) return { directo: puertoSalida - puertoEntrada, haciaCentro: 0, desdeCentro: 0 }
   return {
-    directo: 0,
-    haciaBandeja: xBandeja + GEOMETRIA_BANDEJA.margenPuerto - puertoEntrada,
-    desdeBandeja: puertoSalida - (xBandeja + GEOMETRIA_BANDEJA.ancho - GEOMETRIA_BANDEJA.margenPuerto),
+    directo: puertoSalida - puertoEntrada,
+    haciaCentro: xCentro + margenCentro - puertoEntrada,
+    desdeCentro: puertoSalida - (xCentro + anchoCentro(mufa) - margenCentro),
   }
 }
 
@@ -316,9 +323,12 @@ function altoColumnaCables(cables: CableCampoParseado[]): number {
   return alto + Math.max(0, cables.length - 1) * DISPOSICION.separacionFilas
 }
 
-function altoColumnaBandejas(mufa: MufaCampoParseada): number {
-  const alto = mufa.bandejas.reduce((total, bandeja) => total + altoBandeja(bandeja), 0)
-  return alto + Math.max(0, mufa.bandejas.length - 1) * DISPOSICION.separacionFilas
+function altoColumnaCentro(mufa: MufaCampoParseada): number {
+  const altos = mufa.conexionPorDivisor
+    ? mufa.divisores.map((divisor) => altoDivisor(divisor))
+    : mufa.bandejas.map((bandeja) => altoBandeja(bandeja))
+  const alto = altos.reduce((total, item) => total + item, 0)
+  return alto + Math.max(0, altos.length - 1) * DISPOSICION.separacionFilas
 }
 
 /** Traduce un cable de campo al modelo genérico que dibuja `crearTerminacion`. */
@@ -354,10 +364,10 @@ export function calcularPosicionesCampo(
   const posiciones = new Map<string, { x: number; y: number }>()
   const altoContenido = Math.max(
     altoColumnaCables(mufa.entradas),
-    altoColumnaBandejas(mufa),
+    altoColumnaCentro(mufa),
     altoColumnaCables(mufa.salidas),
   )
-  const { xEntrada, xBandeja, xSalida } = columnas(mufa)
+  const { xEntrada, xCentro, xSalida } = columnas(mufa)
 
   // Cada columna se centra en vertical contra la más alta.
   const colocar = (ids: { id: string; alto: number }[], x: number) => {
@@ -374,11 +384,11 @@ export function calcularPosicionesCampo(
     cables.map((cable) => ({ id: cable.id, alto: altoTerminacion(cableATerminacion(cable)) }))
 
   colocar(deCables(mufa.entradas), xEntrada)
-  if (xBandeja !== null) {
-    colocar(
-      mufa.bandejas.map((bandeja) => ({ id: bandeja.id, alto: altoBandeja(bandeja) })),
-      xBandeja,
-    )
+  if (xCentro !== null) {
+    const piezas = mufa.conexionPorDivisor
+      ? mufa.divisores.map((divisor) => ({ id: divisor.id, alto: altoDivisor(divisor) }))
+      : mufa.bandejas.map((bandeja) => ({ id: bandeja.id, alto: altoBandeja(bandeja) }))
+    colocar(piezas, xCentro)
   }
   colocar(deCables(mufa.salidas), xSalida)
 
@@ -387,7 +397,7 @@ export function calcularPosicionesCampo(
 
 type ExtremoEnlace = { id: string; port: string }
 
-type Tramo = "directo" | "entrada-bandeja" | "bandeja-salida"
+type Tramo = "directo" | "entrada-bandeja" | "bandeja-salida" | "entrada-divisor" | "divisor-salida"
 
 /** Centro absoluto de un puerto, para conocer la altura de cada extremo. */
 function centroPuerto(graph: dia.Graph, extremo: ExtremoEnlace): dia.Point | null {
@@ -423,6 +433,14 @@ function crearSegmento(
     yDestino: centroPuerto(graph, target)?.y,
     attrs: atributosDeEnlace(hex, tema),
   })
+  // Las líneas que pasan por un divisor van punteadas, como en el plano de
+  // la cubierta: se leen aparte de una fusión directa.
+  if (tramo === "entrada-divisor" || tramo === "divisor-salida") {
+    link.attr({
+      line: { strokeDasharray: "5 3" },
+      brillo: { strokeDasharray: "5 3" },
+    })
+  }
   link.addTo(graph)
   return link
 }
@@ -445,7 +463,7 @@ function dibujarEmpalmeEnBandeja(
     { id: empalme.origen.cableId, port: empalme.origen.portId },
     { id: empalme.bandejaId, port: empalme.portIdEntrada },
     hex,
-    huecos.haciaBandeja,
+    huecos.haciaCentro,
     tema,
     "entrada-bandeja",
     meta,
@@ -455,10 +473,32 @@ function dibujarEmpalmeEnBandeja(
     { id: empalme.bandejaId, port: empalme.portIdSalida },
     { id: empalme.destino.cableId, port: empalme.destino.portId },
     hex,
-    huecos.desdeBandeja,
+    huecos.desdeCentro,
     tema,
     "bandeja-salida",
     meta,
+  )
+}
+
+/** Un tramo entre un hilo y el puerto izquierdo o derecho del divisor. */
+function dibujarEmpalmeEnDivisor(
+  graph: dia.Graph,
+  empalme: EmpalmeEnDivisor,
+  huecos: ReturnType<typeof huecosDeTramo>,
+  tema: TemaLienzo,
+): void {
+  const hilo = { id: empalme.hilo.cableId, port: empalme.hilo.portId }
+  const puerto = { id: empalme.divisorId, port: empalme.puertoId }
+  const entrada = empalme.lado === "entrada"
+  crearSegmento(
+    graph,
+    entrada ? hilo : puerto,
+    entrada ? puerto : hilo,
+    empalme.hilo.color.hex,
+    entrada ? huecos.haciaCentro : huecos.desdeCentro,
+    tema,
+    entrada ? "entrada-divisor" : "divisor-salida",
+    { divisorId: empalme.divisorId, numeroPuerto: empalme.numeroPuerto, lado: empalme.lado },
   )
 }
 
@@ -522,15 +562,38 @@ export function etiquetaOrigen(hilo: HiloCampoParseado): string {
 
 /** Etiquetas de trazabilidad de los hilos de salida, por puerto. */
 function trazasDeSalida(mufa: MufaCampoParseada): Map<string, TrazaPunto> {
-  return new Map(
-    mufa.empalmes.map((empalme) => [
-      empalme.destino.portId,
-      {
-        etiqueta: etiquetaOrigen(empalme.origen),
-        detalle: `origen ${empalme.origen.cableCodigo} · Buffer ${empalme.origen.buffer} · Hilo ${empalme.origen.numero}`,
-      },
-    ]),
-  )
+  const entradaDeDivisor = new Map<string, HiloCampoParseado>()
+  for (const empalme of mufa.empalmes) {
+    if (empalme.via === "divisor" && empalme.lado === "entrada" && !entradaDeDivisor.has(empalme.divisorId)) {
+      entradaDeDivisor.set(empalme.divisorId, empalme.hilo)
+    }
+  }
+
+  const trazas = new Map<string, TrazaPunto>()
+  for (const empalme of mufa.empalmes) {
+    if (empalme.via === "divisor") {
+      if (empalme.lado !== "salida") continue
+      const fuente = entradaDeDivisor.get(empalme.divisorId)
+      trazas.set(
+        empalme.hilo.portId,
+        fuente
+          ? {
+              etiqueta: etiquetaOrigen(fuente),
+              detalle: `origen ${fuente.cableCodigo} · Buffer ${fuente.buffer} · Hilo ${fuente.numero} · Divisor ${empalme.numeroDivisor} puerto ${empalme.numeroPuerto}`,
+            }
+          : {
+              etiqueta: `[SRC::Divisor ${empalme.numeroDivisor}-Puerto ${empalme.numeroPuerto}]`,
+              detalle: `salida ${empalme.numeroPuerto} del divisor ${empalme.numeroDivisor}`,
+            },
+      )
+      continue
+    }
+    trazas.set(empalme.destino.portId, {
+      etiqueta: etiquetaOrigen(empalme.origen),
+      detalle: `origen ${empalme.origen.cableCodigo} · Buffer ${empalme.origen.buffer} · Hilo ${empalme.origen.numero}`,
+    })
+  }
+  return trazas
 }
 
 /**
@@ -541,14 +604,14 @@ export function cargarEscenarioCampo(
   graph: dia.Graph,
   mufa: MufaCampoParseada,
   modo: ModoEnrutamiento = "ortogonal",
-  tema: TemaLienzo = TEMA_CYBER,
+  tema: TemaLienzo = TEMA_CLARO,
 ): void {
   graph.clear()
 
   const vocab = vocabulario("mufa")
   const posiciones = calcularPosicionesCampo(mufa)
   const huecos = huecosDeTramo(mufa)
-  const { xEntrada, xBandeja, xSalida } = columnas(mufa)
+  const { xEntrada, xCentro, xSalida } = columnas(mufa)
   const trazas = trazasDeSalida(mufa)
 
   for (const cable of mufa.cables) {
@@ -559,24 +622,37 @@ export function cargarEscenarioCampo(
   }
 
   for (const bandeja of mufa.bandejas) {
-    const en = posiciones.get(bandeja.id) ?? { x: xBandeja ?? 0, y: DISPOSICION.origenY }
+    const en = posiciones.get(bandeja.id) ?? { x: xCentro ?? 0, y: DISPOSICION.origenY }
     crearBandeja(bandeja, en, tema).addTo(graph)
+  }
+
+  for (const divisor of mufa.divisores) {
+    const en = posiciones.get(divisor.id) ?? { x: xCentro ?? 0, y: DISPOSICION.origenY }
+    crearDivisor(divisor, en, tema).addTo(graph)
   }
 
   for (const empalme of mufa.empalmes) {
     if (empalme.via === "directo") dibujarEmpalmeDirecto(graph, empalme, huecos, tema)
+    else if (empalme.via === "divisor") dibujarEmpalmeEnDivisor(graph, empalme, huecos, tema)
     else dibujarEmpalmeEnBandeja(graph, empalme, huecos, tema)
   }
 
   // Los carriles se reparten con todos los enlaces de cada hueco ya creados.
+  // No se usa el router `manhattan`: con muchas fusiones las amontona en la
+  // misma vertical. Cada enlace lleva su propio carril.
   const finEntrada = xEntrada + GEOMETRIA_TERMINACION.ancho
-  const porTramo = (tramo: Tramo) =>
-    graph.getLinks().filter((link) => link.get("tramo") === tramo)
-  if (xBandeja === null) {
+  const porTramo = (...tramos: Tramo[]) =>
+    graph.getLinks().filter((link) => tramos.includes(link.get("tramo") as Tramo))
+  if (xCentro === null) {
     asignarCarriles(porTramo("directo"), finEntrada, xSalida)
   } else {
-    asignarCarriles(porTramo("entrada-bandeja"), finEntrada, xBandeja)
-    asignarCarriles(porTramo("bandeja-salida"), xBandeja + GEOMETRIA_BANDEJA.ancho, xSalida)
+    asignarCarriles(porTramo("entrada-bandeja", "entrada-divisor"), finEntrada, xCentro)
+    asignarCarriles(
+      porTramo("bandeja-salida", "divisor-salida"),
+      xCentro + anchoCentro(mufa),
+      xSalida,
+    )
+    asignarCarriles(porTramo("directo"), finEntrada, xSalida)
   }
 
   for (const link of graph.getLinks()) aplicarEstilo(link, modo)
@@ -586,19 +662,69 @@ export type RegistroEmpalmeCampo = EmpalmeCampoParseado
 
 /** Clave estable de un empalme, para listas de React. */
 export function claveEmpalme(empalme: EmpalmeCampoParseado): string {
-  return empalme.via === "directo"
-    ? `directo-${empalme.numero}`
-    : `${empalme.bandejaId}-${empalme.slot}`
+  if (empalme.via === "directo") return `directo-${empalme.numero}`
+  if (empalme.via === "divisor") return `${empalme.divisorId}-${empalme.lado}-${empalme.puertoId}`
+  return `${empalme.bandejaId}-${empalme.slot}`
+}
+
+function ordenEmpalme(empalme: EmpalmeCampoParseado): number {
+  if (empalme.via === "bandeja") return empalme.numeroBandeja * 1000 + empalme.slot
+  if (empalme.via === "divisor") {
+    return empalme.numeroDivisor * 1000 + (empalme.lado === "entrada" ? 0 : 100) + empalme.numeroPuerto
+  }
+  return 100000 + empalme.numero
 }
 
 export function listarEmpalmesCampo(mufa: MufaCampoParseada): RegistroEmpalmeCampo[] {
-  return [...mufa.empalmes].sort((a, b) => {
-    if (a.via === "directo" && b.via === "directo") return a.numero - b.numero
-    if (a.via === "bandeja" && b.via === "bandeja") {
-      if (a.numeroBandeja !== b.numeroBandeja) return a.numeroBandeja - b.numeroBandeja
-      return a.slot - b.slot
+  return [...mufa.empalmes].sort((a, b) => ordenEmpalme(a) - ordenEmpalme(b))
+}
+
+export type PresentacionEmpalme = {
+  izquierda: { hex: string; etiqueta: string }
+  derecha: { hex: string; etiqueta: string }
+  atenuacion: number
+  traza: string
+  via: string
+  recorrido: string
+  origenCable: string
+  destinoCable: string
+}
+
+const COLOR_PUERTO = "#64748b"
+
+/** Textos de una fila de la lista y del PDF, para los tres tipos de empalme. */
+export function presentarEmpalme(empalme: EmpalmeCampoParseado): PresentacionEmpalme {
+  if (empalme.via === "divisor") {
+    const hilo = { hex: empalme.hilo.color.hex, etiqueta: `H${empalme.hilo.numero}` }
+    const puerto = { hex: COLOR_PUERTO, etiqueta: `P${empalme.numeroPuerto}` }
+    const entrada = empalme.lado === "entrada"
+    return {
+      izquierda: entrada ? hilo : puerto,
+      derecha: entrada ? puerto : hilo,
+      atenuacion: empalme.atenuacion,
+      traza: entrada
+        ? etiquetaOrigen(empalme.hilo)
+        : `[SRC::Divisor ${empalme.numeroDivisor}-Puerto ${empalme.numeroPuerto}]`,
+      via: `Divisor ${empalme.numeroDivisor} · Puerto ${empalme.numeroPuerto} · ${empalme.tipoEmpalme}`,
+      recorrido: entrada
+        ? `${empalme.hilo.cableCodigo} → Divisor ${empalme.numeroDivisor}`
+        : `Divisor ${empalme.numeroDivisor} → ${empalme.hilo.cableCodigo} · B${empalme.hilo.buffer}-H${empalme.hilo.numero}`,
+      origenCable: entrada ? empalme.hilo.cableCodigo : `Divisor ${empalme.numeroDivisor}`,
+      destinoCable: entrada ? `Divisor ${empalme.numeroDivisor}` : empalme.hilo.cableCodigo,
     }
-    // No se mezclan en un mismo modelo, pero si pasara, primero las de bandeja.
-    return a.via === "bandeja" ? -1 : 1
-  })
+  }
+
+  return {
+    izquierda: { hex: empalme.origen.color.hex, etiqueta: `H${empalme.origen.numero}` },
+    derecha: { hex: empalme.destino.color.hex, etiqueta: `H${empalme.destino.numero}` },
+    atenuacion: empalme.atenuacion,
+    traza: etiquetaOrigen(empalme.origen),
+    via:
+      empalme.via === "directo"
+        ? `Fusión directa ${empalme.numero} · ${empalme.tipoEmpalme}`
+        : `Bandeja ${empalme.numeroBandeja} · Slot ${empalme.slot} · ${empalme.tipoEmpalme}`,
+    recorrido: `${empalme.origen.cableCodigo} → ${empalme.destino.cableCodigo} · B${empalme.destino.buffer}-H${empalme.destino.numero}`,
+    origenCable: empalme.origen.cableCodigo,
+    destinoCable: empalme.destino.cableCodigo,
+  }
 }

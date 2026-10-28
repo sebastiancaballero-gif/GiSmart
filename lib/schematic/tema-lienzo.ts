@@ -68,6 +68,32 @@ export const TEMA_CLARO: TemaLienzo = {
 }
 
 /**
+ * Tema oscuro limpio del esquema: fondo `slate-900`, tarjetas `slate-800` y
+ * texto claro. Sin resplandor de neón, para que el interruptor de tema solo
+ * cambie la luminosidad.
+ */
+export const TEMA_OSCURO: TemaLienzo = {
+  oscuro: true,
+  fondo: "#0f172a",
+  grilla: "#334155",
+  superficie: "#1e293b",
+  borde: "#334155",
+  texto: "#f8fafc",
+  textoSuave: "#94a3b8",
+  acentoEntrada: "#38bdf8",
+  acentoSalida: "#818cf8",
+  bordeEntrada: "#334155",
+  bordeSalida: "#334155",
+  acentoBandeja: "#fb923c",
+  acentoTraza: "#67e8f9",
+  sombra: "#020617",
+  neon: false,
+  radioEsquina: 10,
+  fuente: '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif',
+  fuenteMono: FUENTE_MONO,
+}
+
+/**
  * Tema de ingeniería oscuro del esquema de la mufa: `slate-950` de fondo,
  * tarjetas `slate-900` y un acento de neón por rol (cian la entrada, fucsia la
  * salida, ámbar las bandejas). Los cables y sus buffers no proyectan resplandor:
