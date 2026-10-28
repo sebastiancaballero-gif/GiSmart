@@ -10,6 +10,18 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.15.0 — 28 de octubre de 2026
+
+- **Esquema de la cubierta con los cambios de Dario.** El lienzo pasa a ser claro, con un
+  botón para verlo oscuro. Las cubiertas con divisores instalados (`can_div_inst` > 0) los
+  dibujan en el centro, con el tramo de cada hilo hasta su puerto.
+- Hoy la función de conectividad no manda `Splitters`, la descripción de cada divisor. Por
+  eso, en las 179 cubiertas con divisores, estos se dibujan vacíos (1x8) y las 232 fusiones
+  a un puerto de divisor quedan con su aviso. Las 561 fusiones entre hilos se dibujan igual
+  que antes. Cuando la base mande `Splitters`, esos tramos se dibujan solos.
+- `pnpm run conectividad` cuenta también las fusiones a divisores y cuántos divisores
+  llegan sin describir.
+
 ## 1.14.1 — 28 de octubre de 2026
 
 - **«Conectividad fina» usa la función nueva `get_esquema_cubierta_json(p_cubierta_id)`**,

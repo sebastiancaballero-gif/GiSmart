@@ -397,7 +397,11 @@ const { parseMufaData } = await import("../lib/schematic/mufa-field-data.ts")
 const porEstado = new Map()
 const motivos = new Map()
 // Cada fusión entre dos hilos se dibuja o queda en un aviso «ignorada»: ninguna se pierde callada.
-const fusiones = { total: 0, dibujadas: 0, avisadas: 0 }
+// En las cubiertas con divisores (`can_div_inst` > 0) cuentan también las que
+// van a un puerto de divisor; en las demás esas se apartan con un solo aviso.
+const fusiones = { total: 0, dibujadas: 0, avisadas: 0, aDivisor: 0 }
+const divisores = { cubiertas: 0, sinDescribir: 0 }
+const esPuerto = (x) => !!x && x.hilo_id == null && (x.puerto_id != null || x.splitter_id != null)
 for (let i = 0; i < mufas.length; i += 8) {
   const lote = await Promise.all(mufas.slice(i, i + 8).map((m) => consultarRuta(m.id).then((r) => [m, r])))
   for (const [m, r] of lote) {
@@ -411,7 +415,13 @@ for (let i = 0; i < mufas.length; i += 8) {
       const crudas = e.Conectividades ?? (e.Bandejas ?? e.bandejas ?? []).flatMap((b) => b.Slots ?? b.Empalmes_internos ?? b.Conectividades ?? [])
       fusiones.total += crudas.filter((x) => x.origen?.hilo_id != null && x.destino?.hilo_id != null).length
       const dibujo = parseMufaData(e)
+      if (dibujo.conexionPorDivisor) {
+        fusiones.total += crudas.filter((x) => esPuerto(x.origen) || esPuerto(x.destino)).length
+        divisores.cubiertas++
+        divisores.sinDescribir += dibujo.avisos.filter((a) => /el JSON no lo describe/.test(a)).length
+      }
       fusiones.dibujadas += dibujo.empalmes.length
+      fusiones.aDivisor += dibujo.empalmes.filter((x) => x.via === "divisor").length
       fusiones.avisadas += dibujo.avisos.filter((a) => / ignorada: /.test(a)).length
     }
   }
@@ -423,9 +433,12 @@ for (const [estado, lista] of porEstado) console.log(`          ${estado.padEnd(
 for (const [m, n] of motivos) console.log(`          · ${n} por «${m}»`)
 comprobarConCables(
   fusiones.total > 0,
-  `las fusiones entre hilos se dibujan: ${fusiones.dibujadas} de ${fusiones.total} (${fusiones.avisadas} con su aviso)`,
+  `las fusiones se dibujan: ${fusiones.dibujadas} de ${fusiones.total} (${fusiones.aDivisor} a un divisor, ${fusiones.avisadas} con su aviso)`,
   fusiones.dibujadas > 0 && fusiones.dibujadas + fusiones.avisadas === fusiones.total,
 )
+// La función no manda `Splitters`: los divisores instalados se dibujan vacíos
+// y las fusiones a sus puertos quedan con aviso hasta que los mande.
+console.log(`          ${divisores.cubiertas} cubiertas con divisores; ${divisores.sinDescribir} divisores sin describir en el JSON`)
 
 // --- 7. entradas y salidas ---------------------------------------------------
 console.log("\n7) ENTRADAS Y SALIDAS (FUNCIÓN DE CABLES DE CARLOS)\n")
