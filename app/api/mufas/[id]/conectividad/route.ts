@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server"
-import { FUNCION_CONECTIVIDAD } from "@/lib/map/conectividad"
+import { FUNCION_CONECTIVIDAD, FUNCION_CONECTIVIDAD_RESPALDO } from "@/lib/map/conectividad"
 import { responderConFuncion } from "@/lib/supabase-servidor"
 
 /**
  * Conectividad interna de una cubierta (bandejas, empalmes e hilos), generada
- * por `public.get_json_conectividad_cubierta_n0` para todas las cubiertas, sea
- * cual sea su nivel (ver `FUNCION_CONECTIVIDAD`). Antes las de primer y segundo
- * nivel iban con `_n12` y se leía el nivel en `geo_fiber.cubierta_empalme`.
+ * por `public.get_esquema_cubierta_json` en modo consulta (sin `p_mode`) para
+ * todas las cubiertas, sea cual sea su nivel; si falla en la base, responde
+ * `get_esquema_cubierta_view_json` (ver `FUNCION_CONECTIVIDAD`). Antes fue
+ * `get_json_conectividad_cubierta_n0` y, para las de primer y segundo nivel,
+ * `_n12` (se leía el nivel en `geo_fiber.cubierta_empalme`).
  *
  * El ingeniero de backend la pensó para llamarla desde el navegador con
  * `supabase.rpc(...)`. Aquí va por el servidor, como todo lo demás: la clave
@@ -22,6 +24,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     params,
     idInvalido: "El identificador de la cubierta no es válido.",
     funcion: FUNCION_CONECTIVIDAD,
+    respaldo: FUNCION_CONECTIVIDAD_RESPALDO,
     argumento: "p_cubierta_id",
     mensajes: {
       nombre: "conectividad",

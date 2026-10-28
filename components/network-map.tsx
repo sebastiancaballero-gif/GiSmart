@@ -112,6 +112,7 @@ import { LimiteDeError } from "@/components/limite-de-error"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { AyudaAtajos } from "@/components/ayuda-atajos"
 import {
+  FUNCION_CONECTIVIDAD,
   crearConsultor,
   obtenerConectividad,
   resultadoAGuardar,
@@ -715,7 +716,7 @@ function MapaDeRed({
         setAvisoConsulta({
           texto: `${nombre}: ${resultado.mensaje}`,
           // La función que falló, si la ruta la informó (FUNCION_CONECTIVIDAD).
-          detalle: `${resultado.funcion ?? "get_json_conectividad_cubierta_n0"}${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
+          detalle: `${resultado.funcion ?? FUNCION_CONECTIVIDAD}${resultado.detalle ? ` → ${resultado.detalle}` : ""}`,
           tono: "error",
         })
       }

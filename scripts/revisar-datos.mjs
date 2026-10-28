@@ -357,16 +357,24 @@ if (!mufas.length) {
   console.log("   sin mufas que consultar")
 } else {
   const publico = createClient(leer("SUPABASE_URL"), leer("SUPABASE_SECRET_KEY"))
-  const resultado = { activo: 0, gris: 0, error: 0 }
+  const resultado = { activo: 0, gris: 0, error: 0, respaldo: 0 }
   let primerError = null
+  let errorDeLaNueva = null
   const ejemplos = []
   // De ocho en ocho: consultarlas una por una tardaba más de medio minuto.
   for (let i = 0; i < mufas.length; i += 8) {
     await Promise.all(
       mufas.slice(i, i + 8).map(async (m) => {
-        // La misma función para todas, como la ruta (FUNCION_CONECTIVIDAD en lib/map/conectividad.ts).
-        const funcion = "get_json_conectividad_cubierta_n0"
-        const { data, error } = await publico.rpc(funcion, { p_cubierta_id: m.id })
+        // Como la ruta (FUNCION_CONECTIVIDAD y su respaldo en lib/map/conectividad.ts):
+        // la misma función para todas y, si falla, la de consulta que ella llama.
+        let funcion = "get_esquema_cubierta_json"
+        let { data, error } = await publico.rpc(funcion, { p_cubierta_id: m.id })
+        if (error) {
+          errorDeLaNueva ??= `${error.code} ${error.message}`
+          resultado.respaldo++
+          funcion = "get_esquema_cubierta_view_json"
+          ;({ data, error } = await publico.rpc(funcion, { p_cubierta_id: m.id }))
+        }
         if (error) {
           resultado.error++
           primerError ??= `${funcion} → ${error.code} ${error.message}`
@@ -381,6 +389,9 @@ if (!mufas.length) {
   }
   console.log(`   botón activo  : ${resultado.activo}${ejemplos.length ? "  ej. " + ejemplos.join(", ") : ""}`)
   console.log(`   botón en gris : ${resultado.gris}`)
+  if (resultado.respaldo) {
+    aviso(`get_esquema_cubierta_json falló en ${resultado.respaldo} mufa(s) y respondió get_esquema_cubierta_view_json: ${errorDeLaNueva}`)
+  }
   if (resultado.error) aviso(`${resultado.error} mufa(s) dieron error al pedir la conectividad: ${primerError}`)
   if (conexiones.length && resultado.activo === 0) {
     aviso("hay conexiones cargadas pero ninguna mufa devuelve cables: revisar la cadena del punto 4 o la función")
@@ -389,7 +400,8 @@ if (!mufas.length) {
 
 // --- 6. Funciones y tipos que usa la aplicación ------------------------------
 // La base ha cambiado nombres sin aviso (get_json_conectividad_cubierta pasó a
-// _n0/_n12, fn_obtener_hilos_cable_json a fn_get_json_hilos_cable, los tipos de
+// _n0/_n12 y luego a get_esquema_cubierta_view_json, fn_obtener_hilos_cable_json
+// a fn_get_json_hilos_cable, los tipos de
 // puerto DIV/TJT/BDJ a DIV_N1, TJT_OLT…), y cada cambio dejó una ventana con
 // error. Aquí se comprueba que sigan las funciones que se llaman, con sus
 // parámetros, y que los tipos de puerto sean de las familias que entiende el trace.
@@ -398,8 +410,8 @@ console.log("\n6) FUNCIONES, COLUMNAS, VISTAS Y TIPOS QUE USA LA APLICACIÓN\n")
   // El último dato: con qué se prueba que responde (las de Conectividad fina ya
   // se llamaron con todas las cubiertas en el punto 5).
   const ESPERADAS = [
-    ["public", "get_json_conectividad_cubierta_n0", "p_cubierta_id", "Conectividad fina (cubiertas de empalme)", null],
-    ["public", "get_json_conectividad_cubierta_n12", "p_cubierta_id", "Conectividad fina (primer y segundo nivel)", null],
+    ["public", "get_esquema_cubierta_json", "p_cubierta_id", "Conectividad fina", "cubierta"],
+    ["public", "get_esquema_cubierta_view_json", "p_cubierta_id", "Conectividad fina, respaldo mientras la otra falle", null],
     ["tab_fiber", "fn_get_json_hilos_cable", "p_id_cable", "Gestión de hilos", "cable"],
     // La traza de cada hilo, una por pestaña (el segundo parámetro es el tipo).
     // La aplicación no la usa mientras falle: lee las mismas tablas (ver COLUMNAS_USADAS).

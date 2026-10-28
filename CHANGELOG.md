@@ -10,6 +10,19 @@ versión y se anota aquí.
 - **El primero** sube con cambios grandes que piden algo nuevo de la base o del servidor
   (1.x → 2.0.0).
 
+## 1.14.1 — 28 de octubre de 2026
+
+- **«Conectividad fina» usa la función nueva `get_esquema_cubierta_json(p_cubierta_id)`**,
+  en modo consulta (sin `p_mode`). Con `'EDIT'` es para editar; se usará cuando exista
+  la edición. La base quitó `get_json_conectividad_cubierta_n0` y con la 1.14.0 el botón
+  respondía «la función no existe».
+- Al 28 de octubre la nueva falla en la base (llama a `get_cubierta_schema_view_json`, que
+  no existe; la real es `get_esquema_cubierta_view_json`). Mientras tanto responde
+  `get_esquema_cubierta_view_json`, con el mismo formato, y el fallo queda en el registro
+  del servidor. Cuando la arreglen, se usa sola. Probado con las 185 cubiertas: 184
+  responden con cables, 1 sin cables registrados, ninguna con error.
+- `pnpm run datos` prueba la función nueva y avisa mientras responda el respaldo.
+
 ## 1.14.0 — 27 de octubre de 2026
 
 **Gestión de hilos con la traza de la base** (Red de fibra → Hilos):

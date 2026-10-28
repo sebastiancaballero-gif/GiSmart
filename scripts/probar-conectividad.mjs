@@ -679,10 +679,10 @@ console.log("\n9) EL BOTÓN «CABLE»: SU MUFA DE ENTRADA Y SU MUFA DE SALIDA\n"
   }
 }
 
-// --- 10. la función de conectividad (_n0 para todos los niveles) --------------
-console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD (_n0 PARA TODOS LOS NIVELES)\n")
+// --- 10. la función de conectividad (la misma para todos los niveles) --------
+console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD (get_esquema_cubierta_json, TODOS LOS NIVELES)\n")
 {
-  // El formato de _n0 y _n12: las fusiones sueltas (sin bandejas) y puntas en puertos de divisor.
+  // El formato de la función (antes _n0 y _n12): las fusiones sueltas (sin bandejas) y puntas en puertos de divisor.
   const hilos = (desde, n) => Array.from({ length: n }, (_, i) => ({ hilo_id: `h${desde + i}`, numero: i + 1, color: "Azul" }))
   const plano = {
     mufa_id: "m",
@@ -721,10 +721,14 @@ console.log("\n10) LA FUNCIÓN DE CONECTIVIDAD (_n0 PARA TODOS LOS NIVELES)\n")
   )
 }
 {
-  const { FUNCION_CONECTIVIDAD } = await import("../lib/map/conectividad.ts")
-  comprobar("todas las cubiertas van con _n0", FUNCION_CONECTIVIDAD === "get_json_conectividad_cubierta_n0")
+  const { FUNCION_CONECTIVIDAD, FUNCION_CONECTIVIDAD_RESPALDO } = await import("../lib/map/conectividad.ts")
+  comprobar(
+    "todas las cubiertas van con get_esquema_cubierta_json (respaldo: get_esquema_cubierta_view_json)",
+    FUNCION_CONECTIVIDAD === "get_esquema_cubierta_json" && FUNCION_CONECTIVIDAD_RESPALDO === "get_esquema_cubierta_view_json",
+  )
 
-  // Con la base real: una cubierta de cada nivel responde por la ruta.
+  // Con la base real: una cubierta de cada nivel responde por la ruta (con la
+  // nueva o, mientras falle en la base, con su respaldo).
   const conNivel = mufas
   for (const nivel of [0, 1, 2]) {
     const cubierta = conNivel.find((c) => c.nivel === nivel)

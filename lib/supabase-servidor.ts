@@ -140,6 +140,7 @@ export async function responderConFuncion({
   mensajes,
   sinConexion,
   responder,
+  respaldo,
 }: {
   request: Request
   params: Promise<{ id: string }>
@@ -153,6 +154,13 @@ export async function responderConFuncion({
   /** Qué decir si no se pudo hablar con Supabase. */
   sinConexion: string
   responder: (data: unknown) => NextResponse
+  /**
+   * Otra función, con el mismo argumento, por si la principal falla en la base
+   * (una función nueva que todavía no está bien): se responde con la suya y el
+   * fallo de la principal queda en el registro del servidor. Si las dos fallan,
+   * el aviso lleva el error de las dos.
+   */
+  respaldo?: string
 }): Promise<NextResponse> {
   const sinSesion = exigirSesion(request)
   if (sinSesion) return sinSesion
@@ -171,9 +179,19 @@ export async function responderConFuncion({
       // ha renombrado funciones sin aviso y así se encuentra el cambio enseguida.
       const pista = error.hint ? ` (${error.hint})` : ""
       console.error(`[${funcion} ${id}] ${error.code} ${error.message}${pista}`)
+      let detalle = `${error.code}: ${error.message}${pista}`
+      if (respaldo) {
+        const otra = await cliente.rpc(respaldo, { [argumento]: id })
+        if (!otra.error) {
+          console.warn(`[${funcion} ${id}] respondió ${respaldo}`)
+          return responder(otra.data)
+        }
+        console.error(`[${respaldo} ${id}] ${otra.error.code} ${otra.error.message}`)
+        detalle += ` · ${respaldo} → ${otra.error.code}: ${otra.error.message}`
+      }
       // `funcion`: cuál falló, para la línea de detalle del aviso (una ruta puede elegir entre varias).
       return NextResponse.json(
-        { message: mensajeDeFuncion(error.code, mensajes), funcion, ...detalleSoloEnDesarrollo(`${error.code}: ${error.message}${pista}`) },
+        { message: mensajeDeFuncion(error.code, mensajes), funcion, ...detalleSoloEnDesarrollo(detalle) },
         { status: 502 },
       )
     }

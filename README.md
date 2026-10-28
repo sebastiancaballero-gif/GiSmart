@@ -174,7 +174,7 @@ Esto es deliberado por tres razones:
 | `GET /api/mufas` | Devuelve un `FeatureCollection` con las cubiertas de empalme. |
 | `GET /api/fiber-cables` | Devuelve un `FeatureCollection` con los cables de fibra. |
 | `GET /api/cabeceras` | Devuelve un `FeatureCollection` con las cabeceras centrales. |
-| `GET /api/mufas/{id}/conectividad` | Conectividad interna de una cubierta, generada por `get_json_conectividad_cubierta_n0` para todas las cubiertas, sea cual sea su nivel (desde la 1.13.1; antes las de primer y segundo nivel iban con `_n12`). Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
+| `GET /api/mufas/{id}/conectividad` | Conectividad interna de una cubierta, generada por `get_esquema_cubierta_json` en modo consulta para todas las cubiertas, sea cual sea su nivel; mientras esa falle en la base responde `get_esquema_cubierta_view_json`, con el mismo formato (desde la 1.14.1; antes `get_json_conectividad_cubierta_n0`, y hasta la 1.13.1 las de primer y segundo nivel iban con `_n12`). Solo se pide al consultar una cubierta con el botón «Conectividad fina»; elegir una mufa no la pide. Es solo lectura. |
 | `GET /api/mufas/{id}/cables` | Cables de entrada y salida de una mufa, según `geo_fiber.fn_json_conectividad_cubierta(p_uuid_cubierta)`. Devuelve solo UUID, sentido y color de cada cable. Solo lectura. |
 | `GET /api/cables/{id}/extremos` | Extremos de un cable (dónde sale y dónde entra), según `geo_fiber.fn_json_extremos_cable(p_uuid_cable)`. Solo lectura. |
 | `GET /api/cables/{id}/hilos` | Hilos de un cable para «Gestión de hilos», según `fn_get_json_hilos_cable`. Solo lectura. |
@@ -733,7 +733,9 @@ Cosas que conviene tener presentes antes de dar el proyecto por terminado:
   cubiertas); las aparta con un solo aviso por cubierta («N conexiones con puertos de
   divisor no se dibujan»), antes era uno «undefined no existe» por conexión
   (`lib/schematic/mufa-field-data.ts`, de Dario). Desde el 19 de octubre de 2026 la
-  conectividad sale de `get_json_conectividad_cubierta_n0` y `_n12`, según el nivel.
+  conectividad sale de `get_json_conectividad_cubierta_n0` y `_n12`, según el nivel; desde
+  el 28 de octubre, de `get_esquema_cubierta_json`, para todas (con
+  `get_esquema_cubierta_view_json` de respaldo mientras la nueva falle).
 - **Contraseñas**: al recrearse `usuario_app` no se sabe en qué formato quedaron. Las
   que estén en texto plano se migran solas a hash cuando esa persona entre, o de una
   vez con `node scripts/migrar-claves.mjs --aplicar`.

@@ -49,8 +49,9 @@ fila con su UUID. Se probó a emparejarlos por el orden de creación y solo coin
 | `cubierta_empalme` | `geo_fiber` | Cubiertas de empalme (mufas). |
 | `cable_fibra` | `geo_fiber` | Cables de fibra. |
 | `cabecera_central` | `geo_infra` | Cabeceras centrales (origen de la red). |
-| `get_json_conectividad_cubierta_n0(uuid)` | `public` | Conectividad interna de una cubierta de empalme (`nivel` 0), generada al momento. Lee de `tab_fiber`. |
-| `get_json_conectividad_cubierta_n12(uuid)` | `public` | La misma, para las cubiertas de primer y segundo nivel (`nivel` 1 y 2); trae además `Splitters`. Desde el 19 de octubre de 2026 reemplazan a `get_json_conectividad_cubierta`, que ya no existe. |
+| `get_esquema_cubierta_json(p_cubierta_id uuid, p_mode varchar)` | `public` | El esquema de una cubierta para el esquemático de Dario (cables, `Conectividades`, `can_band_inst`, `can_div_inst`), generado al momento, para cualquier nivel: el botón «Conectividad fina». Sin `p_mode` es en modo consulta; con `'EDIT'`, para editar. Desde el 28 de octubre de 2026 reemplaza a `get_json_conectividad_cubierta_n0` y `_n12` (que ya no existen). Ese día falla: llama a `get_cubierta_schema_view_json` / `_edit_json`, que no existen (las reales son `get_esquema_cubierta_view_json` / `_edit_json`). |
+| `get_esquema_cubierta_view_json(p_cubierta_id uuid)` | `public` | La de consulta que la anterior debería llamar, con el mismo formato. Responde mientras la anterior falle. |
+| `get_esquema_cubierta_edit_json(p_cubierta_id uuid)` | `public` | La de edición. Falla: `relation "conexion_fina" does not exist`. La aplicación todavía no edita. |
 | `fn_get_json_hilos_cable(p_id_cable uuid)` | `tab_fiber` | Los hilos de un cable (número, buffer, colores, tecnología, estado) para «Gestión de hilos». |
 | `fn_get_json_hilos(p_id_hilo uuid, p_tipo_traza varchar)` | `tab_fiber` | La traza de un hilo, con `p_tipo_traza` `'FEEDER'` o `'DISTRIBUCION'`: los campos de las columnas de «Gestión de hilos» desde `num_puerto_ini`. Lee de `traza_feeder` / `traza_distribucion` y de sus atributos `attr_traza_feeder` / `attr_traza_distribucion` (creadas el 26 de octubre de 2026). Devuelve `jsonb`, que no guarda el orden de los campos: el orden de las columnas está en `lib/map/traza-hilos.ts`. Al 27 de octubre falla con los dos tipos (`tf.num_puerto_ini` en FEEDER, alias `t` sin declarar en DISTRIBUCION): la aplicación lee esas tablas directamente. |
 | `traza_feeder` / `traza_distribucion` | `tab_fiber` | Una traza por puerto de inicio, con los hilos por los que pasa en `path_hilos` (uuid[]); feeder termina en `id_divisor_fin`, distribución empieza en `id_divisor_inicio` y termina en `id_cubierta_fin` (la NAP). |
@@ -98,7 +99,8 @@ sigue fallando).
 
 Acordado con Aurelio el 15 de septiembre de 2026:
 
-1. **Carlos** (backend) mantiene `get_json_conectividad_cubierta`. Genera el JSON en el
+1. **Carlos** (backend) mantiene la función de conectividad (hoy
+   `get_esquema_cubierta_json`; antes `get_json_conectividad_cubierta`). Genera el JSON en el
    momento a partir de la conectividad registrada, así que cambia con cada cubierta.
 2. **GISmart** solo hace de intermediario. Le manda a la función el UUID de la
    cubierta, recibe el JSON y se lo pasa al esquemático. Solo pregunta cuando se consulta una

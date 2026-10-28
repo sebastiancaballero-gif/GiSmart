@@ -19,13 +19,19 @@ import { ErrorDatosMufaCampo, parseMufaData, type MufaCampoJSON } from "@/lib/sc
  */
 
 /**
- * La función de la base que genera la conectividad. Va `_n0` para todas las
- * cubiertas, sea cual sea su nivel: así lo pidió el equipo el 21 de octubre de
- * 2026, cuando `_n12` (primer y segundo nivel) empezó a fallar con «column
- * c.cant_div does not exist». Reemplaza a `get_json_conectividad_cubierta`,
- * que ya no existe.
+ * La función de la base que genera el esquema de la cubierta para el
+ * esquemático, la misma para todas sea cual sea su nivel:
+ * `public.get_esquema_cubierta_json(p_cubierta_id, p_mode)`. Sin `p_mode` es en
+ * modo consulta; con `'EDIT'`, para editar (cuando exista la edición en la
+ * aplicación). Reemplaza desde el 28 de octubre de 2026 a
+ * `get_json_conectividad_cubierta_n0`, que ya no existe.
+ *
+ * Ese día la nueva falla en la base (llama a `get_cubierta_schema_view_json`,
+ * que no existe), así que mientras tanto responde la de consulta que ella
+ * debería llamar, `get_esquema_cubierta_view_json`, con el mismo formato.
  */
-export const FUNCION_CONECTIVIDAD = "get_json_conectividad_cubierta_n0"
+export const FUNCION_CONECTIVIDAD = "get_esquema_cubierta_json"
+export const FUNCION_CONECTIVIDAD_RESPALDO = "get_esquema_cubierta_view_json"
 
 /**
  * Para qué se abre la conectividad: solo verla o poder cambiarla.

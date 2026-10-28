@@ -108,9 +108,9 @@ export type MufaCampoJSON = {
   /** Formato nuevo (clave capitalizada). */
   Bandejas?: BandejaCampoJSON[]
   /**
-   * Fusiones en la raíz, sin bandeja: así llegan de las funciones por nivel
-   * (`get_json_conectividad_cubierta_n0` y `_n12`) y en las cubiertas sin
-   * bandejas.
+   * Fusiones en la raíz, sin bandeja: así llegan de la función de conectividad
+   * (`get_esquema_cubierta_json`, antes `get_json_conectividad_cubierta_n0` y
+   * `_n12`) y en las cubiertas sin bandejas.
    */
   Conectividades?: ConectividadCampoJSON[]
   /** Divisores de la cubierta (`_n12`). El esquema todavía no los dibuja. */
