@@ -377,7 +377,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
             className={`relative h-4 w-8 rounded-full ${oscuro ? "bg-sky-500" : "bg-slate-300"}`}
           >
             <span
-              className={`absolute top-0.5 size-3 rounded-full bg-white transition-transform ${oscuro ? "translate-x-4" : "translate-x-0.5"}`}
+              className={`absolute left-0 top-0.5 size-3 rounded-full bg-white transition-transform ${oscuro ? "translate-x-4" : "translate-x-0.5"}`}
             />
           </span>
           <span className={oscuro ? "text-slate-100" : "text-slate-400"}>Oscuro</span>
