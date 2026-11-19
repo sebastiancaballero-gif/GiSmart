@@ -35,7 +35,7 @@ export const GEOMETRIA_TERMINACION = {
   /** Alto de la fila que rotula cada grupo. */
   altoEtiquetaGrupo: 15,
   margenGrupoY: 6,
-  separacionGrupos: 12,
+  separacionGrupos: 24,
   /** Separación vertical entre puntos. */
   separacionPuntos: 18,
   /** Largo de la hebra de color que representa al punto. */

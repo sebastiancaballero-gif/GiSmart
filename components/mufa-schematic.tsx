@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { dia } from "@joint/core"
 import {
   AlertTriangle,
@@ -22,13 +22,14 @@ import {
   aplicarEnrutamiento,
   cargarEscenarioCampo,
   cellNamespaceCampo,
-  claveEmpalme,
-  listarEmpalmesCampo,
-  presentarEmpalme,
-  resaltarEmpalmeCampo,
   type ModoEnrutamiento,
-  type RegistroEmpalmeCampo,
 } from "@/lib/schematic/mufa-field-graph"
+import {
+  listarRutasEmpalme,
+  tituloRuta,
+  tramosDeRuta,
+  type RutaEmpalme,
+} from "@/lib/schematic/rutas-empalme"
 import { TEMA_CLARO, TEMA_OSCURO } from "@/lib/schematic/tema-lienzo"
 
 type MufaSchematicProps = {
@@ -83,7 +84,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
   // el lienzo: así los cables, las bandejas y los empalmes ya están resueltos
   // cuando JointJS dibuja por primera vez.
   const mufa = useMemo(() => parseMufaData(datos), [datos])
-  const empalmes = useMemo(() => listarEmpalmesCampo(mufa), [mufa])
+  const rutas = useMemo(() => listarRutasEmpalme(mufa), [mufa])
 
   const pdf = useExportarPdf()
 
@@ -152,9 +153,6 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
 
     graphRef.current = graph
     paperRef.current = paper
-
-    paper.on("link:mouseenter", (linkView) => resaltarEmpalmeCampo(linkView, true))
-    paper.on("link:mouseleave", (linkView) => resaltarEmpalmeCampo(linkView, false))
 
     let paneo: { clientX: number; clientY: number; tx: number; ty: number } | null = null
 
@@ -247,24 +245,15 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
         : `${mufa.bandejasInstaladas} bandejas`
     void exportar({
       titulo: `Reporte de empalmes · MUFA ${mufa.id}`,
-      subtitulo: `${mufa.tipo} · ${mufa.estado} · ${mufa.cables.length} cables · ${empalmes.length} empalmes · ${conexion} · ${new Date().toLocaleString("es")}`,
+      subtitulo: `${mufa.tipo} · ${mufa.estado} · ${mufa.cables.length} cables · ${rutas.length} rutas · ${conexion} · ${new Date().toLocaleString("es")}`,
       nombreArchivo: nombreArchivoPdf(mufa.id),
-      filas: empalmes.map((empalme) => {
-        const fila = presentarEmpalme(empalme)
-        return {
-          origenHilo: fila.izquierda.etiqueta,
-          origenColor: fila.izquierda.hex,
-          origenCable: fila.origenCable,
-          destinoHilo: fila.derecha.etiqueta,
-          destinoColor: fila.derecha.hex,
-          destinoCable: fila.destinoCable,
-          traza: fila.traza,
-          via: fila.via,
-          atenuacion: String(fila.atenuacion),
-        }
-      }),
+      filas: rutas.map((ruta) => ({
+        titulo: tituloRuta(ruta),
+        atenuacion: String(ruta.atenuacion),
+        tramos: tramosDeRuta(ruta),
+      })),
     })
-  }, [exportar, mufa, empalmes])
+  }, [exportar, mufa, rutas])
 
   // El lienzo ocupa "100%" del contenedor, pero al cambiar de tamaño hay que
   // recalcular el encuadre para que el esquema aproveche el espacio nuevo.
@@ -330,7 +319,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
             {mufa.id}
           </h2>
           <p className={`text-[11px] ${oscuro ? "text-slate-400" : "text-slate-500"}`}>
-            {mufa.tipo} · {mufa.estado} · {mufa.cables.length} cables · {empalmes.length}{" "}
+            {mufa.tipo} · {mufa.estado} · {mufa.cables.length} cables · {mufa.empalmes.length}{" "}
             empalmes
           </p>
         </div>
@@ -475,7 +464,7 @@ export function MufaSchematic({ datos, modo = "consulta", className }: MufaSchem
           aria-label={`Esquema de empalmes de ${mufa.id}`}
         />
         <ListaEmpalmes
-          empalmes={empalmes}
+          rutas={rutas}
           conexionDirecta={mufa.conexionDirecta}
           conexionPorDivisor={mufa.conexionPorDivisor}
           oscuro={oscuro}
@@ -509,27 +498,41 @@ function AvisosDatos({ avisos, oscuro }: { avisos: string[]; oscuro: boolean }) 
   )
 }
 
+function claseTitulo(ruta: RutaEmpalme, oscuro: boolean): string {
+  if (ruta.tipo === "divisor") {
+    return oscuro ? "border-sky-400/40 bg-sky-500/10 text-sky-200" : "border-sky-300 bg-sky-50 text-sky-800"
+  }
+  if (ruta.tipo === "bandeja") {
+    return oscuro
+      ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+      : "border-amber-300 bg-amber-50 text-amber-800"
+  }
+  return oscuro
+    ? "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-200"
+    : "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800"
+}
+
 function ListaEmpalmes({
-  empalmes,
+  rutas,
   conexionDirecta,
   conexionPorDivisor,
   oscuro,
 }: {
-  empalmes: RegistroEmpalmeCampo[]
+  rutas: RutaEmpalme[]
   conexionDirecta: boolean
   conexionPorDivisor: boolean
   oscuro: boolean
 }) {
   return (
-    <aside className={`flex w-80 shrink-0 flex-col border-l ${oscuro ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+    <aside className={`flex w-96 shrink-0 flex-col border-l ${oscuro ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
       <h3 className={`flex items-center justify-between border-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-widest ${oscuro ? "border-slate-700 text-sky-300" : "border-slate-200 text-sky-700"}`}>
         Empalmes
         <span className={`border px-2 py-0.5 tabular-nums ${oscuro ? "border-slate-600 text-slate-300" : "border-slate-300 text-slate-600"}`}>
-          {empalmes.length}
+          {rutas.length}
         </span>
       </h3>
 
-      {empalmes.length === 0 ? (
+      {rutas.length === 0 ? (
         <p className={`px-4 py-4 text-xs ${oscuro ? "text-slate-400" : "text-slate-500"}`}>
           {conexionPorDivisor
             ? "Los divisores no tienen puertos conectados."
@@ -539,45 +542,52 @@ function ListaEmpalmes({
         </p>
       ) : (
         <ul className={`flex-1 divide-y overflow-y-auto ${oscuro ? "divide-slate-800" : "divide-slate-200"}`}>
-          {empalmes.map((empalme) => {
-            const fila = presentarEmpalme(empalme)
-            return (
-              <li
-                key={claveEmpalme(empalme)}
-                className={`border-l-2 border-transparent px-4 py-2.5 text-xs transition-colors ${oscuro ? "hover:border-sky-400 hover:bg-sky-500/10" : "hover:border-sky-500 hover:bg-sky-50"}`}
-              >
-                <div className="flex items-center gap-2">
-                  <InsigniaHilo hex={fila.izquierda.hex} etiqueta={fila.izquierda.etiqueta} oscuro={oscuro} />
-                  <span className="text-slate-400">→</span>
-                  <InsigniaHilo hex={fila.derecha.hex} etiqueta={fila.derecha.etiqueta} oscuro={oscuro} />
-                  <span className={`ml-auto text-[11px] tabular-nums ${oscuro ? "text-amber-200" : "text-amber-700"}`}>
-                    {fila.atenuacion} dB
-                  </span>
-                </div>
-                <p className={`mt-1 truncate font-mono text-[11px] ${oscuro ? "text-sky-300" : "text-sky-700"}`} title={fila.traza}>
-                  {fila.traza}
-                </p>
-                <p className={`truncate text-[11px] ${oscuro ? "text-slate-400" : "text-slate-500"}`}>{fila.via}</p>
-                <p className={`truncate font-mono text-[11px] ${oscuro ? "text-slate-500" : "text-slate-400"}`}>
-                  {fila.recorrido}
-                </p>
-              </li>
-            )
-          })}
+          {rutas.map((ruta) => (
+            <li key={ruta.clave} className="px-4 py-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${claseTitulo(ruta, oscuro)}`}>
+                  {tituloRuta(ruta)}
+                </span>
+                <span className={`ml-auto text-[11px] tabular-nums ${oscuro ? "text-amber-200" : "text-amber-700"}`}>
+                  {ruta.atenuacion} dB
+                </span>
+              </div>
+              <dl className="mt-2 grid grid-cols-[4rem_1fr] gap-x-2 gap-y-1.5">
+                {tramosDeRuta(ruta).map((tramo) => (
+                  <Fragment key={tramo.etiqueta}>
+                    <dt className={`pt-px text-[10px] font-semibold uppercase tracking-wider ${oscuro ? "text-slate-400" : "text-slate-500"}`}>
+                      {tramo.etiqueta}
+                    </dt>
+                    <dd
+                      className={`flex items-start gap-1.5 font-mono text-[11px] leading-snug ${
+                        tramo.etiqueta === "Divisor"
+                          ? oscuro
+                            ? "text-sky-300"
+                            : "text-sky-700"
+                          : oscuro
+                            ? "text-slate-100"
+                            : "text-slate-800"
+                      }`}
+                    >
+                      {tramo.color && <PuntoHilo hex={tramo.color} oscuro={oscuro} />}
+                      <span>{tramo.texto}</span>
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </li>
+          ))}
         </ul>
       )}
     </aside>
   )
 }
 
-function InsigniaHilo({ hex, etiqueta, oscuro }: { hex: string; etiqueta: string; oscuro: boolean }) {
+function PuntoHilo({ hex, oscuro }: { hex: string; oscuro: boolean }) {
   return (
-    <span className={`flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums ${oscuro ? "text-slate-100" : "text-slate-800"}`}>
-      <span
-        className={`size-2.5 shrink-0 rounded-full ring-1 ${oscuro ? "ring-white/30" : "ring-slate-400/40"}`}
-        style={{ backgroundColor: hex }}
-      />
-      {etiqueta}
-    </span>
+    <span
+      className={`mt-0.5 size-2.5 shrink-0 rounded-full ring-1 ${oscuro ? "ring-white/30" : "ring-slate-400/40"}`}
+      style={{ backgroundColor: hex }}
+    />
   )
 }

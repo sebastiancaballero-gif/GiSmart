@@ -7,16 +7,11 @@
  * texto negro) para que se lea al imprimir.
  */
 
+/** Una tarjeta del panel: título, dB y sus renglones (Origen, Divisor, Destino). */
 export type FilaReporteEmpalme = {
-  origenHilo: string
-  origenColor: string
-  origenCable: string
-  destinoHilo: string
-  destinoColor: string
-  destinoCable: string
-  traza: string
-  via: string
+  titulo: string
   atenuacion: string
+  tramos: { etiqueta: string; texto: string; color: string | null }[]
 }
 
 export type OpcionesReporteEmpalmesPdf = {
@@ -29,8 +24,19 @@ export type OpcionesReporteEmpalmesPdf = {
 const MARGEN = 36
 const CABECERA = 64
 const PIE = 28
-const ALTO_FILA = 38
+const ALTO_TITULO = 18
+const ALTO_TRAMO = 12
+const RELLENO_FILA = 8
 const RADIO_PUNTO = 3.2
+
+function altoFila(fila: FilaReporteEmpalme): number {
+  return ALTO_TITULO + fila.tramos.length * ALTO_TRAMO + RELLENO_FILA
+}
+
+/** Las fuentes estándar de jsPDF (WinAnsi) no tienen la flecha. */
+function textoPdf(texto: string): string {
+  return texto.replace(/→/g, "->")
+}
 
 const COLOR = {
   fondo: "#ffffff",
@@ -112,40 +118,40 @@ function dibujarFila(
   indice: number,
 ) {
   const x = MARGEN
+  const alto = altoFila(fila)
   if (indice % 2 === 0) {
     pdf.setFillColor(248, 250, 252)
-    pdf.rect(x, y, anchoUtil, ALTO_FILA, "F")
+    pdf.rect(x, y, anchoUtil, alto, "F")
   }
 
   pdf.setDrawColor(...rgb(COLOR.linea))
   pdf.setLineWidth(0.3)
-  pdf.line(x, y + ALTO_FILA, x + anchoUtil, y + ALTO_FILA)
-
-  const centro = y + ALTO_FILA / 2
-  pintarPunto(pdf, x + 10, centro - 6, fila.origenColor)
-  pintarPunto(pdf, x + 86, centro - 6, fila.destinoColor)
+  pdf.line(x, y + alto, x + anchoUtil, y + alto)
 
   pdf.setFont("courier", "bold")
   pdf.setFontSize(9)
   pdf.setTextColor(...rgb(COLOR.texto))
-  pdf.text(fila.origenHilo, x + 16, centro - 4)
-  pdf.text("→", x + 72, centro - 4)
-  pdf.text(fila.destinoHilo, x + 92, centro - 4)
+  pdf.text(textoPdf(fila.titulo), x + 10, y + 13)
 
   pdf.setFont("courier", "normal")
   pdf.setFontSize(8)
   pdf.setTextColor(...rgb(COLOR.suave))
-  pdf.text(`${fila.atenuacion} dB`, x + anchoUtil - 8, centro - 4, { align: "right" })
+  pdf.text(`${fila.atenuacion} dB`, x + anchoUtil - 8, y + 13, { align: "right" })
 
-  pdf.setFont("courier", "bold")
-  pdf.setFontSize(8)
-  pdf.setTextColor(8, 51, 68)
-  pdf.text(fila.traza, x + 10, centro + 8)
+  fila.tramos.forEach((tramo, i) => {
+    const base = y + ALTO_TITULO + i * ALTO_TRAMO + 6
+    pdf.setFont("courier", "bold")
+    pdf.setFontSize(7)
+    pdf.setTextColor(...rgb(COLOR.suave))
+    pdf.text(tramo.etiqueta.toUpperCase(), x + 10, base)
 
-  pdf.setFont("courier", "normal")
-  pdf.setTextColor(...rgb(COLOR.suave))
-  const detalle = `${fila.via}  ·  ${fila.origenCable} → ${fila.destinoCable}`
-  pdf.text(detalle, x + 10, centro + 16)
+    if (tramo.color) pintarPunto(pdf, x + 64, base - 2.5, tramo.color)
+
+    pdf.setFont("courier", "normal")
+    pdf.setFontSize(8)
+    pdf.setTextColor(...rgb(COLOR.texto))
+    pdf.text(textoPdf(tramo.texto), x + 72, base)
+  })
 }
 
 /** Genera y descarga el reporte de empalmes. */
@@ -167,21 +173,27 @@ export async function exportarReporteEmpalmesPdf(
   const ancho = pdf.internal.pageSize.getWidth()
   const alto = pdf.internal.pageSize.getHeight()
   const anchoUtil = ancho - 2 * MARGEN
-  const filasPorPagina = Math.max(1, Math.floor((alto - CABECERA - PIE) / ALTO_FILA))
-  const totalPaginas = Math.ceil(opciones.filas.length / filasPorPagina)
 
-  for (let pagina = 1; pagina <= totalPaginas; pagina++) {
-    if (pagina > 1) pdf.addPage()
+  // Las tarjetas por divisor llevan un renglón más: se reparten por altura y
+  // ninguna queda partida entre dos páginas.
+  const paginas: { fila: FilaReporteEmpalme; y: number; indice: number }[][] = [[]]
+  let y = CABECERA
+  opciones.filas.forEach((fila, indice) => {
+    const altoActual = altoFila(fila)
+    if (y + altoActual > alto - PIE && paginas[paginas.length - 1].length > 0) {
+      paginas.push([])
+      y = CABECERA
+    }
+    paginas[paginas.length - 1].push({ fila, y, indice })
+    y += altoActual
+  })
+
+  paginas.forEach((bloque, i) => {
+    if (i > 0) pdf.addPage()
     cabeceraPagina(pdf, opciones, ancho)
-
-    const inicio = (pagina - 1) * filasPorPagina
-    const bloque = opciones.filas.slice(inicio, inicio + filasPorPagina)
-    bloque.forEach((fila, i) => {
-      dibujarFila(pdf, fila, CABECERA + i * ALTO_FILA, anchoUtil, inicio + i)
-    })
-
-    piePagina(pdf, pagina, totalPaginas, ancho, alto)
-  }
+    for (const item of bloque) dibujarFila(pdf, item.fila, item.y, anchoUtil, item.indice)
+    piePagina(pdf, i + 1, paginas.length, ancho, alto)
+  })
 
   pdf.save(opciones.nombreArchivo)
 }

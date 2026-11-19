@@ -792,12 +792,27 @@ function ensamblarDivisores(
   const fuente = json.Splitters ?? []
   const porId = new Map<string, BorradorDivisor>()
 
-  fuente.slice(0, instalados).forEach((divisor, indice) => {
+  // La base repite `num_divisor` (dos «D-1» en la misma cubierta): solo sirve
+  // para ordenar. El nombre visible es la posición, sin repetirse nunca.
+  const ordenados = fuente
+    .slice(0, instalados)
+    .filter(
+      (divisor, indice, todos) =>
+        todos.findIndex((otro) => String(otro.splitter_id) === String(divisor.splitter_id)) === indice,
+    )
+    .map((divisor, indice) => ({ divisor, indice }))
+    .sort(
+      (a, b) =>
+        (a.divisor.num_divisor ?? Infinity) - (b.divisor.num_divisor ?? Infinity) || a.indice - b.indice,
+    )
+    .map(({ divisor }) => divisor)
+
+  ordenados.forEach((divisor, indice) => {
     const id = `divisor-${divisor.splitter_id}`
     const borrador: BorradorDivisor = {
       id,
       splitterId: divisor.splitter_id,
-      numero: divisor.num_divisor ?? indice + 1,
+      numero: indice + 1,
       codigo: divisor.cod_divisor ?? null,
       modelo: divisor.modelo_divisor ?? null,
       entradas: new Map(),
@@ -817,7 +832,7 @@ function ensamblarDivisores(
     )
   }
   while (porId.size < instalados) {
-    const numero = porId.size + 1
+    const numero = Math.max(0, ...[...porId.values()].map((divisor) => divisor.numero)) + 1
     const id = `divisor-instalado-${numero}`
     porId.set(id, {
       id,

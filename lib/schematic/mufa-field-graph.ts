@@ -11,7 +11,6 @@ import { Bandeja, GEOMETRIA_BANDEJA, altoBandeja, crearBandeja } from "./tray-sh
 import { Divisor, GEOMETRIA_DIVISOR, altoDivisor, crearDivisor } from "./splitter-shape"
 import type {
   CableCampoParseado,
-  EmpalmeCampoParseado,
   EmpalmeDirecto,
   EmpalmeEnBandeja,
   EmpalmeEnDivisor,
@@ -37,18 +36,14 @@ export type ModoEnrutamiento = "ortogonal" | "curvo"
 
 const ESTILO = {
   grosorLinea: 1.75,
-  grosorLineaResaltada: 2.75,
   opacidadLinea: 0.95,
   /**
    * El resplandor es un trazo ancho y translúcido del color del hilo debajo de
    * la línea. Un filtro `drop-shadow` en cada enlace daría lo mismo, pero con
-   * cientos de líneas el desplazamiento y el zoom se vuelven lentos: el filtro
-   * real se reserva para la fusión resaltada.
+   * cientos de líneas el desplazamiento y el zoom se vuelven lentos.
    */
   grosorBrillo: 5.5,
   opacidadBrillo: 0.2,
-  grosorBrilloResaltado: 9,
-  opacidadBrilloResaltado: 0.45,
   /** Hilos que se pierden contra el fondo (el negro): brillo gris y más opaco. */
   grosorBrilloContorno: 4,
   opacidadBrilloContorno: 0.75,
@@ -67,11 +62,11 @@ const ESTILO = {
  */
 const CARRILES = {
   /** Separación ideal entre carriles vecinos. */
-  espaciado: 5,
+  espaciado: 9,
   /** Si no caben, se juntan hasta este mínimo antes de ensanchar el hueco. */
-  espaciadoMinimo: 2,
+  espaciadoMinimo: 3,
   /** Distancia libre entre el borde de cada tarjeta y el primer carril. */
-  margen: 26,
+  margen: 40,
 } as const
 
 const COLOR_BASE = "#94a3b8"
@@ -138,6 +133,10 @@ function marcadorDestino(relleno: string, contorno: string | null) {
   }
 }
 
+/**
+ * Las fusiones son solo dibujo: sin trazo invisible para el mouse ni eventos
+ * de puntero, así que no reaccionan al pasar por encima.
+ */
 export const EmpalmeCampo = dia.Link.define(
   TIPO_EMPALME_CAMPO,
   {
@@ -145,11 +144,7 @@ export const EmpalmeCampo = dia.Link.define(
     router: ROUTER_NORMAL,
     connector: CONECTOR_ORTOGONAL,
     attrs: {
-      wrapper: {
-        connection: true,
-        strokeWidth: 10,
-        strokeLinejoin: "round",
-      },
+      root: { pointerEvents: "none" },
       brillo: {
         connection: true,
         stroke: COLOR_BASE,
@@ -175,11 +170,6 @@ export const EmpalmeCampo = dia.Link.define(
   },
   {
     markup: [
-      {
-        tagName: "path",
-        selector: "wrapper",
-        attributes: { fill: "none", stroke: "transparent", cursor: "pointer" },
-      },
       { tagName: "path", selector: "brillo" },
       { tagName: "path", selector: "line" },
     ] satisfies dia.MarkupJSON,
@@ -204,33 +194,6 @@ function atributosDeEnlace(hex: string, tema: TemaLienzo): dia.Cell.Selectors {
     brillo: brilloBase(hex, tema),
     line: { stroke: hex, targetMarker: marcadorDestino(hex, contorno) },
   }
-}
-
-export function resaltarEmpalmeCampo(linkView: dia.LinkView, activo: boolean): void {
-  const link = linkView.model
-  const hex = String(link.get("colorHilo") ?? COLOR_BASE)
-  const brillo = link.get("brilloBase") as ReturnType<typeof brilloBase> | undefined
-  const colorBrillo = brillo?.stroke ?? hex
-
-  link.attr({
-    brillo: activo
-      ? {
-          stroke: colorBrillo,
-          strokeWidth: ESTILO.grosorBrilloResaltado,
-          strokeOpacity: ESTILO.opacidadBrilloResaltado,
-        }
-      : brillo ?? {},
-    line: {
-      strokeWidth: activo ? ESTILO.grosorLineaResaltada : ESTILO.grosorLinea,
-      strokeOpacity: activo ? 1 : ESTILO.opacidadLinea,
-      // `drop-shadow(0 0 5px currentColor)` en SVG: solo en la resaltada.
-      filter: activo
-        ? { name: "dropShadow", args: { dx: 0, dy: 0, blur: 4, color: colorBrillo, opacity: 0.9 } }
-        : null,
-    },
-  })
-  // Al frente mientras se resalta, para que no quede tapada por las vecinas.
-  link.set("z", activo ? Z_EMPALME + 1 : Z_EMPALME)
 }
 
 function aplicarEstilo(link: dia.Link, modo: ModoEnrutamiento): void {
@@ -262,9 +225,10 @@ const DISPOSICION = {
    * piden los carriles: sin bandejas, las dos columnas de cables quedan tan
    * juntas como lo permiten sus fusiones y no queda un vacío en el centro.
    */
-  separacionMinima: 140,
-  separacionMaxima: 300,
-  separacionFilas: 36,
+  separacionMinima: 220,
+  separacionMaxima: 600,
+  /** Entre cables (y entre bandejas o divisores) de una misma columna. */
+  separacionFilas: 72,
 } as const
 
 /** Hueco entre dos columnas para que quepan `carriles` verticales paralelas. */
@@ -428,7 +392,6 @@ function crearSegmento(
     tramo,
     separacionX,
     colorHilo: hex,
-    brilloBase: brilloBase(hex, tema),
     yOrigen: centroPuerto(graph, source)?.y,
     yDestino: centroPuerto(graph, target)?.y,
     attrs: atributosDeEnlace(hex, tema),
@@ -646,85 +609,16 @@ export function cargarEscenarioCampo(
   if (xCentro === null) {
     asignarCarriles(porTramo("directo"), finEntrada, xSalida)
   } else {
-    asignarCarriles(porTramo("entrada-bandeja", "entrada-divisor"), finEntrada, xCentro)
+    // Las fusiones de hilo a hilo bajan en el primer hueco, repartidas junto
+    // con las que van al centro: si se repartieran aparte, compartirían
+    // verticales con ellas.
+    asignarCarriles(porTramo("entrada-bandeja", "entrada-divisor", "directo"), finEntrada, xCentro)
     asignarCarriles(
       porTramo("bandeja-salida", "divisor-salida"),
       xCentro + anchoCentro(mufa),
       xSalida,
     )
-    asignarCarriles(porTramo("directo"), finEntrada, xSalida)
   }
 
   for (const link of graph.getLinks()) aplicarEstilo(link, modo)
-}
-
-export type RegistroEmpalmeCampo = EmpalmeCampoParseado
-
-/** Clave estable de un empalme, para listas de React. */
-export function claveEmpalme(empalme: EmpalmeCampoParseado): string {
-  if (empalme.via === "directo") return `directo-${empalme.numero}`
-  if (empalme.via === "divisor") return `${empalme.divisorId}-${empalme.lado}-${empalme.puertoId}`
-  return `${empalme.bandejaId}-${empalme.slot}`
-}
-
-function ordenEmpalme(empalme: EmpalmeCampoParseado): number {
-  if (empalme.via === "bandeja") return empalme.numeroBandeja * 1000 + empalme.slot
-  if (empalme.via === "divisor") {
-    return empalme.numeroDivisor * 1000 + (empalme.lado === "entrada" ? 0 : 100) + empalme.numeroPuerto
-  }
-  return 100000 + empalme.numero
-}
-
-export function listarEmpalmesCampo(mufa: MufaCampoParseada): RegistroEmpalmeCampo[] {
-  return [...mufa.empalmes].sort((a, b) => ordenEmpalme(a) - ordenEmpalme(b))
-}
-
-export type PresentacionEmpalme = {
-  izquierda: { hex: string; etiqueta: string }
-  derecha: { hex: string; etiqueta: string }
-  atenuacion: number
-  traza: string
-  via: string
-  recorrido: string
-  origenCable: string
-  destinoCable: string
-}
-
-const COLOR_PUERTO = "#64748b"
-
-/** Textos de una fila de la lista y del PDF, para los tres tipos de empalme. */
-export function presentarEmpalme(empalme: EmpalmeCampoParseado): PresentacionEmpalme {
-  if (empalme.via === "divisor") {
-    const hilo = { hex: empalme.hilo.color.hex, etiqueta: `H${empalme.hilo.numero}` }
-    const puerto = { hex: COLOR_PUERTO, etiqueta: `P${empalme.numeroPuerto}` }
-    const entrada = empalme.lado === "entrada"
-    return {
-      izquierda: entrada ? hilo : puerto,
-      derecha: entrada ? puerto : hilo,
-      atenuacion: empalme.atenuacion,
-      traza: entrada
-        ? etiquetaOrigen(empalme.hilo)
-        : `[SRC::Divisor ${empalme.numeroDivisor}-Puerto ${empalme.numeroPuerto}]`,
-      via: `Divisor ${empalme.numeroDivisor} · Puerto ${empalme.numeroPuerto} · ${empalme.tipoEmpalme}`,
-      recorrido: entrada
-        ? `${empalme.hilo.cableCodigo} → Divisor ${empalme.numeroDivisor}`
-        : `Divisor ${empalme.numeroDivisor} → ${empalme.hilo.cableCodigo} · B${empalme.hilo.buffer}-H${empalme.hilo.numero}`,
-      origenCable: entrada ? empalme.hilo.cableCodigo : `Divisor ${empalme.numeroDivisor}`,
-      destinoCable: entrada ? `Divisor ${empalme.numeroDivisor}` : empalme.hilo.cableCodigo,
-    }
-  }
-
-  return {
-    izquierda: { hex: empalme.origen.color.hex, etiqueta: `H${empalme.origen.numero}` },
-    derecha: { hex: empalme.destino.color.hex, etiqueta: `H${empalme.destino.numero}` },
-    atenuacion: empalme.atenuacion,
-    traza: etiquetaOrigen(empalme.origen),
-    via:
-      empalme.via === "directo"
-        ? `Fusión directa ${empalme.numero} · ${empalme.tipoEmpalme}`
-        : `Bandeja ${empalme.numeroBandeja} · Slot ${empalme.slot} · ${empalme.tipoEmpalme}`,
-    recorrido: `${empalme.origen.cableCodigo} → ${empalme.destino.cableCodigo} · B${empalme.destino.buffer}-H${empalme.destino.numero}`,
-    origenCable: empalme.origen.cableCodigo,
-    destinoCable: empalme.destino.cableCodigo,
-  }
 }
