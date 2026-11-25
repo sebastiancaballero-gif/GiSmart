@@ -35,7 +35,7 @@ export const GEOMETRIA_TERMINACION = {
   /** Alto de la fila que rotula cada grupo. */
   altoEtiquetaGrupo: 15,
   margenGrupoY: 6,
-  separacionGrupos: 24,
+  separacionGrupos: 48,
   /** Separación vertical entre puntos. */
   separacionPuntos: 18,
   /** Largo de la hebra de color que representa al punto. */
@@ -94,7 +94,7 @@ export function altoTerminacion(terminacion: TerminacionParseada): number {
 }
 
 /** Coordenada Y (relativa a la terminación) del borde superior de un grupo. */
-function topeGrupo(terminacion: TerminacionParseada, indiceGrupo: number): number {
+export function topeGrupo(terminacion: TerminacionParseada, indiceGrupo: number): number {
   const g = GEOMETRIA_TERMINACION
   let y = g.altoEncabezado
   for (let i = 0; i < indiceGrupo; i++) {

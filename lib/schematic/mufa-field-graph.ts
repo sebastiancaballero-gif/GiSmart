@@ -3,12 +3,20 @@ import { dia, shapes } from "@joint/core"
 import {
   GEOMETRIA_TERMINACION,
   Terminacion,
+  altoGrupo,
   altoTerminacion,
   crearTerminacion,
+  topeGrupo,
   type TrazaPunto,
 } from "./terminal-shape"
 import { Bandeja, GEOMETRIA_BANDEJA, altoBandeja, crearBandeja } from "./tray-shape"
-import { Divisor, GEOMETRIA_DIVISOR, altoDivisor, crearDivisor } from "./splitter-shape"
+import {
+  ANCLA_SALIDA_DIVISOR,
+  Divisor,
+  GEOMETRIA_DIVISOR,
+  altoDivisor,
+  crearDivisor,
+} from "./splitter-shape"
 import type {
   CableCampoParseado,
   EmpalmeDirecto,
@@ -272,12 +280,14 @@ function huecosDeTramo(mufa: MufaCampoParseada) {
   const puertoEntrada = xEntrada + GEOMETRIA_TERMINACION.ancho - GEOMETRIA_TERMINACION.margenPuerto
   const puertoSalida = xSalida + GEOMETRIA_TERMINACION.margenPuerto
   const margenCentro = mufa.conexionPorDivisor ? GEOMETRIA_DIVISOR.margenPuerto : GEOMETRIA_BANDEJA.margenPuerto
+  // Las salidas del divisor se anclan en su borde derecho (`ANCLA_SALIDA_DIVISOR`).
+  const margenSalidaCentro = mufa.conexionPorDivisor ? 0 : GEOMETRIA_BANDEJA.margenPuerto
 
   if (xCentro === null) return { directo: puertoSalida - puertoEntrada, haciaCentro: 0, desdeCentro: 0 }
   return {
     directo: puertoSalida - puertoEntrada,
     haciaCentro: xCentro + margenCentro - puertoEntrada,
-    desdeCentro: puertoSalida - (xCentro + anchoCentro(mufa) - margenCentro),
+    desdeCentro: puertoSalida - (xCentro + anchoCentro(mufa) - margenSalidaCentro),
   }
 }
 
@@ -322,44 +332,84 @@ function cableATerminacion(cable: CableCampoParseado): TerminacionParseada {
   }
 }
 
-export function calcularPosicionesCampo(
-  mufa: MufaCampoParseada,
-): Map<string, { x: number; y: number }> {
-  const posiciones = new Map<string, { x: number; y: number }>()
-  const altoContenido = Math.max(
-    altoColumnaCables(mufa.entradas),
-    altoColumnaCentro(mufa),
-    altoColumnaCables(mufa.salidas),
-  )
-  const { xEntrada, xCentro, xSalida } = columnas(mufa)
+type Posiciones = Map<string, { x: number; y: number }>
 
-  // Cada columna se centra en vertical contra la más alta.
-  const colocar = (ids: { id: string; alto: number }[], x: number) => {
-    const alto = ids.reduce((total, item) => total + item.alto, 0)
-    const separaciones = Math.max(0, ids.length - 1) * DISPOSICION.separacionFilas
-    let y = DISPOSICION.origenY + (altoContenido - (alto + separaciones)) / 2
-    for (const item of ids) {
+/**
+ * Franja vertical (absoluta) que ocupan los buffers unidos por fusiones
+ * directas, en los dos lados. Sus líneas cruzan la columna del centro en
+ * algún punto de esa franja: en ortogonal, el tramo horizontal llega al hilo
+ * de salida atravesándola; en curvo, la curva la cruza en diagonal.
+ */
+function franjaDeFusionesDirectas(mufa: MufaCampoParseada, posiciones: Posiciones) {
+  let tope = Infinity
+  let fondo = -Infinity
+  for (const empalme of mufa.empalmes) {
+    if (empalme.via !== "directo") continue
+    for (const hilo of [empalme.origen, empalme.destino]) {
+      const cable = mufa.cables.find((item) => item.id === hilo.cableId)
+      const en = posiciones.get(hilo.cableId)
+      const indice = cable?.buffers.findIndex((buffer) => buffer.numero === hilo.buffer) ?? -1
+      if (!cable || !en || indice < 0) continue
+      const terminacion = cableATerminacion(cable)
+      const arriba = en.y + topeGrupo(terminacion, indice)
+      tope = Math.min(tope, arriba)
+      fondo = Math.max(fondo, arriba + altoGrupo(terminacion.grupos[indice]))
+    }
+  }
+  return Number.isFinite(tope) ? { tope, fondo } : null
+}
+
+export function calcularPosicionesCampo(mufa: MufaCampoParseada): Posiciones {
+  const posiciones: Posiciones = new Map()
+  const { xEntrada, xCentro, xSalida } = columnas(mufa)
+  const conDirectas =
+    mufa.conexionPorDivisor && mufa.empalmes.some((empalme) => empalme.via === "directo")
+  const altoCables = Math.max(altoColumnaCables(mufa.entradas), altoColumnaCables(mufa.salidas))
+  // Si los divisores pueden tener que bajar, los cables no se centran contra
+  // ellos: su posición fija la franja de las fusiones directas.
+  const altoContenido = conDirectas ? altoCables : Math.max(altoCables, altoColumnaCentro(mufa))
+
+  type Pieza = { id: string; alto: number }
+  const altoPila = (piezas: Pieza[]) =>
+    piezas.reduce((total, item) => total + item.alto, 0) +
+    Math.max(0, piezas.length - 1) * DISPOSICION.separacionFilas
+  const apilar = (piezas: Pieza[], x: number, desde: number) => {
+    let y = desde
+    for (const item of piezas) {
       posiciones.set(item.id, { x, y })
       y += item.alto + DISPOSICION.separacionFilas
     }
   }
+  // Cada columna se centra en vertical contra la más alta.
+  const centrada = (piezas: Pieza[]) => DISPOSICION.origenY + (altoContenido - altoPila(piezas)) / 2
 
   const deCables = (cables: CableCampoParseado[]) =>
     cables.map((cable) => ({ id: cable.id, alto: altoTerminacion(cableATerminacion(cable)) }))
 
-  colocar(deCables(mufa.entradas), xEntrada)
+  const entradas = deCables(mufa.entradas)
+  const salidas = deCables(mufa.salidas)
+  apilar(entradas, xEntrada, centrada(entradas))
+  apilar(salidas, xSalida, centrada(salidas))
+
   if (xCentro !== null) {
     const piezas = mufa.conexionPorDivisor
       ? mufa.divisores.map((divisor) => ({ id: divisor.id, alto: altoDivisor(divisor) }))
       : mufa.bandejas.map((bandeja) => ({ id: bandeja.id, alto: altoBandeja(bandeja) }))
-    colocar(piezas, xCentro)
+    let desde = centrada(piezas)
+
+    // Ninguna fusión directa debe pasar por encima o por detrás de un divisor:
+    // si la columna invade la franja de esas fusiones, baja entera debajo de ella.
+    const franja = conDirectas ? franjaDeFusionesDirectas(mufa, posiciones) : null
+    if (franja && desde < franja.fondo && desde + altoPila(piezas) > franja.tope) {
+      desde = franja.fondo + DISPOSICION.separacionFilas
+    }
+    apilar(piezas, xCentro, desde)
   }
-  colocar(deCables(mufa.salidas), xSalida)
 
   return posiciones
 }
 
-type ExtremoEnlace = { id: string; port: string }
+type ExtremoEnlace = { id: string; port: string } & Partial<typeof ANCLA_SALIDA_DIVISOR>
 
 type Tramo = "directo" | "entrada-bandeja" | "bandeja-salida" | "entrada-divisor" | "divisor-salida"
 
@@ -451,8 +501,10 @@ function dibujarEmpalmeEnDivisor(
   tema: TemaLienzo,
 ): void {
   const hilo = { id: empalme.hilo.cableId, port: empalme.hilo.portId }
-  const puerto = { id: empalme.divisorId, port: empalme.puertoId }
   const entrada = empalme.lado === "entrada"
+  const puerto: ExtremoEnlace = entrada
+    ? { id: empalme.divisorId, port: empalme.puertoId }
+    : { id: empalme.divisorId, port: empalme.puertoId, ...ANCLA_SALIDA_DIVISOR }
   crearSegmento(
     graph,
     entrada ? hilo : puerto,

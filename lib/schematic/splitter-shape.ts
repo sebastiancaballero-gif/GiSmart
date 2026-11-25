@@ -12,15 +12,31 @@ import { TEMA_CLARO, sombraTarjeta, type TemaLienzo } from "./tema-lienzo"
  */
 
 export const GEOMETRIA_DIVISOR = {
-  ancho: 184,
+  ancho: 212,
   altoEncabezado: 38,
   margenInferior: 10,
   altoPuerto: 20,
-  /** Del borde al centro del círculo de cada puerto: queda entero adentro. */
+  /** Del borde izquierdo al centro del círculo de la entrada. */
   margenPuerto: 16,
+  /**
+   * Del borde derecho al centro del círculo de cada salida: deja lugar para el
+   * número global entre el círculo y el borde (hasta tres cifras).
+   */
+  margenPuertoSalida: 46,
   radioPuerto: 5,
-  /** Del centro del círculo al número, hacia el interior del divisor. */
+  /** Del centro del círculo al número local, hacia el interior del divisor. */
   separacionNumero: 13,
+  /** Del centro del círculo de salida al número global, hacia el borde. */
+  separacionNumeroGlobal: 11,
+} as const
+
+/**
+ * Extremo de un enlace que sale de un puerto de salida del divisor: se ancla
+ * en el borde derecho, a la altura del puerto, y no sobre el círculo.
+ */
+export const ANCLA_SALIDA_DIVISOR = {
+  anchor: { name: "center", args: { dx: GEOMETRIA_DIVISOR.margenPuertoSalida } },
+  connectionPoint: { name: "anchor" },
 } as const
 
 export const TIPO_DIVISOR = "gismart.Divisor"
@@ -55,7 +71,8 @@ function puertoDivisor(
 ): dia.Element.Port {
   const g = GEOMETRIA_DIVISOR
   const entrada = puerto.lado === "entrada"
-  const x = entrada ? g.margenPuerto : g.ancho - g.margenPuerto
+  const x = entrada ? g.margenPuerto : g.ancho - g.margenPuertoSalida
+  const global = puerto.numeroGlobal
 
   return {
     id: puerto.portId,
@@ -64,9 +81,26 @@ function puertoDivisor(
     attrs: {
       divisorTooltip: {
         html: escaparTexto(
-          `Divisor ${divisor.numero} · ${entrada ? "entrada" : "salida"} ${puerto.numero}`,
+          `Divisor ${divisor.numero} · ${entrada ? "entrada" : "salida"} ${puerto.numero}` +
+            (global === undefined ? "" : ` · salida global ${global}`),
         ),
       },
+      ...(entrada
+        ? {}
+        : {
+            divisorGlobal: {
+              x: g.separacionNumeroGlobal,
+              y: 0,
+              textAnchor: "start",
+              textVerticalAnchor: "middle",
+              fontSize: 10,
+              fontFamily: tema.fuenteMono,
+              fontWeight: 600,
+              fill: tema.acentoTraza,
+              text: global === undefined ? "" : String(global),
+              pointerEvents: "none",
+            },
+          }),
       divisorPunto: {
         r: g.radioPuerto,
         fill: tema.superficie,
@@ -92,12 +126,19 @@ const MARKUP_PUERTO: dia.MarkupJSON = [
   { tagName: "circle", selector: "divisorPunto" },
 ]
 
+const MARKUP_PUERTO_SALIDA: dia.MarkupJSON = [
+  ...MARKUP_PUERTO,
+  { tagName: "text", selector: "divisorGlobal" },
+]
+
 const MARKUP_NUMERO: dia.MarkupJSON = [{ tagName: "text", selector: "divisorNumero" }]
 
 /**
- * Los números van con la etiqueta de puerto de JointJS, hacia adentro: las
- * entradas (borde izquierdo) a la derecha de su círculo y las salidas (borde
- * derecho) a la izquierda. Así ninguno se sale del contorno del divisor.
+ * Los números van hacia adentro del divisor: la entrada (borde izquierdo) a la
+ * derecha de su círculo; cada salida, `[local] (puerto) [global]`, con el
+ * local a la izquierda del círculo y el correlativo de la cubierta entre el
+ * círculo y el borde derecho. El enlace de una salida arranca en el borde
+ * (ver `ANCLA_SALIDA_DIVISOR`) para no tapar el número global.
  */
 export const Divisor = dia.Element.define(TIPO_DIVISOR, {
   size: { width: GEOMETRIA_DIVISOR.ancho, height: 80 },
@@ -113,7 +154,7 @@ export const Divisor = dia.Element.define(TIPO_DIVISOR, {
       },
       [GRUPO_SALIDAS]: {
         position: { name: "absolute" },
-        markup: MARKUP_PUERTO,
+        markup: MARKUP_PUERTO_SALIDA,
         label: {
           position: { name: "left", args: { x: -GEOMETRIA_DIVISOR.separacionNumero } },
           markup: MARKUP_NUMERO,

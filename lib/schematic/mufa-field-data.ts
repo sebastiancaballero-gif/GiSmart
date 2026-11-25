@@ -252,6 +252,11 @@ export type PuertoDivisorParseado = {
   portId: string
   numero: number
   lado: "entrada" | "salida"
+  /**
+   * Número correlativo de la salida entre todos los divisores de la cubierta:
+   * con dos 1x8, las del Divisor 2 son 9 a 16. Las entradas no lo llevan.
+   */
+  numeroGlobal?: number
 }
 
 export type DivisorCampoParseado = {
@@ -904,17 +909,24 @@ function ensamblarDivisores(
 
   for (const divisor of porId.values()) completarPuertos(divisor)
 
+  let salidasPrevias = 0
   const divisores = [...porId.values()]
     .sort((a, b) => a.numero - b.numero)
-    .map((divisor) => ({
-      id: divisor.id,
-      splitterId: divisor.splitterId,
-      numero: divisor.numero,
-      codigo: divisor.codigo,
-      modelo: divisor.modelo,
-      entradas: [...divisor.entradas.values()].sort((a, b) => a.numero - b.numero),
-      salidas: [...divisor.salidas.values()].sort((a, b) => a.numero - b.numero),
-    }))
+    .map((divisor) => {
+      const salidas = [...divisor.salidas.values()]
+        .sort((a, b) => a.numero - b.numero)
+        .map((puerto, indice) => ({ ...puerto, numeroGlobal: salidasPrevias + indice + 1 }))
+      salidasPrevias += salidas.length
+      return {
+        id: divisor.id,
+        splitterId: divisor.splitterId,
+        numero: divisor.numero,
+        codigo: divisor.codigo,
+        modelo: divisor.modelo,
+        entradas: [...divisor.entradas.values()].sort((a, b) => a.numero - b.numero),
+        salidas,
+      }
+    })
 
   return { divisores, empalmes, entreHilos, ocupados }
 }
